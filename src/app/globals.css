@@ -1,26 +1,118 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Pressbox design tokens.
+
+  One accent (Globe red) and a neutral zinc surface stack. Chart chrome is
+  expressed as CSS variables so recharts SVG can flip with the color scheme
+  without any JavaScript media-query detection.
+*/
+
+@theme {
+  --color-accent-50: #fef2f4;
+  --color-accent-100: #fde3e7;
+  --color-accent-200: #fbcbd4;
+  --color-accent-300: #f7a3b3;
+  --color-accent-400: #f06e8a;
+  --color-accent-500: #e33f63;
+  --color-accent-600: #C8102E;
+  --color-accent-700: #a80d27;
+  --color-accent-800: #8c0f24;
+  --color-accent-900: #761023;
+
+  --color-up: #15803d;
+  --color-down: #b91c1c;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  color-scheme: light dark;
+
+  --pb-grid: #e4e4e7;
+  --pb-axis: #a1a1aa;
+  --pb-label: #52525b;
+  --pb-surface: #ffffff;
+  --pb-reference: #71717a;
+  --pb-muted-series: #d4d4d8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --pb-grid: #27272a;
+    --pb-axis: #52525b;
+    --pb-label: #a1a1aa;
+    --pb-surface: #09090b;
+    --pb-reference: #71717a;
+    --pb-muted-series: #3f3f46;
   }
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Numerals line up in tables and stat tiles. Non-negotiable for a data product. */
+.pb-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+::selection {
+  background: #C8102E;
+  color: #ffffff;
+}
+
+/* Quiet scrollbars; the data should be the loudest thing on screen. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pb-grid) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--pb-grid);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes pb-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.pb-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  animation: pb-shimmer 1.6s infinite;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pb-shimmer::after {
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.05), transparent);
+  }
+}
+
+/* Focus rings: visible, accent-tinted, and never on mouse clicks. */
+:focus-visible {
+  outline: 2px solid #C8102E;
+  outline-offset: 2px;
 }
