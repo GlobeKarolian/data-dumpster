@@ -264,8 +264,18 @@ function AddChannelForm({
         body: JSON.stringify({ platform, input: input.trim(), isOwned }),
       });
       if (!res.ok) {
+        // The API returns { error, code }. Showing the raw JSON envelope to a
+        // newsroom user is how you get a support ticket, so unwrap it and fall
+        // back to the body only when it is not the shape we expect.
         const detail = await res.text();
-        throw new Error(detail.slice(0, 300) || 'Add failed with status ' + res.status + '.');
+        let message = detail.slice(0, 300);
+        try {
+          const parsed: unknown = JSON.parse(detail);
+          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+            message = String((parsed as { error: unknown }).error);
+          }
+        } catch { /* not JSON, use the raw text */ }
+        throw new Error(message || 'Add failed with status ' + res.status + '.');
       }
       onDone();
     } catch (err) {

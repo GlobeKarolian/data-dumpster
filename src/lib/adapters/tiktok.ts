@@ -495,6 +495,17 @@ export const tiktokAdapter: ChannelAdapter = {
    * caller is responsible for checking it is the one they meant.
    */
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
+    // Adding a competitor channel is the common case, and the Display API cannot
+    // serve it. Prefer the purchased source whenever the org has one configured
+    // and no owner token is present, so the Sources screen can resolve any
+    // public account instead of demanding an OAuth grant nobody can give.
+    const vendorKey = credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    if (!credentials.accessToken && vendorKey) {
+      const { fetchProfile } = await import('./tiktok-brightdata');
+      const { profile } = await fetchProfile(handle, vendorKey);
+      return profile;
+    }
+
     const auth: TikTokAuth = { accessToken: requireAccessToken(credentials) };
     const data = await call({ path: 'user/info/', auth, query: { fields: USER_FIELDS } }, credentials);
     const resolved = readUser(data, handle);
