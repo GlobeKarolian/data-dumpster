@@ -220,6 +220,7 @@ function envCredentials(platform: Platform): Record<string, string> {
     case 'instagram':
       pick(out, 'accessToken', process.env.META_ACCESS_TOKEN);
       pick(out, 'igUserId', process.env.META_IG_USER_ID);
+      pick(out, 'ensembleDataToken', process.env.ENSEMBLEDATA_TOKEN);
       pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'twitter':
@@ -242,7 +243,8 @@ function envCredentials(platform: Platform): Record<string, string> {
       break;
     case 'threads':
       // The only route to Threads is purchased. There is no owned path to fall
-      // back to, so this key is the whole credential set for the platform.
+      // back to, so these keys are the whole credential set for the platform.
+      pick(out, 'ensembleDataToken', process.env.ENSEMBLEDATA_TOKEN);
       pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'bluesky':

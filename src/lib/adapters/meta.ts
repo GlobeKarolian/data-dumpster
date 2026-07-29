@@ -1122,6 +1122,32 @@ export const instagramAdapter: ChannelAdapter = {
   async fetch(ctx: FetchContext): Promise<FetchResult> {
     // Purchased source first when there is no Meta token. One vendor call
     // returns the profile and a page of recent posts together.
+    // Preferred competitor path. Reels are a separate call because only the
+    // reels endpoint carries a play count, which is why every Instagram post
+    // collected before this existed has zero views.
+    const ensembleToken = ctx.credentials.ensembleDataToken ?? process.env.ENSEMBLEDATA_TOKEN ?? '';
+    if (!ctx.credentials.accessToken && ensembleToken) {
+      const { fetchProfile: edProfile, fetchAllPosts } = await import('./instagram-ensemble');
+      const { userId, profile, audience } = await edProfile(
+        ctx.handle, ensembleToken, ctx.onApiCall, ctx.signal,
+      );
+      const { posts, warnings } = await fetchAllPosts(userId, ctx.handle, ensembleToken, {
+        since: ctx.since,
+        until: ctx.until,
+        limit: ctx.limit,
+        onApiCall: ctx.onApiCall,
+        signal: ctx.signal,
+      });
+      return {
+        posts,
+        audience: audience ? [audience] : [],
+        profile,
+        cursor: { source: 'ensembledata', igUserId: userId, lastRunAt: new Date().toISOString() },
+        hasMore: false,
+        warnings,
+      };
+    }
+
     const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
     if (!ctx.credentials.accessToken && vendorKey) {
       const { fetchProfile, postsFromProfile, fetchPostsByProfile } =
