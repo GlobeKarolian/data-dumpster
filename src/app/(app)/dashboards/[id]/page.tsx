@@ -20,6 +20,15 @@ type DashboardRow = {
   share_token: string | null;
 };
 
+type MemberRow = {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  color: string | null;
+  segment: string | null;
+};
+
 export default async function DashboardDetailPage({
   params,
   searchParams,
@@ -47,8 +56,41 @@ export default async function DashboardDetailPage({
 
   if (!landscape) return <NoLandscape reason={ctx.error} />;
 
+  /**
+   * A dashboard pins its own landscape, which need not be the one selected in
+   * the top bar. When they differ, everything the top bar contributed about
+   * companies belongs to a different set of ids: `ctx.companies` would label the
+   * chart series with the wrong newsroom, and `ctx.companyIds` (the company
+   * filter) would intersect to nothing inside resolveScope, so every widget
+   * would render a confident zero rather than an error. Both are dropped in that
+   * case and the dashboard's own membership is read instead.
+   */
+  const sameAsToolbar = landscape.id === ctx.landscape?.id;
+  let companies = ctx.companies;
+  if (!sameAsToolbar) {
+    const members = await query<MemberRow>(({ sql }) => sql`
+      SELECT c.id, c.name, c.slug, c.logo_url, c.color, c.segment
+        FROM landscape_companies lc
+        JOIN companies c ON c.id = lc.company_id
+       WHERE lc.landscape_id = ${landscape.id}::uuid
+         AND c.org_id = ${ctx.orgId}::uuid
+       ORDER BY lc.sort_order ASC, c.name ASC
+    `);
+    companies = members.data.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      logoUrl: c.logo_url,
+      color: c.color,
+      segment: c.segment,
+    }));
+  }
+
   const api = await metricsApi();
-  const baseQuery = analyticsQuery({ ...ctx, landscape, focusCompanyId: landscape.focusCompanyId });
+  const baseQuery = analyticsQuery(
+    { ...ctx, landscape, focusCompanyId: landscape.focusCompanyId },
+    sameAsToolbar ? undefined : { companyIds: undefined },
+  );
 
   return (
     <div>
@@ -83,7 +125,7 @@ export default async function DashboardDetailPage({
       <WidgetGrid
         widgets={widgets}
         query={baseQuery}
-        companies={ctx.companies}
+        companies={companies}
         focusCompanyId={landscape.focusCompanyId}
         api={api}
       />

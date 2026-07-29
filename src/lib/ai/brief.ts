@@ -112,6 +112,12 @@ export async function generateBrief(
   opts: GenerateBriefOptions = {},
 ): Promise<GeneratedBrief> {
   const facts = await getFactSheet({
+    // The org guard is passed explicitly. Every caller of generateBrief happens
+    // to verify the landscape first, so omitting it was not exploitable today --
+    // but resolveScope's landscape lookup is unfiltered when orgId is absent,
+    // and this was the only call site in the app that left it off. The guard
+    // belongs at the query, not in a convention the next caller has to know.
+    orgId,
     landscapeId,
     start: range.start,
     end: range.end,

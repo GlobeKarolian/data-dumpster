@@ -48,7 +48,12 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
     .returning();
 
   if (!updated) throw new AuthError('not_found', 'That alert does not exist.');
-  return Response.json(updated);
+  // Same rule as the collection endpoint: the webhook URL never comes back out.
+  // Toggling `enabled` must not hand the caller a credential it did not send.
+  return Response.json({
+    ...updated,
+    destinations: updated.destinations.map((d) => ({ type: d.type })),
+  });
 });
 
 export const DELETE = apiHandler<{ id: string }>(async (_req, ctx) => {
