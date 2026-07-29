@@ -1,6 +1,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { Raccoon } from '@/components/shell/raccoon';
 
 export interface EmptyStateProps {
   /** A lucide icon component, passed uninstantiated. */
@@ -41,6 +42,9 @@ export function EmptyState({
         className,
       )}
     >
+      {/* No icon supplied means this is a plain nothing-here state, and those
+          get the raccoon. Callers that pass an icon are making a more specific
+          point (no landscape, no model configured) and keep it. */}
       {Icon ? (
         <span
           className={cn(
@@ -51,7 +55,14 @@ export function EmptyState({
         >
           <Icon className={compact ? 'h-4 w-4' : 'h-5 w-5'} strokeWidth={1.75} />
         </span>
-      ) : null}
+      ) : (
+        <Raccoon
+          className={cn(
+            'mb-3 text-zinc-300 dark:text-zinc-700',
+            compact ? 'h-8 w-11' : 'h-12 w-16',
+          )}
+        />
+      )}
       <h3
         className={cn(
           'font-semibold tracking-tight text-zinc-900 dark:text-zinc-100',
