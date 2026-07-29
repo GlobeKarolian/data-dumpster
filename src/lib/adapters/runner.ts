@@ -238,6 +238,11 @@ function envCredentials(platform: Platform): Record<string, string> {
     case 'linkedin':
       pick(out, 'accessToken', process.env.LINKEDIN_ACCESS_TOKEN);
       break;
+    case 'threads':
+      // The only route to Threads is purchased. There is no owned path to fall
+      // back to, so this key is the whole credential set for the platform.
+      pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
+      break;
     case 'bluesky':
       pick(out, 'identifier', process.env.BLUESKY_IDENTIFIER);
       pick(out, 'appPassword', process.env.BLUESKY_APP_PASSWORD);

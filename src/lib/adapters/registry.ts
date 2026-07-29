@@ -21,6 +21,7 @@ import { rssAdapter } from './rss';
 import { youtubeAdapter } from './youtube';
 import { facebookAdapter, instagramAdapter } from './meta';
 import { twitterAdapter } from './twitter';
+import { threadsAdapter } from './threads';
 import { tiktokAdapter } from './tiktok';
 import { linkedinAdapter } from './linkedin';
 
@@ -28,6 +29,7 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
   facebook: facebookAdapter,
   instagram: instagramAdapter,
   twitter: twitterAdapter,
+  threads: threadsAdapter,
   youtube: youtubeAdapter,
   tiktok: tiktokAdapter,
   linkedin: linkedinAdapter,
@@ -63,7 +65,6 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
  * the costs, the approval burden and the recommended acquisition strategy.
  */
 export const UNIMPLEMENTED_REASONS: Partial<Record<Platform, string>> = {
-  threads: 'The Threads API is limited to accounts you own, and there is no competitor read path.',
   reddit: 'Not built yet — Reddit\'s public JSON endpoints make this the next viable adapter.',
 };
 

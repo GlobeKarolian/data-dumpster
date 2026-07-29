@@ -36,6 +36,7 @@ export const DATASETS = {
   instagramProfile: 'gd_l1vikfch901nx3by4',
   instagramPost: 'gd_lk5ns7kz21pck8jpis',
   instagramReel: 'gd_lyclm20il4r5helnj',
+  threadsProfile: 'gd_mde7jg3ld2h3hnnf2',
 } as const;
 
 /** Sync requests accept at most 20 URLs per call. */
