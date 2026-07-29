@@ -122,7 +122,13 @@ function CloudControls({
   const [pending, startTransition] = React.useTransition();
   const [draft, setDraft] = React.useState(threshold);
 
-  React.useEffect(() => { setDraft(threshold); }, [threshold]);
+  // Reconcile the slider to a prop change without a setState in an effect:
+  // remember the last prop we rendered against and correct during render.
+  const [lastThreshold, setLastThreshold] = React.useState(threshold);
+  if (lastThreshold !== threshold) {
+    setLastThreshold(threshold);
+    setDraft(threshold);
+  }
 
   const commit = (value: number) => {
     if (Math.abs(value - threshold) < 0.001) return;
@@ -478,10 +484,11 @@ export function StoryCloud({
     return packCircles(inputs, 6);
   }, [clusters]);
 
-  React.useEffect(() => {
-    if (selectedId && !byId.has(selectedId)) setSelectedId(null);
-    if (hoveredId && !byId.has(hoveredId)) setHoveredId(null);
-  }, [byId, selectedId, hoveredId]);
+  // A selection that no longer exists after a filter change is stale rather
+  // than wrong, so resolve it during render instead of clearing it in an
+  // effect. Reading through byId means one render, not two.
+  const activeSelectedId = selectedId && byId.has(selectedId) ? selectedId : null;
+  const activeHoveredId = hoveredId && byId.has(hoveredId) ? hoveredId : null;
 
   const legend = React.useMemo(() => {
     const seen = new Set<Platform>();
@@ -489,9 +496,11 @@ export function StoryCloud({
     return [...seen];
   }, [clusters]);
 
-  const selected = selectedId ? byId.get(selectedId) ?? null : null;
-  const hovered = hoveredId ? byId.get(hoveredId) ?? null : null;
-  const hoveredCircle = hoveredId ? layout.circles.find((c) => c.id === hoveredId) ?? null : null;
+  const selected = activeSelectedId ? byId.get(activeSelectedId) ?? null : null;
+  const hovered = activeHoveredId ? byId.get(activeHoveredId) ?? null : null;
+  const hoveredCircle = activeHoveredId
+    ? layout.circles.find((c) => c.id === activeHoveredId) ?? null
+    : null;
   const crossOutletCount = clusters.filter((c) => c.companies.length > 1).length;
   const tooltipBelow = hoveredCircle ? hoveredCircle.y - hoveredCircle.radius < layout.height * 0.22 : false;
 
@@ -585,8 +594,8 @@ export function StoryCloud({
                       y={circle.y}
                       radius={circle.radius}
                       mix={mixes.get(circle.id) ?? []}
-                      selected={selectedId === circle.id}
-                      active={hoveredId === circle.id || selectedId === circle.id}
+                      selected={activeSelectedId === circle.id}
+                      active={activeHoveredId === circle.id || activeSelectedId === circle.id}
                       onEnter={() => setHoveredId(circle.id)}
                       onLeave={() => setHoveredId((cur) => (cur === circle.id ? null : cur))}
                       onSelect={() => setSelectedId(circle.id)}

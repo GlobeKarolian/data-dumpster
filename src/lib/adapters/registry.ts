@@ -17,7 +17,6 @@ import type { Platform } from '@/lib/types';
 import { PLATFORM_LABELS, PLATFORMS } from '@/lib/types';
 import { AdapterError, type ChannelAdapter } from './types';
 import { blueskyAdapter } from './bluesky';
-import { rssAdapter } from './rss';
 import { youtubeAdapter } from './youtube';
 import { facebookAdapter, instagramAdapter } from './meta';
 import { twitterAdapter } from './twitter';
@@ -34,7 +33,6 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
   tiktok: tiktokAdapter,
   linkedin: linkedinAdapter,
   bluesky: blueskyAdapter,
-  rss: rssAdapter,
 };
 
 /**
@@ -66,6 +64,13 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
  */
 export const UNIMPLEMENTED_REASONS: Partial<Record<Platform, string>> = {
   reddit: 'Not built yet — Reddit\'s public JSON endpoints make this the next viable adapter.',
+  // Deliberately retired, not missing. A feed carries no engagement and no
+  // audience, so every RSS post entered the averages as a genuine zero and
+  // dragged engagement-per-post down for the handful of companies that had a
+  // feed. Publishing cadence is a real signal, but it belongs in a cadence
+  // view rather than mixed into engagement comparisons.
+  rss: 'Removed on purpose. RSS has no engagement or audience data, so its posts '
+    + 'distorted every average they entered. Add the outlet\'s social channels instead.',
 };
 
 /**

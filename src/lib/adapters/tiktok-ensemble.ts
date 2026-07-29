@@ -19,6 +19,19 @@ import type { Platform } from '@/lib/types';
 
 const PLATFORM: Platform = 'tiktok';
 
+/** TikTok media URLs arrive as { url_list: [...] } rather than a plain string. */
+function firstUrl(v: unknown): string | undefined {
+  if (!isRecord(v)) return undefined;
+  const list = v.url_list;
+  if (Array.isArray(list)) {
+    for (const u of list) {
+      const s = str(u);
+      if (s) return s;
+    }
+  }
+  return str(v.url);
+}
+
 export interface TikTokEnsembleResult {
   profile: AdapterProfile;
   audience?: NormalizedAudience;
@@ -121,7 +134,10 @@ export async function fetchPosts(
       text,
       permalink: 'https://www.tiktok.com/@' + handle + '/video/' + externalId,
       mediaUrl: null,
-      thumbnailUrl: null,
+      // Covers arrive as TikTok's url_list arrays, signed and expiring. Take the
+      // first entry: a post library that shows text where every other platform
+      // shows an image reads as broken data rather than a design choice.
+      thumbnailUrl: firstUrl(video?.cover) ?? firstUrl(video?.origin_cover) ?? null,
       durationSec: duration > 0 ? Math.round(duration / (duration > 1000 ? 1000 : 1)) : null,
       language: str(pick(row, ['desc_language'])) ?? null,
       hashtags: extractHashtags(text),

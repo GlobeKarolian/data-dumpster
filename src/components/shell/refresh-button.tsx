@@ -65,17 +65,22 @@ export function RefreshButton({ className }: { className?: string }) {
   const [summary, setSummary] = React.useState<RunSummary | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Hold the start time rather than resetting a counter inside the effect.
+  // Zeroing elapsed on mount of the interval is a synchronous setState in an
+  // effect, which cascades a render; deriving the value from a ref does not.
+  const startedAtRef = React.useRef(0);
+
   React.useEffect(() => {
-    if (!running) return;
-    const startedAt = Date.now();
-    setElapsed(0);
+    if (!running) return undefined;
     const id = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
     }, 1000);
     return () => window.clearInterval(id);
   }, [running]);
 
   const run = async () => {
+    startedAtRef.current = Date.now();
+    setElapsed(0);
     setRunning(true);
     setSummary(null);
     setError(null);
