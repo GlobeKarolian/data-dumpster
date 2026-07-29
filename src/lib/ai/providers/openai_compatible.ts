@@ -1,7 +1,7 @@
 /**
  * Any endpoint that speaks the OpenAI Chat Completions dialect.
  *
- * This is the escape hatch that keeps Pressbox honest about "bring your own
+ * This is the escape hatch that keeps Data Dumpster honest about "bring your own
  * model": Groq, Together, Fireworks, DeepInfra, OpenRouter, Perplexity, a vLLM
  * or SGLang box in your own rack, LM Studio on a laptop. If it accepts
  * POST {baseUrl}/chat/completions, it works here — no release of ours required.

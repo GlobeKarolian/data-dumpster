@@ -1,4 +1,4 @@
-# Pressbox
+# Data Dumpster
 
 Competitive social intelligence for newsrooms. It answers one question on every
 screen: how does our brand compare to this set of competitors, on this metric,
@@ -39,7 +39,7 @@ as such rather than charted as zero.
 dictionary, current versus previous, with the change.
 
 **Social Posts** is a filterable, sortable, exportable table of every post
-Pressbox has collected: company, platform, post type, date range, free-text
+Data Dumpster has collected: company, platform, post type, date range, free-text
 search, tag. Each row carries an outlier score, which is the post's engagement
 divided by that company's median for the platform in-window. A 4.0 means it did
 four times what that account normally does.
@@ -148,7 +148,7 @@ Everything else in ".env.example" is optional and documented in place.
 The seed creates the Boston Globe Media org, eight real companies (Globe,
 Boston.com, STAT, Herald, WBUR, GBH, Axios Boston, Globe Sports), their public
 channels, two landscapes and eight newsroom tags. It creates zero metrics. Every
-number in Pressbox comes from ingestion, because a seeded number that looks real
+number in Data Dumpster comes from ingestion, because a seeded number that looks real
 is a number somebody eventually puts in a deck. It is idempotent, so re-running
 it is safe.
 
@@ -214,18 +214,18 @@ Sign in at http://localhost:3000/login with the seeded admin credentials.
 ## Honest limits
 
 TikTok and LinkedIn competitor data does not exist for a commercial organisation
-in 2026. Pressbox labels those gaps instead of filling them.
+in 2026. Data Dumpster labels those gaps instead of filling them.
 
 Facebook competitor data does exist, but it is gated. Page Public Content Access
 is a real Meta App Review feature, and Meta's own Pages documentation lists
 "aggregated, anonymized public content for competitive analysis and
-benchmarking" as an allowed usage. Until an org is approved for it, Pressbox
+benchmarking" as an allowed usage. Until an org is approved for it, Data Dumpster
 treats Facebook as owned-only and says why rather than charting a zero. Applying
 is weeks of work, not an afternoon. See "docs/META-PPCA-APPLICATION.md".
 
 Rival IQ has been collecting since roughly 2013. A decade of stored competitor
 time series, including CrowdTangle-era Facebook data that exists nowhere else,
-cannot be reconstructed. Pressbox starts its clock the day you run the ingest.
+cannot be reconstructed. Data Dumpster starts its clock the day you run the ingest.
 
 Engagement rate by view is undefined for essentially every competitor on every
 platform, because no public API exposes impressions for content you do not own.

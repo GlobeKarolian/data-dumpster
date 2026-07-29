@@ -82,7 +82,7 @@ export default async function CompaniesSettingsPage({
           Companies and landscapes
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          A company is something Pressbox measures. A landscape is a named set of them with one brand
+          A company is something Data Dumpster measures. A landscape is a named set of them with one brand
           at the center. Getting the set right is the highest-leverage decision in the product:
           share-of-voice and share-of-engagement are defined entirely by who is in it.
         </p>

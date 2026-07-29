@@ -111,7 +111,7 @@ function CompaniesCard({ companies }: { companies: CompanyRecord[] }) {
         <div>
           <CardTitle>Companies</CardTitle>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Every entity Pressbox measures, yours and theirs.
+            Every entity Data Dumpster measures, yours and theirs.
           </p>
         </div>
         <Button size="sm" variant="primary" onClick={() => setOpen((v) => !v)}>

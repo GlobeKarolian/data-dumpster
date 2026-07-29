@@ -5,7 +5,7 @@ export default function NotFound() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-6 dark:bg-zinc-950">
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-baseline gap-3">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-600">Pressbox</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-600">Data Dumpster</span>
           <span className="pb-num text-xs text-zinc-400 dark:text-zinc-600">404</span>
         </div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">

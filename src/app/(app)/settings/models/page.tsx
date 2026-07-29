@@ -155,7 +155,7 @@ export default async function ModelSettingsPage({
           <div className="min-w-0">
             <CardTitle className="text-base">Bring your own model</CardTitle>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-              Pressbox does not ship a hosted model, and it does not resell anyone else’s. It calls
+              Data Dumpster does not ship a hosted model, and it does not resell anyone else’s. It calls
               the inference your organization already controls. For a newsroom that is not a
               preference — it is the difference between a tool you can put reporting into and one you
               cannot.

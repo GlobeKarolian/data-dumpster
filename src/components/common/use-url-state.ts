@@ -8,7 +8,7 @@ export type ParamPatch = Record<string, string | string[] | null | undefined>;
 /**
  * Filters live in the URL, not in component state.
  *
- * That is a product decision, not a technical one: every view in Pressbox is
+ * That is a product decision, not a technical one: every view in Data Dumpster is
  * something somebody will paste into Slack to make an argument, and a link that
  * does not carry its own filters is a link that starts a different argument.
  */

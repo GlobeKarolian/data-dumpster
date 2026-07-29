@@ -1,9 +1,9 @@
 /**
  * Bring-your-own-model contract.
  *
- * Pressbox never ships a hosted model. An org points it at inference they already
+ * Data Dumpster never ships a hosted model. An org points it at inference they already
  * control — their Anthropic account, their Azure deployment, an Ollama box behind
- * the firewall — and Pressbox adapts. Three consequences that matter to a newsroom:
+ * the firewall — and Data Dumpster adapts. Three consequences that matter to a newsroom:
  *   1. No newsroom content leaves for a vendor the newsroom did not choose.
  *   2. Model spend is the org's own line item, visible and capped, not a markup.
  *   3. When a better model ships on a Tuesday, you switch on Tuesday.

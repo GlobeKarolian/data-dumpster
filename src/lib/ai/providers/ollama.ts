@@ -2,7 +2,7 @@
  * Ollama (POST {baseUrl}/api/chat).
  *
  * This is the option that runs entirely inside the firewall: the model weights,
- * the inference, and every post, caption and competitor URL Pressbox sends to
+ * the inference, and every post, caption and competitor URL Data Dumpster sends to
  * it stay on hardware the newsroom owns. No API key, no vendor account, no
  * egress. For an outlet that cannot send unpublished editorial signal to a
  * third party — legal, embargo, or simple policy — this is the whole reason

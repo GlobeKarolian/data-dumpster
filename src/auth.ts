@@ -1,16 +1,16 @@
 /**
- * Authentication for Pressbox.
+ * Authentication for Data Dumpster.
  *
  * Design decisions worth the ink:
  *
- *  - **Credentials + JWT, not a database session.** Pressbox is deployed to
+ *  - **Credentials + JWT, not a database session.** Data Dumpster is deployed to
  *    serverless functions talking to Neon over HTTP. A database-backed session
  *    would add a round trip to the cold path of literally every request, and
  *    every route in this app is already going to hit the database for real work.
  *    A signed JWT carries the three facts every handler needs -- user, org, role
  *    -- and costs nothing to read.
  *
- *  - **orgId lives on the token.** Pressbox is multi-tenant from row one. Making
+ *  - **orgId lives on the token.** Data Dumpster is multi-tenant from row one. Making
  *    the tenant boundary a property of the credential rather than something a
  *    handler looks up (or worse, accepts from the client) means the default
  *    behaviour of any new endpoint is org-scoped. See lib/session.ts.
@@ -31,10 +31,10 @@ import { users } from '@/db/schema';
 export type Role = 'viewer' | 'editor' | 'admin' | 'owner';
 
 /**
- * The claims Pressbox adds on top of the Auth.js defaults. Declared once and
+ * The claims Data Dumpster adds on top of the Auth.js defaults. Declared once and
  * reused by both augmentations so the token and the session cannot drift.
  */
-export interface PressboxClaims {
+export interface DumpsterClaims {
   userId: string;
   orgId: string;
   role: Role;

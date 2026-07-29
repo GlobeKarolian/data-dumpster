@@ -1,4 +1,4 @@
-# Deploying Pressbox to production
+# Deploying Data Dumpster to production
 
 Assumes you are comfortable with Vercel, Postgres and a terminal, and have never
 seen this repository. Start to finish is about 45 minutes if you stick to the
@@ -32,7 +32,7 @@ closest to where the app will run, which for a Boston deployment means iad1 or
 cle1. Attach it to the project you are about to create; Vercel then injects
 DATABASE_URL and POSTGRES_URL automatically.
 
-**Use the pooled connection string.** Pressbox uses the Neon serverless HTTP
+**Use the pooled connection string.** Data Dumpster uses the Neon serverless HTTP
 driver ("src/db/index.ts"), which opens a connection per statement. The unpooled
 string will exhaust connections under cron load. The pooled host has "-pooler" in
 it.
@@ -158,7 +158,7 @@ This creates the Boston Globe Media org, eight companies (the Globe, Boston.com,
 STAT, Boston Herald, WBUR, GBH News, Axios Boston, Globe Sports) with their real
 public channels, two landscapes, eight newsroom tags, and one owner user.
 
-**It creates zero metrics.** Every number in Pressbox comes from ingestion. A
+**It creates zero metrics.** Every number in Data Dumpster comes from ingestion. A
 seeded number that looks real is a number somebody eventually puts in a deck.
 
 It is idempotent. Every write is an upsert against a unique index, so running it

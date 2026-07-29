@@ -12,7 +12,7 @@
 import { z } from 'zod';
 import { METRIC_KEYS, PLATFORMS } from '@/lib/types';
 
-/** Slack is the only destination Pressbox delivers to itself; email is recorded
+/** Slack is the only destination Data Dumpster delivers to itself; email is recorded
  *  for a future transactional sender and is a no-op at delivery time today. */
 export const destinationSchema = z.discriminatedUnion('type', [
   z.object({

@@ -17,7 +17,7 @@ function titleFor(pathname: string): string {
   if (first && PLATFORM_SET.has(first)) return PLATFORM_LABELS[first as Platform];
   if (pathname.startsWith('/briefs/')) return 'Brief';
   if (pathname.startsWith('/dashboards/')) return 'Dashboard';
-  return 'Pressbox';
+  return 'Data Dumpster';
 }
 
 const DEFAULT_EXPORTS: ExportTarget[] = [

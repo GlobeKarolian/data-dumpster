@@ -1,7 +1,7 @@
 /**
  * The authorization boundary.
  *
- * Every server-side entry point in Pressbox -- Server Component or API route --
+ * Every server-side entry point in Data Dumpster -- Server Component or API route --
  * starts here. The reason this is one small module rather than a middleware
  * concern is that the tenant check has to happen where the data is read, not at
  * the edge: a request can be perfectly authenticated and still be asking for

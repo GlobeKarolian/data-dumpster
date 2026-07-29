@@ -89,7 +89,7 @@ function assess(
     out.push({
       code: 'private',
       severity: 'high',
-      message: 'This account is private. Pressbox will not be able to read its posts.',
+      message: 'This account is private. Data Dumpster will not be able to read its posts.',
     });
   }
 
@@ -123,7 +123,7 @@ function unsupported(platform: Platform): never {
   const reason = UNIMPLEMENTED_REASONS[platform];
   throw new HttpError(
     422,
-    'Pressbox cannot read ' + platform + ' yet.' + (reason ? ' ' + reason : ''),
+    'Data Dumpster cannot read ' + platform + ' yet.' + (reason ? ' ' + reason : ''),
     'no_adapter',
   );
 }

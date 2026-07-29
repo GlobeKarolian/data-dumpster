@@ -49,7 +49,7 @@ export function DeltaBadge({ changePct, invert, previousLabel, className, size =
   if (tone === 'na') {
     return (
       <Tooltip
-        content="No comparable figure in the previous window. Pressbox shows a blank rather than an invented percentage."
+        content="No comparable figure in the previous window. Data Dumpster shows a blank rather than an invented percentage."
         side="top"
       >
         <span tabIndex={0}>{body}</span>

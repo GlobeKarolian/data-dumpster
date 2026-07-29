@@ -124,7 +124,7 @@ export default async function SharedDashboardPage({
             >
               P
             </span>
-            <span>Published from Pressbox</span>
+            <span>Published from Data Dumpster</span>
           </div>
         </div>
       </header>

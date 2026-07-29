@@ -1,5 +1,5 @@
 /**
- * Pressbox database schema.
+ * Data Dumpster database schema.
  *
  * Design notes:
  *  - Everything is scoped to an `org`. Multi-tenant from day one so this can host
@@ -272,7 +272,7 @@ export const platformCredentials = pgTable('platform_credentials', {
 }, (t) => [index('platform_creds_org_idx').on(t.orgId, t.platform)]);
 
 /**
- * Bring-your-own-model. An org points Pressbox at whatever inference it is
+ * Bring-your-own-model. An org points Data Dumpster at whatever inference it is
  * already paying for, or at a self-hosted endpoint. No vendor lock, and no
  * customer data flowing to a model the newsroom did not choose.
  */

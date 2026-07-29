@@ -1,4 +1,4 @@
-# Pressbox
+# Data Dumpster
 
 **Matt Karolian, July 2026**
 
@@ -72,7 +72,7 @@ public. Every one of those is reusable. None of them is theoretical.
 records, payment data, or anything with a retention policy. It is a place to
 prove the plumbing where a mistake costs a wrong chart rather than a breach.
 
-**The next layer is the one that pays.** Pressbox already extracts every URL from
+**The next layer is the one that pays.** Data Dumpster already extracts every URL from
 every post and stores it with its domain and path segments. Joining that against
 the Globe's own analytics and subscription events answers a question nobody in
 this industry answers well: which content, distributed how, produced a
@@ -230,7 +230,7 @@ decides who the Globe's real competitive set is, in a meeting, with their name o
 it. This is a judgement call and it should not be made by whoever set up the seed.
 
 **Retrofit the tests.** A week of work over the metric queries, the verifier, and
-the adapter normalisers. Before, not after, anyone makes a decision on a Pressbox
+the adapter normalisers. Before, not after, anyone makes a decision on a Data Dumpster
 number they would not make on a spreadsheet.
 
 **Buy Rival IQ Drive for one quarter.** 239 a month, 717 total. It buys the
@@ -256,7 +256,7 @@ before anything runs against a metered API.
 **Turn on alerts for the social team, tuned hard.** The metric to watch is
 acknowledgement rate. If people stop acknowledging alerts, the alerts are wrong,
 and an ignored alert channel is worse than none because it teaches people that
-Pressbox is noise.
+Data Dumpster is noise.
 
 **Measure the AI tagger before trusting it.** Two hundred Globe posts, hand
 checked, precision and recall written down. It carries evidence and confidence by
@@ -356,7 +356,7 @@ be making staffing decisions from theory.
 
 Correct, and I said so before you did. It is production-shaped, not
 production-hardened. The gap is about a week, it is the first item in my day-30
-plan, and I would not put a Pressbox number in front of the masthead until it is
+plan, and I would not put a Data Dumpster number in front of the masthead until it is
 closed. What the artifact demonstrates is judgement about architecture, honesty
 and product decisions. It does not demonstrate operational maturity, and I would
 not claim it does.

@@ -1,4 +1,4 @@
-# Pressbox: anticipated objections, newsroom and marketing
+# Data Dumpster: anticipated objections, newsroom and marketing
 
 **What this is.** Matt's own preparation material, written for Matt. Every objection
 below is inferred from working notes, product docs and code in this repo. Nothing
@@ -6,7 +6,7 @@ here is a quote, a position, or a statement by any actual person at Boston Globe
 Media. Nobody said these things. They are the questions the work invites, sorted by
 the function that would ask them, so the answers exist before the room does.
 
-**Scope.** Pressbox at https://pressbox-kappa.vercel.app. Ninety-day window.
+**Scope.** Data Dumpster at https://pressbox-kappa.vercel.app. Ninety-day window.
 Bluesky and RSS ingest only. RSS carries no engagement, so every engagement number
 in this document is a Bluesky number. 1,429 posts across five companies, roughly
 sixteen posts a day across the whole landscape.
@@ -92,7 +92,7 @@ instrument. Lead with that framing and it survives the room.
 - The competitive set gets a newsroom owner too. Share of voice and share of
   engagement move when the landscape changes, without anyone changing behaviour. Who
   is in the landscape is an editorial judgement. Put it on the record.
-- Nothing in Pressbox feeds a performance review. Say it in writing. If you do not
+- Nothing in Data Dumpster feeds a performance review. Say it in writing. If you do not
   say it, people will assume the opposite, and they will be assuming it about a tool
   built by the team they already believe is grading them.
 
@@ -128,7 +128,7 @@ week over week, and use the cross-company rate only when the volumes are compara
 
 The second-order version of the same question, which is the one an editor who has
 been through a paywall conversation will ask: **does any of this convert?** The
-answer is no, and the answer has to be no out loud. Pressbox has no attribution. It
+answer is no, and the answer has to be no out loud. Data Dumpster has no attribution. It
 never touches a subscription start. Consumer revenue is the business. Bluesky
 reactions are not a leading indicator of it and nothing in this system claims they
 are. If you let anyone believe otherwise for one meeting, you will spend a quarter
@@ -148,7 +148,7 @@ The Globe is a metered, paid, consumer-revenue product. Boston.com is the free f
 door. Its own strategy work describes it as the product for people who will never pay
 for the Globe, sponsorship-first, no paywall, ever. Its social channel is doing
 reach and referral work, not conversion work. Kaitlyn Johnston's referral strategy
-runs through NextDoor, Teads and Yahoo, none of which Pressbox can see. Ranking those
+runs through NextDoor, Teads and Yahoo, none of which Data Dumpster can see. Ranking those
 two brands in one column produces a number whose only actionable reading is that
 Boston.com should behave more like the Globe. The brand strategy explicitly rejects
 that. The leaderboard would be quietly arguing against the plan.
@@ -241,7 +241,7 @@ and because the surrounding history gives that reading somewhere to land.
 The timing makes it worse. There is a live cannibalization argument about a different
 Platforms-built product. There is an unresolved question about paywall behaviour on
 links out of that product. There is a McGrory meeting on the calendar for tomorrow
-that exists to settle it. **Do not put Pressbox anywhere near that meeting.** One
+that exists to settle it. **Do not put Data Dumpster anywhere near that meeting.** One
 Platforms product under scrutiny is a conversation. Two is a pattern, and the pattern
 becomes the story.
 
@@ -272,7 +272,7 @@ becomes the story.
 
 Not the leaderboard. Not the brief. The outlier score on Social Posts.
 
-Concretely. A social editor opens Pressbox at nine in the morning and sees, in one
+Concretely. A social editor opens Data Dumpster at nine in the morning and sees, in one
 filterable table, every post from every competitor in the landscape scored against
 that competitor's own median for that platform in that window. A 4.0 means the post
 did four times what that account normally does. The Globe's cycling advocate post
@@ -370,7 +370,7 @@ believe it too much, and both are expensive.
    computes z-scores; the leaderboard does not.
 6. **There are no impressions, anywhere.** Engagement rate by view is undefined for
    essentially every competitor on every platform, because no public API exposes
-   impressions for content you do not own. Pressbox correctly stores NULL rather than
+   impressions for content you do not own. Data Dumpster correctly stores NULL rather than
    zero. But it means the system cannot distinguish "fewer people saw it" from
    "people saw it and did not react." That distinction is the entire question a
    marketing leader is asking, and this tool cannot answer it.
@@ -382,7 +382,7 @@ sample floor, and a look at whether the rank survives removing the top five post
 each account. That last test takes an afternoon and it is the one that would settle
 it.
 
-## 3. What Pressbox does not measure that marketing is accountable for
+## 3. What Data Dumpster does not measure that marketing is accountable for
 
 Name this gap yourself, completely, in one breath. If a brand leader assembles this
 list on their own during the demo, you have lost the room. Most of these are
@@ -390,14 +390,14 @@ deliberate non-goals in the PRD, which is a defensible position, but only if you
 so first.
 
 - **Paid social. Not measured, ever.** Explicit non-goal. Facebook Ads reporting is a
-  genuine Rival IQ feature that Pressbox will not have. The Keywee subscriber
+  genuine Rival IQ feature that Data Dumpster will not have. The Keywee subscriber
   acquisition campaigns and the per-desk paid budgets run out of your own team are
   invisible to this tool. If the Globe needs paid social reporting, that is an
   argument for keeping a vendor, and your own build-versus-buy doc says so.
 - **Campaign attribution. Not measured.** Nothing connects a post to a click to a
   session to a subscription start. Posted URLs shows what a competitor links to. It
   does not show what converted, for them or for us.
-- **Subscription conversion. Not measured.** Pressbox and the 260K and 313K numbers
+- **Subscription conversion. Not measured.** Data Dumpster and the 260K and 313K numbers
   never touch. There is no path in the schema between an engagement and a revenue
   event, and building one is a different product.
 - **Brand sentiment. Not measured, by design.** Explicit non-goal: this is not social
@@ -413,14 +413,14 @@ so first.
   search, no push. Marketing is accountable for a funnel and this measures one
   organic slice of one stage of it.
 
-Summary line: today Pressbox measures organic reactions on one free text platform for
+Summary line: today Data Dumpster measures organic reactions on one free text platform for
 five publishers. That is a slice of a slice. It is a real slice and it is honest
 about its edges, which is more than the incumbent, but it is not a marketing
 performance system and it should never be introduced as one.
 
 ## 4. Data governance and bring-your-own-model
 
-**What reassures.** Pressbox ships no inference. The organisation points it at a
+**What reassures.** Data Dumpster ships no inference. The organisation points it at a
 model it already controls: an Anthropic key, an Azure deployment, or an Ollama box in
 the building with no network egress at all. Model API keys and platform credentials
 are encrypted at rest with AES-256-GCM. Every AI call writes a row with org,
@@ -492,12 +492,12 @@ than a demo would be.
 6. **A build-versus-buy answer with real numbers.** Every SLT member will ask what this
    saves. Have the Rival IQ contract value, the renewal date, and the honest statement
    that Rival IQ has a decade of stored time series including CrowdTangle-era Facebook
-   data that cannot be reconstructed and that Pressbox starts its clock the day
+   data that cannot be reconstructed and that Data Dumpster starts its clock the day
    ingestion starts.
 7. **A share URL policy.**
 8. **The manual log started.** Your own success metric that matters is decisions
    changed, target four a quarter. Today it is zero, because it has not been running.
-   Four logged instances of a Pressbox number changing what got published or promoted
+   Four logged instances of a Data Dumpster number changing what got published or promoted
    is a far better SLT story than any chart.
 
 **Sequencing.** Newsroom first, one to one, small. Then marketing, by function. Then a
@@ -544,7 +544,7 @@ to apples. That is correct.
 The collision is not about the facts. It is about whether the number needs a public
 response at all. Marketing will want to close the gap. The newsroom will want to
 refuse the frame, and will read any effort to close the gap as exactly the engagement
-chasing they objected to in the first place. This is the argument where Pressbox goes
+chasing they objected to in the first place. This is the argument where Data Dumpster goes
 from a tool to a wedge. Have a position before it starts: the gap gets explained, not
 closed, and nothing about publishing changes on the basis of it.
 

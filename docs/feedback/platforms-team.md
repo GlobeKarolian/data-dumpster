@@ -1,4 +1,4 @@
-# Pressbox: Platforms team review
+# Data Dumpster: Platforms team review
 
 > **THIS IS A SIMULATED REVIEW.** Nothing below was said by a real person. It is a
 > role-played critique generated from Matt's own notes (memory/context/company.md,
@@ -30,9 +30,9 @@ Here is my Tuesday. I pull the landscape numbers, I write the Platforms Dashboar
 Digest, it goes out via Mailsuite, and then people ask me questions about it for two
 days. That is the cadence. Any tool either shortens that or it does not exist to me.
 
-Pressbox shortens the part where I defend a number and lengthens the part where I
+Data Dumpster shortens the part where I defend a number and lengthens the part where I
 gather them. Those are not the same size. The gathering is most of the work. If I still
-have to open Rival IQ for Instagram and Facebook, then Pressbox is a second tab, and a
+have to open Rival IQ for Instagram and Facebook, then Data Dumpster is a second tab, and a
 second tab is not a replacement, it is a tax. Say that out loud in whatever deck this
 gets pitched in, because if leadership hears "internal Rival IQ replacement" and the
 reality is "Bluesky and RSS," that gap comes back to my team, not to the person who
@@ -65,7 +65,7 @@ once made me do that, and if it did, it would be their problem and not mine.
 
 **Handoff.** I have just watched what happens when a person goes out and the async
 handoff does not fully happen. Everything routed through one head becomes same-day
-urgent for whoever is left. Pressbox as currently constituted is entirely in one head.
+urgent for whoever is left. Data Dumpster as currently constituted is entirely in one head.
 Before anyone on my team is asked to depend on it for a weekly deliverable, I want a
 named owner who is not Matt, and I want to know what that person is allowed to fix.
 
@@ -86,7 +86,7 @@ already pay for.**
 I want to lead with that because it is the thing I would actually fight for. No vendor
 in our stack tells me what a competitor is driving traffic to, grouped by domain and by
 URL, with engagement per link. Rival IQ does not. Conductor does not. NewzDash does not.
-SEMRush gets me a keyword-shaped shadow of it after the fact. Pressbox gets me the
+SEMRush gets me a keyword-shaped shadow of it after the fact. Data Dumpster gets me the
 actual link the Herald put in front of an audience on Tuesday and how it did. That is a
 search and audience input I have wanted for two years and could not buy.
 
@@ -128,8 +128,8 @@ cost.
 **And the thing I will say in the meeting whether or not anyone wants to hear it.** I am
 down a person. Ronke is gone, the SEO Editor backfill is unresolved, and I have a
 resourcing meeting on the calendar about exactly this. A tool built in a day is not a
-headcount. If Pressbox exists and the answer to my backfill becomes "you have Pressbox
-now," I would rather Pressbox did not exist. Please do not let anyone upstairs draw that
+headcount. If Data Dumpster exists and the answer to my backfill becomes "you have Data Dumpster
+now," I would rather Data Dumpster did not exist. Please do not let anyone upstairs draw that
 line.
 
 ---
@@ -145,7 +145,7 @@ Published rate is roughly $239 to $559 a month, fifteen percent off annual, abou
 a month per five extra companies. Call it three to seven thousand a year. That is real
 money and I will not pretend otherwise, but put it next to Conductor at thirty thousand
 and Keywee spend and the picture changes. Nobody upstairs is going to give this team a
-standing ovation for saving four thousand dollars. If the case for Pressbox is cost, the
+standing ovation for saving four thousand dollars. If the case for Data Dumpster is cost, the
 case is weak. If the case is "it does things Rival IQ cannot do," which is what Marc is
 actually describing with posted URLs, then say that and stop leading with the price.
 
@@ -179,12 +179,12 @@ unsanctioned scraper. Not doing that.
 **Four. What we actually lose when we drop Rival IQ, itemized.**
 
 - **The history.** They have been collecting since about 2013. That includes
-  CrowdTangle-era Facebook that does not exist anywhere else on earth. Pressbox starts
+  CrowdTangle-era Facebook that does not exist anywhere else on earth. Data Dumpster starts
   its clock the day we run ingest. The day the Rival IQ contract lapses, that history is
   gone and it is not recoverable at any price.
 - **Somebody to call.** This is the one people underrate. When Apple flagged the
   Instagram embed bug, there was a ticket and a human and it got fixed. When Meta hacked
-  our account, there was an escalation path. With Pressbox the escalation path is
+  our account, there was an escalation path. With Data Dumpster the escalation path is
   Slacking the VP of Platforms, and I have watched what one person's absence does to a
   handoff this month.
 - **The export clause.** Before anyone decides anything, I want to know what Rival IQ
@@ -192,7 +192,7 @@ unsanctioned scraper. Not doing that.
   format? Is there a window? If the answer is that we get a CSV dump on request, we
   should request it now while we are a paying customer in good standing, not after we
   have given notice. That is a two week task and it should start regardless of what we
-  decide about Pressbox.
+  decide about Data Dumpster.
 - **Renewal timing.** I need the actual renewal date and the notice period on the
   calendar. Not "sometime this year." If the auto-renew fires while we are still
   evaluating, we have decided by accident.
@@ -205,8 +205,8 @@ second engineer, no runbook, no support contract, no ticket queue. If it breaks 
 before a big story, the team's options are wait or go without. Rival IQ costs us four
 thousand a year partly so that a Tuesday morning outage is somebody else's emergency.
 
-I am not saying kill it. I am saying that the honest comparison is not "Pressbox versus
-$4k a year." It is "Pressbox plus an owner plus a runbook plus whatever data we buy to
+I am not saying kill it. I am saying that the honest comparison is not "Data Dumpster versus
+$4k a year." It is "Data Dumpster plus an owner plus a runbook plus whatever data we buy to
 make it useful, versus $4k a year and a support email address." Write that comparison
 down honestly and I will help sell it. Write the other one and I will not.
 
@@ -255,7 +255,7 @@ performance to a desk and a tag, automatically, on a schedule, that nobody can e
 after the fact, is the closest thing to protection I have been offered. That is a real
 reason to want this to work.
 
-Which is also why I have a question about the briefs. When Pressbox generates the weekly
+Which is also why I have a question about the briefs. When Data Dumpster generates the weekly
 brief and it goes upward, whose name is on it? If the answer is that it just appears with
 no attribution, then we have built a machine that produces credit-free work, and I have
 opinions about how that has gone historically. I would like the brief to name who ran it

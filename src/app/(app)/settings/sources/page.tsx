@@ -87,7 +87,7 @@ export default async function SourcesPage({
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           A channel is one company’s presence on one platform. The dot beside each row is the honest
-          freshness signal: every comparison elsewhere in Pressbox is only as current as the feed
+          freshness signal: every comparison elsewhere in Data Dumpster is only as current as the feed
           behind it, and a silently stale channel drags an average down without ever looking wrong.
         </p>
       </div>

@@ -1,4 +1,4 @@
-# Pressbox: product requirements
+# Data Dumpster: product requirements
 
 **Owner:** Matt Karolian
 **Status:** v1 built and deployable. This document describes what exists, what
@@ -58,7 +58,7 @@ the plumbing is proven.
 
 ### Social editor (primary, daily)
 
-The person publishing. Uses Pressbox two to four times a day.
+The person publishing. Uses Data Dumpster two to four times a day.
 
 - When a post underperforms, I want to know whether the whole category was flat
   that day, so I do not rewrite a strategy over one bad afternoon.
@@ -73,7 +73,7 @@ relative to that account's own median rather than to anyone else's scale.
 
 ### Audience development lead (primary, weekly)
 
-Owns the number. Uses Pressbox weekly and before every planning cycle.
+Owns the number. Uses Data Dumpster weekly and before every planning cycle.
 
 - I want one fair cross-company comparison I can put in front of the masthead
   without having to defend the denominator.
@@ -148,7 +148,7 @@ The alternative would be engagement rate by view, which is a truer read because
 it measures against people who actually saw the content rather than people who
 could have. It is unusable here. No public API exposes impressions for content
 you do not own, on any platform, so the metric is undefined for essentially every
-competitor. Pressbox stores it as NULL rather than 0 in that case, so the metrics
+competitor. Data Dumpster stores it as NULL rather than 0 in that case, so the metrics
 layer can distinguish "not exposed" from "nobody engaged".
 
 ### Rules that are enforced in code, not in a style guide
@@ -259,7 +259,7 @@ token and model key, constant-time bearer comparison on the cron routes.
   tagging. A sentiment score with no quoted evidence is a number nobody can check.
 - **Multi-brand rollup.** One view across Globe, Boston.com and STAT. The schema
   supports it today; the navigation does not.
-- **Read-only API.** For pulling Pressbox numbers into other Globe tooling.
+- **Read-only API.** For pulling Data Dumpster numbers into other Globe tooling.
 
 ---
 
@@ -267,32 +267,32 @@ token and model key, constant-time bearer comparison on the cron routes.
 
 Stated so nobody has to relitigate them.
 
-**Not a publishing or scheduling tool.** Pressbox does not post. It never holds a
+**Not a publishing or scheduling tool.** Data Dumpster does not post. It never holds a
 write token. That is a different product with a different risk profile and there
 are good ones already.
 
 **Not social listening.** Brand mention monitoring across the open web is a
-separate data problem with separate vendors. Pressbox measures published channel
+separate data problem with separate vendors. Data Dumpster measures published channel
 performance, not conversation about the brand.
 
 **Not paid media reporting.** Facebook Ads reporting is a real Rival IQ feature
-and Pressbox will not have it. If the Globe needs paid social reporting, that is
+and Data Dumpster will not have it. If the Globe needs paid social reporting, that is
 an argument for buying, and it is in "docs/BUILD-VS-BUY.md".
 
 **No estimated or modelled metrics.** Rival IQ sells AI-estimated impressions.
-Pressbox will not ship one. An estimate presented alongside measured numbers gets
+Data Dumpster will not ship one. An estimate presented alongside measured numbers gets
 treated as measured within one meeting, and the entire trust argument for this
 product collapses the first time somebody discovers a headline figure was
 inferred. Blanks and labelled gaps only.
 
-**No scraped data.** Where an API forbids competitor access, Pressbox reports the
+**No scraped data.** Where an API forbids competitor access, Data Dumpster reports the
 gap. A vendor could sell scraped TikTok data. It breaks without warning, and it
 is not defensible if the Globe is ever asked where a number came from.
 
 **Not a hosted multi-customer SaaS.** It is multi-tenant so Globe brands can
 coexist. It is not a business.
 
-**No hosted model.** Pressbox will never ship inference. If it did, every
+**No hosted model.** Data Dumpster will never ship inference. If it did, every
 argument in "docs/BYO-MODEL.md" would be false.
 
 ---
@@ -339,7 +339,7 @@ survives. Track it by hand for the first quarter.
 
 ### The one that matters
 
-**Decisions changed.** Count the times a Pressbox number altered what got
+**Decisions changed.** Count the times a Data Dumpster number altered what got
 published, what got promoted, or where a person was assigned. Target is four a
 quarter, which sounds low and is not. This has to be logged manually, in a shared
 doc, by the audience development lead. There is no instrumentation for it and
@@ -362,7 +362,7 @@ on the rate. The measurement is whether an X-sourced number ever changes a
 decision in the first quarter. If not, drop it and save the line item.
 
 **How much history matters.** Rival IQ's genuine advantage is a decade of stored
-time series. Pressbox starts at zero. The open question is whether newsroom
+time series. Data Dumpster starts at zero. The open question is whether newsroom
 decisions actually depend on 24-month comparisons or on 90-day ones. My read is
 90 days, but I have not tested it, and if I am wrong that is a real argument for
 buying.

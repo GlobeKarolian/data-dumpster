@@ -110,7 +110,7 @@ export function ModelConnections({
         <div>
           <CardTitle>Connections</CardTitle>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Every AI feature in Pressbox runs through one of these. There is no fallback to a model
+            Every AI feature in Data Dumpster runs through one of these. There is no fallback to a model
             you did not configure.
           </p>
         </div>
@@ -141,7 +141,7 @@ export function ModelConnections({
           compact
           icon={Cpu}
           title="No model connected"
-          description="Briefs, Ask and AI tagging are switched off until Pressbox has an endpoint to call. Point it at whatever inference you already pay for."
+          description="Briefs, Ask and AI tagging are switched off until Data Dumpster has an endpoint to call. Point it at whatever inference you already pay for."
         />
       ) : (
         <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">

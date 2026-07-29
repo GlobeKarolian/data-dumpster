@@ -1,7 +1,7 @@
 /**
  * The provider table.
  *
- * Every provider Pressbox knows how to speak to is listed here exactly once,
+ * Every provider Data Dumpster knows how to speak to is listed here exactly once,
  * keyed by the same identifiers as the `model_provider` Postgres enum. Settings
  * renders the picker straight off listProviders(), so adding a provider is one
  * file plus one entry — no UI work, no migration beyond the enum.
@@ -41,7 +41,7 @@ const bedrockProvider: ModelProvider = {
   suggestedModels: [],
   complete() {
     return Promise.reject(new ModelError(
-      'AWS Bedrock is not yet implemented in Pressbox because it requires SigV4 request signing. '
+      'AWS Bedrock is not yet implemented in Data Dumpster because it requires SigV4 request signing. '
       + 'In the meantime, put an OpenAI-compatible gateway in front of Bedrock (LiteLLM, or the AWS '
       + 'bedrock-access-gateway) and configure it here as an "OpenAI-compatible endpoint".',
       { provider: 'bedrock', retryable: false },

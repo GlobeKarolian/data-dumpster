@@ -30,7 +30,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'ok
 /**
  * The verification panel.
  *
- * Rival IQ will print "engagement up 265,895.2%" without blinking. Pressbox
+ * Rival IQ will print "engagement up 265,895.2%" without blinking. Data Dumpster
  * generates prose only from a pre-computed fact sheet and then, mechanically and
  * without a model, checks every number in the finished text back against that
  * sheet. What you are looking at is the result of that check, stored with the

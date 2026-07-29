@@ -2,10 +2,11 @@ import type { Metadata } from 'next';
 import { AuthError } from 'next-auth';
 import { signIn } from '@/auth';
 import { LoginForm, type LoginState } from '@/components/auth/login-form';
+import { DumpsterLogo } from '@/components/shell/logo';
 
 export const metadata: Metadata = {
   title: 'Sign in',
-  description: 'Sign in to Pressbox.',
+  description: 'Sign in to Data Dumpster.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic';
 const ERROR_COPY: Record<string, string> = {
   CredentialsSignin: 'That email and password combination is not recognized.',
   Configuration: 'Authentication is not configured correctly on the server. Check AUTH_SECRET and DATABASE_URL.',
-  AccessDenied: 'That account does not have access to this Pressbox instance.',
+  AccessDenied: 'That account does not have access to this Data Dumpster instance.',
 };
 
 export default async function LoginPage({
@@ -57,17 +58,7 @@ export default async function LoginPage({
     <div className="flex min-h-dvh">
       <div className="flex w-full flex-col justify-center px-6 py-12 lg:w-[26rem] lg:shrink-0 lg:border-r lg:border-zinc-200 lg:px-10 dark:lg:border-zinc-800">
         <div className="mx-auto w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2">
-            <span
-              aria-hidden
-              className="flex h-7 w-7 items-center justify-center rounded bg-accent-600 text-xs font-bold text-white"
-            >
-              P
-            </span>
-            <span className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Pressbox
-            </span>
-          </div>
+          <DumpsterLogo className="mb-8" />
 
           <h1 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Sign in
@@ -118,7 +109,7 @@ export default async function LoginPage({
                 Inference you control
               </h3>
               <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Point Pressbox at your own Anthropic account, your Azure deployment, or a box behind
+                Point Data Dumpster at your own Anthropic account, your Azure deployment, or a box behind
                 the firewall. No newsroom content goes anywhere the newsroom did not choose.
               </p>
             </li>

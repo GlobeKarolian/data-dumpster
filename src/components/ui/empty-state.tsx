@@ -19,7 +19,7 @@ export interface EmptyStateProps {
 /**
  * The zero-data state.
  *
- * Pressbox will be seen for the first time with an empty database, so this
+ * Data Dumpster will be seen for the first time with an empty database, so this
  * component decides whether the product reads as unfinished or as waiting. It
  * always names the thing that is missing and offers the next action.
  */

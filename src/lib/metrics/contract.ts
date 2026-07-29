@@ -1,5 +1,5 @@
 /**
- * The read contract. Everything that renders a number in Pressbox gets it from
+ * The read contract. Everything that renders a number in Data Dumpster gets it from
  * one of these functions, implemented in `./queries.ts`.
  *
  * Server Components import these directly (no HTTP hop). API routes in

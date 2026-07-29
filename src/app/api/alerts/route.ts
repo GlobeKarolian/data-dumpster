@@ -56,7 +56,7 @@ export const GET = apiHandler(async () => {
   /**
    * Destinations are projected down to their kind before they leave the server.
    * A Slack incoming-webhook URL is a bearer credential: whoever holds it can
-   * post into the newsroom's channel as Pressbox. This endpoint is readable by
+   * post into the newsroom's channel as Data Dumpster. This endpoint is readable by
    * any signed-in member including a viewer, and the UI only ever branches on
    * `type`, so the URL has no reason to be in the response at all.
    */

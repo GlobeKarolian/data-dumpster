@@ -19,7 +19,7 @@ export interface ProviderInfo {
 
 /** One line of plain speech per provider, for the form. Not marketing copy. */
 export const PROVIDER_NOTE: Record<ModelProviderId, string> = {
-  anthropic: 'Your own Anthropic API key. Billing lands on your Anthropic account, not on a Pressbox invoice.',
+  anthropic: 'Your own Anthropic API key. Billing lands on your Anthropic account, not on a Data Dumpster invoice.',
   openai: 'Your own OpenAI key, on your organization’s existing quota and data-retention terms.',
   google: 'Gemini through the Google AI API, using a key from your Google Cloud project.',
   azure_openai: 'An Azure OpenAI deployment inside your own tenant, with your region and your compliance boundary.',

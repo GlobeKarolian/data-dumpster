@@ -1,5 +1,5 @@
 /**
- * Pressbox analytics query engine -- the only place in the app that turns a
+ * Data Dumpster analytics query engine -- the only place in the app that turns a
  * question into SQL.
  *
  * Three rules govern everything below.
@@ -202,7 +202,7 @@ function safeDivNull(numerator: number, denominator: number): number | null {
  * "+265,000%" when a competitor went from 1 engagement to 2,650 -- a figure that is
  * arithmetically defensible and analytically worthless, because it tells you about
  * the size of the denominator rather than about the business. Growth from nothing is
- * not a percentage; it is a new-activity event, and Pressbox surfaces it as a
+ * not a percentage; it is a new-activity event, and Data Dumpster surfaces it as a
  * caveat and an anomaly instead of as a headline number. The UI renders `null` as an
  * em dash with "no prior activity" on hover.
  */
@@ -236,7 +236,7 @@ function dayParam(d: Date): SQL {
 }
 
 /**
- * All day/hour bucketing happens in America/New_York. Pressbox is built for a
+ * All day/hour bucketing happens in America/New_York. Data Dumpster is built for a
  * Boston newsroom: "Tuesday morning" has to mean Tuesday morning in Boston, not in
  * UTC, or every cadence heatmap is wrong by four or five hours depending on the
  * season.

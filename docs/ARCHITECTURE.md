@@ -1,4 +1,4 @@
-# Pressbox architecture
+# Data Dumpster architecture
 
 **Audience:** an engineer who will maintain this, or a CTO deciding whether it is
 maintainable. Every claim here is checkable by reading the file named next to it.
@@ -110,7 +110,7 @@ daily series, which means they are well defined for any window and honest about
 negative values. Platforms purge bot accounts and audiences do shrink.
 
 **Post engagement is a flow that keeps flowing.** A post published on Monday
-keeps collecting likes through Thursday. If Pressbox recorded engagement once at
+keeps collecting likes through Thursday. If Data Dumpster recorded engagement once at
 first sight, every velocity curve in the product would be wrong. So there are two
 tables and they do different jobs.
 
@@ -170,7 +170,7 @@ end of that call.
 The API routes still exist, and they are not dead code. They serve three real
 consumers: client components that need to refetch on a filter change without a
 full navigation, the CSV export path, and anything outside the app that wants
-Pressbox numbers. They are thin. Each one validates its input with Zod, resolves
+Data Dumpster numbers. They are thin. Each one validates its input with Zod, resolves
 the org scope from the session, and calls the identical function the Server
 Component calls. The contract they share is "src/lib/metrics/contract.ts", which
 is types only, so a signature change breaks the build in both places at once.
@@ -302,7 +302,7 @@ fourteen competitors cannot lose the night to one expired Instagram token.
                             in briefs.facts             whichever draft scored
                                                         higher. Never a loop.
 
-The model never queries anything. It receives a fact sheet that Pressbox's own
+The model never queries anything. It receives a fact sheet that Data Dumpster's own
 SQL computed and sanity-checked, and it may only restate values that appear in
 it. It may not add, divide, average, project, or annualise. If a number is not in
 the sheet, the correct output is a sentence without a number.

@@ -120,7 +120,7 @@ export function UrlTable({ rows, groupBy }: { rows: UrlRow[]; groupBy: 'domain' 
           compact
           icon={Link2}
           title="No links in this window"
-          description="Pressbox extracts every URL it finds in a post caption. Nothing was linked in this window, or the posts carrying links have not been ingested yet."
+          description="Data Dumpster extracts every URL it finds in a post caption. Nothing was linked in this window, or the posts carrying links have not been ingested yet."
         />
       }
     />

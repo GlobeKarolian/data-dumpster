@@ -4,7 +4,7 @@
  * GET  every landscape in the org with its members and focus company.
  * POST create one.
  *
- * A landscape is the unit of analysis in Pressbox: one focus company plus the
+ * A landscape is the unit of analysis in Data Dumpster: one focus company plus the
  * competitors it is measured against. Membership is stored in a join table so a
  * company can sit in several landscapes without duplication -- the Globe belongs
  * both in "Boston News" and in "Globe Owned Brands", and its numbers must be the

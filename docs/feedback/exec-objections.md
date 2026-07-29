@@ -1,7 +1,7 @@
-# Pressbox: anticipating the hard questions
+# Data Dumpster: anticipating the hard questions
 
 **What this is.** Matt's own preparation material, written for Matt, ahead of
-presenting Pressbox to the CEO. The questions and objections below are inferred
+presenting Data Dumpster to the CEO. The questions and objections below are inferred
 from Matt's own working notes about how proposals get evaluated at Boston Globe
 Media. Nothing here is a quote, a position, or a statement by any actual person.
 No one has said any of it. It is a stress test written in advance so the holes
@@ -64,7 +64,7 @@ solution from an experiment, which is the bar you have been told to clear.
 "Three people, three different decisions.
 
 The social editor, daily. Right now when a post underperforms they cannot tell
-whether their post was bad or the whole market was quiet that day. Pressbox
+whether their post was bad or the whole market was quiet that day. Data Dumpster
 answers that in about ten seconds. That changes what they publish next, and it
 changes whether they spend an hour rewriting something that was fine.
 
@@ -99,7 +99,7 @@ already formed.
 **Draft answer.**
 
 "On cost, buying wins, and it is not close. Rival IQ at the configuration we would
-actually want is about 609 dollars a month, roughly 7,300 a year. Pressbox is
+actually want is about 609 dollars a month, roughly 7,300 a year. Data Dumpster is
 about 250 a month in cash, plus somewhere between a tenth and a seventh of an
 engineer to keep it alive, which prices out between 1,900 and 3,400 a month. Buying
 is three to five times cheaper. I wrote that down in my own document before anyone
@@ -188,7 +188,7 @@ it."
 
 **Why it gets asked.** Because there is a live, specific, unfinished request:
 the weekly report needs a narrative, every metric needs a "so what," and the naked
-tables need to stop. If Pressbox arrives before that request is satisfied, it
+tables need to stop. If Data Dumpster arrives before that request is satisfied, it
 looks like a new project displacing an assigned one. That is the worst possible
 read and it is easy to avoid.
 
@@ -202,7 +202,7 @@ had numbers without a reference point. Our engagement was up eight percent. So
 what? I could not tell you whether that was us or the market, because I had nothing
 to compare against except our own past.
 
-Pressbox produces a written brief. Prose first. Every number in it carries the
+Data Dumpster produces a written brief. Prose first. Every number in it carries the
 comparison, against last period and against the peer set. And here is the part I
 care about: every number in that brief is checked against the source data by code
 before a human reads it, and if a number fails the check the document says so on
@@ -357,7 +357,7 @@ Two separate risks here and I want to keep them apart.
 Risk one is bad arithmetic in the code. Real, and unmitigated today. There are no
 tests. The part that most needs them is the part that adds up the numbers. That is
 about a week of work and it is the first thing in the plan. Until it is done, no
-Pressbox number goes into anything you or the masthead reads. I will hold that
+Data Dumpster number goes into anything you or the masthead reads. I will hold that
 line myself.
 
 Risk two is the AI writing something that is not in the data. That one is already
@@ -586,7 +586,7 @@ credible rather than alarming.
    certainly drop out. Report both versions. If the Globe still trails WBUR and
    GBH with the floor applied, the finding survives its own strongest objection.
 3. **Check it against the tool we already pay for.** Rival IQ covers Instagram,
-   Facebook and X, which Pressbox does not. If the Globe also trails on engagement
+   Facebook and X, which Data Dumpster does not. If the Globe also trails on engagement
    rate there, this is not a Bluesky story. If the Globe leads there, this is a
    platform-specific finding and should be presented as one. **This check is free
    and you can do it before the meeting. Do it.**
@@ -651,7 +651,7 @@ because "a candidate who does should worry you."
 
 That document is an application for a job at a company that is not this one.
 
-**If that file reaches the CEO, the meeting is not about Pressbox anymore.** It is
+**If that file reaches the CEO, the meeting is not about Data Dumpster anymore.** It is
 about whether you are leaving. Every other argument in this preparation document
 becomes irrelevant. This is by a wide margin the biggest risk in the room and it has
 nothing to do with the software.
@@ -758,9 +758,9 @@ question without you having to argue about it.
 
 1. **No named owner by 11 August.** Stop. Keep Rival IQ. The repo goes cold. This
    is the decisive one and it is not close.
-2. **Tests not landed by 27 August.** No Pressbox number appears in any leadership
+2. **Tests not landed by 27 August.** No Data Dumpster number appears in any leadership
    material, ever, until they are. Not a soft rule.
-3. **Pressbox and Rival IQ disagree by more than ten percent on any shared metric
+3. **Data Dumpster and Rival IQ disagree by more than ten percent on any shared metric
    and the cause is not found within a week.** Stop. A measurement tool that cannot
    reconcile against a commercial one is not a measurement tool.
 4. **Fewer than three of the first four weekly briefs actually read.** Stop. An
@@ -798,7 +798,7 @@ any change to what "engagement" means, and metric definition changes are logged
 with a date and a name. That is a half-day of work and it removes the entire
 objection. Do it before the meeting and you get to mention it as a feature.
 
-### 6.2. What happens the first time a Pressbox number contradicts a number
+### 6.2. What happens the first time a Data Dumpster number contradicts a number
 already in a leadership deck?
 
 It will happen, probably in the first month, and the reconciliation meeting that
@@ -811,13 +811,13 @@ you ship, not after the conflict. This costs one email now and a great deal late
 
 Related and worth thinking about: the subscriber number reporting already has a
 precedent for this. There are two numbers, 260K and 313K, and there is a documented
-rule for which audience gets which one. Pressbox needs the same kind of rule and
+rule for which audience gets which one. Data Dumpster needs the same kind of rule and
 you already know what a good one looks like.
 
 ### 6.3. This is one query away from being an individual performance measurement
 system
 
-Pressbox does per-post outlier scoring and desk-level tagging. Point that at
+Data Dumpster does per-post outlier scoring and desk-level tagging. Point that at
 authorship data and you have a per-journalist, per-social-editor performance
 scoreboard. Nobody has to intend that for it to happen. Somebody just has to ask
 for it once and get a yes.
@@ -826,7 +826,7 @@ Labor relations implications have already come up in the AI guidance work for
 exactly this class of reason. The augmentation-not-substitution framing exists
 because someone thought about it in advance.
 
-Decide now, write it down, and say it in the meeting before anyone asks: Pressbox
+Decide now, write it down, and say it in the meeting before anyone asks: Data Dumpster
 does not report at the individual byline or individual staff level, and that is a
 product decision enforced in the code, not a policy in a document. Saying this
 unprompted buys you a lot of trust with a constituency you need and do not currently
@@ -850,12 +850,12 @@ right competitive frame for a consumer subscription business?** The Globe ranks
 36th globally among English-language digital publishers with 100K or more
 subscribers, ahead of the LA Times, and that peer list is the frame that has
 actual leadership attention. On the Press Gazette list our competitors are the LA
-Times, the Chicago Tribune and the Philadelphia Inquirer. In Pressbox they are the
+Times, the Chicago Tribune and the Philadelphia Inquirer. In Data Dumpster they are the
 Boston Herald and GBH.
 
 Those are two different companies. Which one you are measuring says a lot about
 what you think the Globe is competing for. There is a strong argument that the
-right Pressbox landscape includes the Press Gazette peer set, not just the local
+right Data Dumpster landscape includes the Press Gazette peer set, not just the local
 one, and that reframing alone may be the most valuable configuration change
 available. It also connects the tool directly to a number leadership already cares
 about, which is the thing you have been asked to get better at doing.

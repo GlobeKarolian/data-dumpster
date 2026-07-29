@@ -1,10 +1,10 @@
-# Pressbox — build contract for parallel agents
+# Data Dumpster — build contract for parallel agents
 
 Read this before writing a line. It is the only coordination mechanism between us.
 
 ## What we are building
 
-Pressbox is a competitive social intelligence platform for newsrooms — a clone of
+Data Dumpster is a competitive social intelligence platform for newsrooms — a clone of
 Rival IQ, built to be better in three specific ways, targeted at Boston Globe Media
 as an internal tool.
 

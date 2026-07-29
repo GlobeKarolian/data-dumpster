@@ -1,7 +1,7 @@
 /**
  * The metric dictionary.
  *
- * Every number Pressbox puts on screen resolves to exactly one entry here, and the
+ * Every number Data Dumpster puts on screen resolves to exactly one entry here, and the
  * UI renders `description` in a tooltip on hover. That is deliberate: a competitive
  * analytics tool that will not tell an executive how it computed a figure is a tool
  * nobody trusts twice. Descriptions are written for a smart newsroom leader who has
@@ -72,7 +72,7 @@ export const METRIC_DEFS: Record<MetricKey, MetricDef> = {
     higherIsBetter: true,
     precision: 2,
     caveat:
-      'Undefined when a company had no measured audience at the start of the window; Pressbox shows a blank rather than an artificially enormous percentage.',
+      'Undefined when a company had no measured audience at the start of the window; Data Dumpster shows a blank rather than an artificially enormous percentage.',
   },
   posts: {
     key: 'posts',
@@ -146,7 +146,7 @@ export const METRIC_DEFS: Record<MetricKey, MetricDef> = {
     higherIsBetter: true,
     precision: 3,
     caveat:
-      'This is the only metric in Pressbox that is genuinely fair to compare across companies with very different audience sizes. Every other engagement figure — Total Engagement, Engagement per Post, Applause, Views — scales with how many followers a brand already has, so a national outlet will out-rank a metro daily on those regardless of how good the content is. Engagement Rate by Follower divides that advantage back out, which is why it is the metric to lead with when a 4M-follower account and a 40K-follower account appear in the same landscape. Two honest limits: it is undefined for any channel with no follower reading, and it can flatter very small accounts whose handful of loyal followers all engage.',
+      'This is the only metric in Data Dumpster that is genuinely fair to compare across companies with very different audience sizes. Every other engagement figure — Total Engagement, Engagement per Post, Applause, Views — scales with how many followers a brand already has, so a national outlet will out-rank a metro daily on those regardless of how good the content is. Engagement Rate by Follower divides that advantage back out, which is why it is the metric to lead with when a 4M-follower account and a 40K-follower account appear in the same landscape. Two honest limits: it is undefined for any channel with no follower reading, and it can flatter very small accounts whose handful of loyal followers all engage.',
   },
   engagementRateByView: {
     key: 'engagementRateByView',

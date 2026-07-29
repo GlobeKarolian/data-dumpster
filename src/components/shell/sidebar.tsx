@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { DumpsterMark } from './logo';
 import { hrefWithParams } from '@/components/common/use-url-state';
 import { usePersistentFlag } from '@/components/common/use-persistent-flag';
 import { NAV_SECTIONS } from './nav';
@@ -36,13 +37,18 @@ export function Sidebar({ landscapes, activeLandscapeId }: SidebarProps) {
         <Link href="/cross-channel" className="flex min-w-0 items-center gap-2">
           <span
             aria-hidden
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent-600 text-[11px] font-bold text-white"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded bg-accent-600 text-white"
           >
-            P
+            <DumpsterMark className="h-4 w-4" />
           </span>
           {collapsed ? null : (
-            <span className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Pressbox
+            <span className="min-w-0 leading-tight">
+              <span className="block text-[8px] font-semibold uppercase tracking-[0.16em] text-zinc-400 dark:text-zinc-500">
+                Social Media
+              </span>
+              <span className="block truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Data Dumpster
+              </span>
             </span>
           )}
         </Link>

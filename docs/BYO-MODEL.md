@@ -1,7 +1,7 @@
 # Bring your own model
 
-**The argument in one paragraph.** Pressbox ships no inference. An organisation
-points it at a model it already controls, and Pressbox adapts. That single
+**The argument in one paragraph.** Data Dumpster ships no inference. An organisation
+points it at a model it already controls, and Data Dumpster adapts. That single
 decision settles four questions that otherwise get settled by a vendor: where the
 newsroom's content goes, what AI costs, how fast you can adopt a better model,
 and whether AI output is trustworthy enough to put in front of an executive. It
@@ -54,14 +54,14 @@ every user knowing the data flow is governance that fails.
 Bring-your-own-model changes the question from "do we accept this vendor's data
 handling" to "which of our existing, already-reviewed inference relationships
 should this use". If Globe Media has an enterprise agreement with a model
-provider, Pressbox uses it and inherits its terms. If a category of work should
+provider, Data Dumpster uses it and inherits its terms. If a category of work should
 never leave the building, point that org's connection at Ollama and it does not.
 
 ### Running fully on-premises
 
 The Ollama provider takes a baseUrl and no API key. Set a model connection to
 Ollama with a baseUrl of "http://ollama.internal:11434" and a model of
-"llama3.3:70b" or similar, and every AI feature in Pressbox runs against hardware
+"llama3.3:70b" or similar, and every AI feature in Data Dumpster runs against hardware
 the Globe owns, with no network egress.
 
 The honest version of this: it is a governance tool, not a cost tool. For fifty
@@ -80,7 +80,7 @@ and every AI call takes an optional connectionId.
 
 ## 2. Cost transparency versus per-seat AI markup
 
-Every AI call in Pressbox goes through one function, "complete()" in
+Every AI call in Data Dumpster goes through one function, "complete()" in
 "src/lib/ai/client.ts", which writes a row to the ai_usage table: org,
 connection, feature, input tokens, output tokens, cost in dollars, latency,
 success, error. The cost is computed from the per-million-token prices stored on
@@ -200,7 +200,7 @@ prices and an arithmetic you can check.
 New models ship on a Tuesday. In 2026 the interval between a materially better
 model becoming available and it being worth switching to is measured in weeks.
 
-In Pressbox, switching is a text field. A model connection stores a provider, a
+In Data Dumpster, switching is a text field. A model connection stores a provider, a
 free-text model id, and optional prices. The suggested models in the picker are
 suggestions; anything the provider accepts works, including a model released
 after this code was written. Nothing in the application hard-codes a model name.
@@ -221,7 +221,7 @@ tagging is a settings change and a comparison, and it is worth about a 5x cost
 difference.
 
 **Sideways.** If a provider has an outage, changes its terms, or is acquired,
-Pressbox keeps working against a different one. With a hosted-model SaaS, the
+Data Dumpster keeps working against a different one. With a hosted-model SaaS, the
 vendor's model choice is your model choice, including their outages.
 
 The seam that makes this real is in "src/lib/ai/registry.ts". PROVIDERS is a
@@ -330,7 +330,7 @@ silently.
 
 ### Why this matters more than the model choice
 
-The reason an executive can trust a Pressbox brief is not that it was written by a
+The reason an executive can trust a Data Dumpster brief is not that it was written by a
 good model. It is that the numbers came from SQL, the model was only allowed to
 narrate them, and a deterministic checker verified the narration. That is why
 running the whole thing on a cheap model, or on a model inside the building, is a

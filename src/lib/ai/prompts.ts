@@ -1,7 +1,7 @@
 /**
- * Every prompt Pressbox sends, and the honesty contract they all enforce.
+ * Every prompt Data Dumpster sends, and the honesty contract they all enforce.
  *
- * The product promise is narrow and absolute: a Pressbox brief is an AI
+ * The product promise is narrow and absolute: a Data Dumpster brief is an AI
  * document nobody has to fact-check by hand. That is only true if the model is
  * structurally unable to invent a number. So:
  *

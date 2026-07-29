@@ -318,7 +318,7 @@ async function loadFeed(
   // of tool that gets its user agent blocked.
   const headers: Record<string, string> = {
     accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5',
-    'user-agent': 'Pressbox/1.0 (+competitive analytics; feed reader)',
+    'user-agent': 'Data Dumpster/1.0 (+competitive analytics; feed reader)',
   };
   const etag = typeof cursor.etag === 'string' ? cursor.etag : undefined;
   const lastModified = typeof cursor.lastModified === 'string' ? cursor.lastModified : undefined;

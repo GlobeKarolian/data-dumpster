@@ -7,12 +7,12 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 
 export const metadata: Metadata = {
   title: {
-    default: 'Pressbox',
-    template: '%s · Pressbox',
+    default: 'Data Dumpster',
+    template: '%s · Data Dumpster',
   },
   description:
     'Competitive social intelligence for newsrooms. Every metric defined, every AI claim auditable, every model your own.',
-  applicationName: 'Pressbox',
+  applicationName: 'Data Dumpster',
   robots: { index: false, follow: false },
 };
 

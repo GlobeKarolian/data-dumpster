@@ -14,14 +14,14 @@ const STEPS = [
   {
     icon: Target,
     title: 'Group them into a landscape',
-    body: 'A landscape is one focus company plus its rivals. Every screen in Pressbox answers a question about one landscape over one window.',
+    body: 'A landscape is one focus company plus its rivals. Every screen in Data Dumpster answers a question about one landscape over one window.',
     href: '/settings/companies',
     cta: 'Create a landscape',
   },
   {
     icon: Radio,
     title: 'Connect the channels',
-    body: 'Paste a handle or a profile URL for each platform. Pressbox reads public data on a schedule and stores the history so deltas stay honest.',
+    body: 'Paste a handle or a profile URL for each platform. Data Dumpster reads public data on a schedule and stores the history so deltas stay honest.',
     href: '/settings/sources',
     cta: 'Connect channels',
   },
@@ -42,12 +42,12 @@ const STEPS = [
 export function NoLandscape({ reason }: { reason?: string | null }) {
   return (
     <div className="mx-auto max-w-3xl py-8">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-600">Set up Pressbox</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-600">Set up Data Dumpster</p>
       <h2 className="mt-2 text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
         There is no landscape to compare yet.
       </h2>
       <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-        Pressbox measures one competitive set at a time. Four steps stand between an empty database
+        Data Dumpster measures one competitive set at a time. Four steps stand between an empty database
         and a screen that can settle an argument in a Monday meeting.
       </p>
       {reason ? (

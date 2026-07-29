@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The single surface primitive. Everything in Pressbox that holds data sits in
+ * The single surface primitive. Everything in Data Dumpster that holds data sits in
  * one of these: a hairline border, no shadow, no rounded-corner theatrics.
  */
 export function Card({ className, ...props }: React.ComponentProps<'section'>) {

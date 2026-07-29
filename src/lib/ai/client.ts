@@ -1,5 +1,5 @@
 /**
- * The one place the rest of Pressbox talks to a model.
+ * The one place the rest of Data Dumpster talks to a model.
  *
  * Everything AI-shaped in the app funnels through complete(), which means three
  * guarantees hold everywhere for free:
@@ -54,7 +54,7 @@ function envProviderId(): ModelProviderId | null {
     const match = PROVIDER_IDS.find((p) => p === raw);
     if (!match) {
       throw new ModelError(
-        `DEFAULT_MODEL_PROVIDER is set to "${raw}", which is not a provider Pressbox knows. `
+        `DEFAULT_MODEL_PROVIDER is set to "${raw}", which is not a provider Data Dumpster knows. `
         + `Valid values: ${PROVIDER_IDS.join(', ')}.`,
         { provider: 'anthropic', retryable: false },
       );
@@ -93,7 +93,7 @@ const NOTHING_CONFIGURED =
   'No AI model is configured for this workspace. Add a connection in Settings > AI Model '
   + '(Anthropic, OpenAI, Google, Azure OpenAI, any OpenAI-compatible endpoint, or a local Ollama '
   + 'server), or set DEFAULT_MODEL_PROVIDER and the matching API key in the environment. '
-  + 'Pressbox ships no hosted model on purpose: the inference is yours.';
+  + 'Data Dumpster ships no hosted model on purpose: the inference is yours.';
 
 /**
  * Find the connection a request should run on: the named one, else the org

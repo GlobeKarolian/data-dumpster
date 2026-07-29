@@ -73,7 +73,7 @@ control, because the underlying platform APIs will not let them.
 
 | Vendor | Platforms | Owned | Competitor | Published price | Verdict |
 |---|---|---|---|---|---|
-| **Ayrshare** | 13+ incl. TikTok, IG, LI, YT, FB, X, Threads, Bluesky, Pinterest | Full: publish, analytics, comments, DMs | **No.** Analytics are scoped to connected profiles | Premium $149/mo (1 profile), Launch $299/mo (10), Business $599/mo (30) then $8.99/profile to 100, $3.49 to 500, $2.49 above. Min commitment 10 or 30 profiles by tier. Verified on ayrshare.com/pricing | **Disqualified.** Would be a strong pick if Pressbox ever needs to publish |
+| **Ayrshare** | 13+ incl. TikTok, IG, LI, YT, FB, X, Threads, Bluesky, Pinterest | Full: publish, analytics, comments, DMs | **No.** Analytics are scoped to connected profiles | Premium $149/mo (1 profile), Launch $299/mo (10), Business $599/mo (30) then $8.99/profile to 100, $3.49 to 500, $2.49 above. Min commitment 10 or 30 profiles by tier. Verified on ayrshare.com/pricing | **Disqualified.** Would be a strong pick if Data Dumpster ever needs to publish |
 | **Phyllo** | ~20 incl. IG, YT, TikTok, X, Twitch, Snapchat, FB, LinkedIn | Full, via Identity/Connect OAuth | **Partial and creator-shaped.** Phyllo also sells Creator Analytics, Social Listening and Comment Analysis APIs that work by handle without OAuth. Their public-profile tier is real, but it is priced and modeled for influencer discovery, not for a fixed competitive set | Custom quote only. No public rate card. Secondary sources report entry around $199/mo. **I could not verify any dollar figure** | **Conditional.** Worth one sales call for their non-OAuth tier. Do not assume the pricing |
 | **Unipile** | LinkedIn, email, WhatsApp, Slack, Telegram, Instagram DM | Messaging and inbox for connected accounts | **No.** It is a unified inbox, not an analytics source | Approx. EUR 49 / USD 55 per month minimum, roughly EUR 5 per linked account per month, unlimited calls. Medium confidence, from unipile.com/pricing-api via secondary summary | **Disqualified.** Wrong product category entirely |
 | **Mixpost** | FB, IG, X, LinkedIn, Pinterest, others via official APIs | Publish and owned analytics, self-hosted | **No.** Uses the same official APIs we already call | One-time license, self-hosted, MIT-adjacent | **Disqualified.** It is a self-hosted Buffer. It would consume our platform keys, not supply data |
@@ -166,7 +166,7 @@ argument for them. The pricing is the argument against.
 | **Rival IQ** (Quid) | The product we are replacing | No customer-facing bulk data API | Published **$239 to $519/month**, 15% off annual, approx. $50/mo per 5 additional companies, per-seat add-ons | Acquired by NetBase Quid in **December 2021**, not 2025. Quid is the parent; Rival IQ still sells standalone subscriptions |
 
 **Verdict on the category:** if BGM already pays Meltwater or Brandwatch for the
-PR desk, get Pressbox added to that contract's API entitlement before buying
+PR desk, get Data Dumpster added to that contract's API entitlement before buying
 anything new. Otherwise none of these clear the bar. A $27k-to-$50k annual
 contract to feed an internal tool that we are building specifically to avoid a
 $519/month Rival IQ bill is not a coherent purchase.
@@ -223,7 +223,7 @@ a hard spending limit before the first production run.
 
 | Vendor | What it is | Competitor social data? | Price |
 |---|---|---|---|
-| **NewsWhip** | Predictive story and content tracking, engagement on articles across social | **Yes, but article-centric, not account-centric.** It tells you which stories are travelling, not what a competitor's Instagram account did this week. Genuinely useful for a newsroom and complementary to Pressbox rather than substitutable | **No public pricing.** Custom quote. API availability is inconsistently documented across their own site and third-party listings. Ask directly |
+| **NewsWhip** | Predictive story and content tracking, engagement on articles across social | **Yes, but article-centric, not account-centric.** It tells you which stories are travelling, not what a competitor's Instagram account did this week. Genuinely useful for a newsroom and complementary to Data Dumpster rather than substitutable | **No public pricing.** Custom quote. API availability is inconsistently documented across their own site and third-party listings. Ask directly |
 | **Chartbeat** | Real-time first-party newsroom analytics | No. Your sites only | Reported from approx. $7,000/year. Medium confidence |
 | **Parse.ly** (WP VIP) | First-party content analytics with deeper history | No. Your sites only | Reported from approx. $2,000/month at 5M monthly uniques. Medium confidence |
 | **Similarweb** | Web traffic and referral estimates, including social referral share by competitor domain | **Domain-level, not account-level.** Answers "how much of nytimes.com traffic comes from Facebook," not "how did their Facebook page perform" | Self-serve web platform from $125/mo annual. **API is a custom-quoted add-on consumed via Data Credits, with no self-serve tier.** No published API price |
@@ -232,7 +232,7 @@ a hard spending limit before the first production run.
 **Verdict:** none of these substitute for a social data vendor. NewsWhip is the
 one worth a conversation, and it is a different product solving an adjacent
 newsroom problem. Chartbeat and Parse.ly answer "how did our journalism do,"
-which is a first-party question Pressbox is not trying to answer.
+which is a first-party question Data Dumpster is not trying to answer.
 
 ---
 
@@ -283,7 +283,7 @@ Honest read, and I will flag where I am uncertain.
 Scraped endpoints break. TikTok and Instagram change internals without notice.
 A vendor's success rate is a marketing number until you have run it for a
 quarter. Any adapter built on a scraping vendor must degrade to a labelled gap,
-not to a zero. Pressbox is already built this way, which is fortunate.
+not to a zero. Data Dumpster is already built this way, which is fortunate.
 
 ### 7.3 A defensible position, if we want one
 
@@ -328,7 +328,7 @@ clock now, which is free, and to be better on everything that is not history.
 
 ---
 
-## 9. Recommended stack for Pressbox
+## 9. Recommended stack for Data Dumpster
 
 Scale assumption throughout: **10 companies tracked across 6 platforms**, daily
 ingestion, three-day engagement refresh window, newsroom accounts posting roughly

@@ -1,4 +1,4 @@
-# Data access: what Pressbox can actually see, what it costs, and what to do about it
+# Data access: what Data Dumpster can actually see, what it costs, and what to do about it
 
 **Audience:** CTO, CPO, and whoever signs the data contracts.
 **Status:** current as of July 2026. Every figure is dated and sourced. Where I
@@ -7,7 +7,7 @@ am not confident, I say so in the line itself rather than in a footnote.
 The short version: **the competitive social data market got materially worse
 between 2024 and 2026, and the platforms that are open are not the platforms
 that are large.** A newsroom competitive-intelligence product built in 2026 is
-mostly an exercise in being honest about blind spots. Pressbox's differentiator
+mostly an exercise in being honest about blind spots. Data Dumpster's differentiator
 is not that it sees more than Rival IQ. It is that it tells you what it cannot
 see instead of charting a zero.
 
@@ -43,7 +43,7 @@ do not control. That distinction is the entire story.
 
 No platform except LinkedIn and owned Meta/TikTok gives us **impressions for
 content we do not own.** That means `engagementRateByView` is undefined for
-essentially every competitor, everywhere. Pressbox's headline comparability
+essentially every competitor, everywhere. Data Dumpster's headline comparability
 metric is `engagementRateByFollower` precisely because it is the only rate that
 can be computed for a competitor on more than one platform.
 
@@ -145,7 +145,7 @@ The Content Library matters for one thing only: it is where the CrowdTangle-era
 archive lives, and that archive is genuinely unavailable to us. PPCA gets us
 Facebook data from the day we are approved forward. It does not get us history.
 
-**The practical consequence for Pressbox:** Facebook competitor data is
+**The practical consequence for Data Dumpster:** Facebook competitor data is
 obtainable through PPCA, on a timeline measured in weeks and conditional on
 passing App Review. Until then Facebook is owned-only and the product says so.
 Instagram competitor data is separate and unaffected: PPCA is a Pages feature and
@@ -379,7 +379,7 @@ Label these in the product. Do not fill them with estimates.
 
 Infrastructure is separate and small: Neon Postgres and Vercel for a workload
 this size land in the tens of dollars a month, plus whatever the org already
-spends on the inference endpoint it points Pressbox at. Bring-your-own-model
+spends on the inference endpoint it points Data Dumpster at. Bring-your-own-model
 means AI cost is the org's existing contract, not a markup.
 
 **For comparison**, Rival IQ's published plans have historically run from

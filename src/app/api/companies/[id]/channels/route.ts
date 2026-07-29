@@ -52,7 +52,7 @@ function unsupported(platform: Platform): never {
   const reason = UNIMPLEMENTED_REASONS[platform];
   throw new HttpError(
     422,
-    'Pressbox cannot read ' + platform + ' yet.'
+    'Data Dumpster cannot read ' + platform + ' yet.'
       + (reason ? ' ' + reason : '')
       + ' Where the outlet publishes a feed, add it as an RSS channel instead.',
     'no_adapter',
@@ -160,4 +160,53 @@ export const DELETE = apiHandler<{ id: string }>(async (req, ctx) => {
 
   if (deleted.length === 0) throw new AuthError('not_found', 'That channel does not exist.');
   return Response.json({ deleted: deleted.length });
+});
+
+/**
+ * PATCH -- pause, resume, or reclassify a channel.
+ *
+ * Pausing rather than deleting matters. A handle that turns out to be wrong, or
+ * a feed that starts 403ing, should stop being polled without losing the posts
+ * already collected under it. Deleting cascades and takes the history with it,
+ * which is rarely what someone means when they say "stop tracking this".
+ */
+const patchChannelSchema = z.object({
+  channelId: z.uuid(),
+  active: z.boolean().optional(),
+  isOwned: z.boolean().optional(),
+  /** Free-text note explaining a pause, surfaced in the UI. */
+  reason: z.string().trim().max(500).optional(),
+}).refine((b) => b.active !== undefined || b.isOwned !== undefined,
+  'Pass active or isOwned.');
+
+export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
+  const { orgId } = await requireRole('editor');
+  const companyId = idSchema.parse((await ctx.params).id);
+  await assertCompanyInOrg(companyId, orgId);
+
+  const body = await readJson(req, patchChannelSchema);
+
+  const [existing] = await db.select().from(channels)
+    .where(and(eq(channels.id, body.channelId), eq(channels.companyId, companyId)));
+  if (!existing) throw new AuthError('not_found', 'That channel does not exist.');
+
+  const meta: Record<string, unknown> = { ...(existing.meta ?? {}) };
+  if (body.active === false) {
+    meta.disabledReason = body.reason ?? 'Paused from the Sources screen.';
+    meta.disabledAt = new Date().toISOString();
+  } else if (body.active === true) {
+    delete meta.disabledReason;
+    delete meta.disabledAt;
+  }
+
+  const [saved] = await db.update(channels)
+    .set({
+      ...(body.active === undefined ? {} : { active: body.active }),
+      ...(body.isOwned === undefined ? {} : { isOwned: body.isOwned }),
+      meta,
+    })
+    .where(eq(channels.id, body.channelId))
+    .returning();
+
+  return Response.json(saved);
 });

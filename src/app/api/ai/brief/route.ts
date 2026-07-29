@@ -78,7 +78,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     });
   } catch (err) {
     /**
-     * A provider that refused is not a Pressbox bug, and its message already
+     * A provider that refused is not a Data Dumpster bug, and its message already
      * names the fix ("re-enter the key", "no model is configured"). Passing it
      * through as a 502 gives the user something to act on; letting it fall to
      * the generic 500 handler would tell them only that something went wrong.

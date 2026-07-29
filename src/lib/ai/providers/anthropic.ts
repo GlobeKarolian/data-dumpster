@@ -10,7 +10,7 @@
  * Structured output is done with a forced tool call rather than a "please reply
  * with JSON" instruction. Forcing `tool_choice` makes the API itself enforce the
  * schema, which is the difference between usually-valid JSON and always-valid
- * JSON. Pressbox parses these results into user-visible tables, so "usually" is
+ * JSON. Data Dumpster parses these results into user-visible tables, so "usually" is
  * not good enough.
  */
 import {

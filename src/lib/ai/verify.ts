@@ -1,7 +1,7 @@
 /**
  * Deterministic fact-checking of generated prose.
  *
- * This file is the reason a Pressbox brief is worth sending to an executive.
+ * This file is the reason a Data Dumpster brief is worth sending to an executive.
  * The prompt asks the model to only restate numbers from the fact sheet; this
  * checks, without a model, whether it did. Every number in the markdown is
  * extracted, normalised, and matched against the numbers the fact sheet

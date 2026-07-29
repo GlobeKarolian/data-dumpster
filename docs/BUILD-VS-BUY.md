@@ -1,9 +1,9 @@
-# Build versus buy: Pressbox and Rival IQ
+# Build versus buy: Data Dumpster and Rival IQ
 
 **Audience:** whoever signs for either one.
 
 **Bottom line up front.** On pure cost, buying Rival IQ is cheaper than
-maintaining Pressbox, once an engineer's fully loaded time is counted honestly.
+maintaining Data Dumpster, once an engineer's fully loaded time is counted honestly.
 The case for building does not rest on cost and anyone who tells you it does has
 not done the arithmetic. It rests on four capabilities Rival IQ cannot supply at
 any price, and on whether the Globe wants competitive social data to be a
@@ -54,35 +54,35 @@ outrageous is not a document anyone should trust.
 
 ---
 
-## 2. What Rival IQ does well that Pressbox does not
+## 2. What Rival IQ does well that Data Dumpster does not
 
 This list is longer than the one after it, and that is the honest shape of it.
 
 **A decade of history.** Rival IQ has been collecting since roughly 2013.
 Twenty-four months of stored competitor time series on Engage Pro, and behind
 that an archive including CrowdTangle-era Facebook data that no longer exists
-anywhere else. **This cannot be replicated.** Pressbox starts its clock the day
+anywhere else. **This cannot be replicated.** Data Dumpster starts its clock the day
 you run the ingest, and no amount of engineering shortens that. If a decision
 needs a 2019 comparison, there is exactly one place to get it.
 
 **Social listening.** Instant Search across Reddit, X, blogs and millions of
 other sites, plus saved searches for always-on brand and competitor monitoring.
-Pressbox does not do this and it is an explicit non-goal. It is a different data
+Data Dumpster does not do this and it is an explicit non-goal. It is a different data
 problem with different vendors, and it is genuinely useful.
 
 **Paid social reporting.** Facebook Ads reporting and alerting, boosted post
 analytics, and machine-learning detection of whether a competitor boosted an
-organic post. Pressbox has none of this. If the Globe's audience team needs paid
+organic post. Data Dumpster has none of this. If the Globe's audience team needs paid
 and organic in one interface, that is a clean argument for buying.
 
 **Estimated impressions.** They model impressions for competitors on all
-channels. Pressbox deliberately refuses to ship an estimated metric. That is a
+channels. Data Dumpster deliberately refuses to ship an estimated metric. That is a
 principled position and it is also a missing feature, and reasonable people
 prefer a labelled estimate to a blank.
 
 **Reporting polish.** One-click branded exports to PowerPoint, PDF, PNG and CSV,
 scheduled delivery, embeddable links, a Looker Studio connector, and a custom
-chart builder. Pressbox has CSV export and share links. The gap between "I can
+chart builder. Data Dumpster has CSV export and share links. The gap between "I can
 get the data out" and "I can put a client-ready deck in front of a publisher in
 thirty seconds" is real work that is not done here.
 
@@ -95,12 +95,12 @@ Rival IQ's problem. They also carry the Meta App Review and platform partnership
 burden, so a customer OAuths into an already-approved app instead of spending
 weeks in review. That is a genuine, underrated advantage and it is worth money.
 
-**Time to value.** A trial gets you charts this afternoon. Pressbox needs a
+**Time to value.** A trial gets you charts this afternoon. Data Dumpster needs a
 database, a deploy, and, for anything past Bluesky and RSS, API approvals.
 
 ---
 
-## 3. What Pressbox does that Rival IQ cannot
+## 3. What Data Dumpster does that Rival IQ cannot
 
 Shorter list, and each item is structural rather than a matter of engineering
 effort. These are things a vendor with a SaaS business model has a positive
@@ -112,7 +112,7 @@ Ollama box behind the firewall with no network egress. No newsroom content goes
 to a model the newsroom did not choose. A hosted product cannot offer this,
 because their AI feature is a margin line. See "docs/BYO-MODEL.md".
 
-**Verified AI output with an audit trail.** Every number in a Pressbox brief
+**Verified AI output with an audit trail.** Every number in a Data Dumpster brief
 carries the fact-sheet path it came from, a deterministic checker verifies each
 one before a human sees it, and the brief is stored with the exact fact sheet the
 model saw and the verification verdict. When a number is challenged in a meeting,
@@ -153,7 +153,7 @@ conversation or a roadmap request.
 
 ---
 
-## 4. Total cost of ownership for Pressbox
+## 4. Total cost of ownership for Data Dumpster
 
 The build is done, so this is the cost of running it from here. All figures
 monthly.
@@ -200,11 +200,11 @@ across all 183 files, which catches a large class of problems, and the metric
 layer is the part that most needs tests and does not have them. Retrofitting
 meaningful coverage over "src/lib/metrics/queries.ts", "src/lib/ai/verify.ts" and
 the adapter normalisers is roughly a week of work, once. Do it before anyone
-makes a decision on a Pressbox number that they would not make on a spreadsheet.
+makes a decision on a Data Dumpster number that they would not make on a spreadsheet.
 
 ### The comparison, stated fairly
 
-| | Pressbox | Rival IQ Engage Pro, 10 seats |
+| | Data Dumpster | Rival IQ Engage Pro, 10 seats |
 |---|---|---|
 | Cash per month | 225 to 265 | 609 |
 | Engineering per month | 1,700 to 3,100 | 0 |
@@ -239,7 +239,7 @@ to start it.
 
 Compressed, for a slide.
 
-| | Pressbox | Rival IQ |
+| | Data Dumpster | Rival IQ |
 |---|---|---|
 | Competitive metrics on open platforms | Yes | Yes |
 | Facebook competitor data | No, and says so | Thin, post-CrowdTangle |
@@ -272,7 +272,7 @@ updating in March. If the answer to "who fixes this when Instagram changes an
 endpoint" is a shrug, buy.
 
 **Paid social reporting is in scope.** Facebook Ads reporting and boosted-post
-detection are not on the Pressbox roadmap and should not be. That alone justifies
+detection are not on the Data Dumpster roadmap and should not be. That alone justifies
 a licence.
 
 **Social listening is in scope.** Same reasoning.
@@ -284,10 +284,10 @@ compare 2026 against 2019, only Rival IQ can answer, and no build changes that.
 Rival IQ has already done it.
 
 **Nobody has an AI governance requirement.** If no category of Globe content
-needs to stay inside the building, the strongest single argument for Pressbox
+needs to stay inside the building, the strongest single argument for Data Dumpster
 does not apply.
 
-### Build, and maintain Pressbox, if these are true
+### Build, and maintain Data Dumpster, if these are true
 
 **An engineer owns it and wants to.** Necessary, not sufficient.
 
@@ -312,11 +312,11 @@ is the whole ambition, it is overhead.
 **Run both for one quarter, then decide with evidence.**
 
 Buy Rival IQ Drive at 239 a month for three months. That is 717 dollars total and
-it buys three things: the history and benchmark panels Pressbox cannot produce, a
-running check on whether Pressbox's numbers agree with a commercial tool's, and a
+it buys three things: the history and benchmark panels Data Dumpster cannot produce, a
+running check on whether Data Dumpster's numbers agree with a commercial tool's, and a
 fallback if the build stalls.
 
-Run Pressbox in parallel on the free sources: Bluesky, YouTube and RSS. No
+Run Data Dumpster in parallel on the free sources: Bluesky, YouTube and RSS. No
 procurement, no API applications, no approvals. Start the history clock on day
 one, because that clock is the one thing that cannot be bought later.
 
@@ -329,7 +329,7 @@ If the answer is that people used Rival IQ and nobody missed the governance
 story, cancel the build and expand the licence. That would be a good outcome and
 it would have cost one quarter and about 700 dollars to learn.
 
-If the answer is that Pressbox got used, the briefs got forwarded, and the
+If the answer is that Data Dumpster got used, the briefs got forwarded, and the
 governance argument came up in a real conversation, then fund it properly:
 retrofit the test suite, make the refresh window a setting, add Reddit, and start
 the work of joining posted URLs to subscription data. That is the version where

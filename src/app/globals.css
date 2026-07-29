@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
-  Pressbox design tokens.
+  Data Dumpster design tokens.
 
   One accent (Globe red) and a neutral zinc surface stack. Chart chrome is
   expressed as CSS variables so recharts SVG can flip with the color scheme

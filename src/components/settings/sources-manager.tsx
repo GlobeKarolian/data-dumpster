@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, Radio, Trash2 } from 'lucide-react';
+import { Check, Loader2, PauseCircle, PlayCircle, Plus, Radio, Search, Trash2 } from 'lucide-react';
 import { PLATFORMS, PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,7 +63,7 @@ const STATUS_COPY: Record<Status, string> = {
 /**
  * Sources.
  *
- * The status dot is the point of this screen. Every comparison in Pressbox is
+ * The status dot is the point of this screen. Every comparison in Data Dumpster is
  * only as honest as the freshness of the channels behind it, so a stale feed has
  * to be visible here rather than silently dragging an average down.
  */
@@ -72,6 +72,24 @@ export function SourcesManager({ companies }: { companies: CompanySources[] }) {
   const [addingFor, setAddingFor] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+
+  const toggleChannel = async (companyId: string, channelId: string, active: boolean) => {
+    setBusyId(channelId);
+    setError(null);
+    try {
+      const res = await fetch('/api/companies/' + companyId + '/channels', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ channelId, active }),
+      });
+      if (!res.ok) throw new Error(await readApiError(res));
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update the channel.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const removeChannel = async (companyId: string, channelId: string) => {
     setBusyId(channelId);
@@ -150,7 +168,7 @@ export function SourcesManager({ companies }: { companies: CompanySources[] }) {
             <EmptyState
               compact
               title="Nothing connected yet"
-              description="Paste a profile URL or a handle. Pressbox resolves it to a platform id on the first ingest."
+              description="Paste a profile URL or a handle. Data Dumpster resolves it to a platform id on the first ingest."
             />
           ) : (
             <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
@@ -209,18 +227,44 @@ export function SourcesManager({ companies }: { companies: CompanySources[] }) {
                       {channel.postCount.toLocaleString('en-US')}
                     </span>
 
+                    {/* Pause is the safe verb and sits first. Deleting cascades
+                        and takes every post collected under this handle with it,
+                        which is almost never what "stop tracking" means. */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={(channel.active ? 'Pause ' : 'Resume ') + channel.handle}
+                      title={channel.active
+                        ? 'Pause polling. Keeps everything already collected.'
+                        : 'Resume polling.'}
+                      disabled={busyId === channel.id}
+                      onClick={() => toggleChannel(company.id, channel.id, !channel.active)}
+                    >
+                      {busyId === channel.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : channel.active ? (
+                        <PauseCircle className="h-3.5 w-3.5" aria-hidden />
+                      ) : (
+                        <PlayCircle className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+                      )}
+                    </Button>
+
                     <Button
                       size="icon"
                       variant="ghost"
                       aria-label={'Remove ' + channel.handle}
+                      title="Delete this channel and every post collected under it."
                       disabled={busyId === channel.id}
-                      onClick={() => removeChannel(company.id, channel.id)}
+                      onClick={() => {
+                        if (channel.postCount > 0 && !window.confirm(
+                          'Delete ' + channel.handle + '? This also deletes '
+                          + channel.postCount.toLocaleString('en-US')
+                          + ' collected posts and cannot be undone. Pause instead to keep the history.',
+                        )) return;
+                        void removeChannel(company.id, channel.id);
+                      }}
                     >
-                      {busyId === channel.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                      )}
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
                     </Button>
                   </li>
                 );
@@ -233,6 +277,53 @@ export function SourcesManager({ companies }: { companies: CompanySources[] }) {
   );
 }
 
+/** Unwrap the API's { error, code } envelope into a sentence a human can read. */
+async function readApiError(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+      return String((parsed as { error: unknown }).error);
+    }
+  } catch { /* not JSON */ }
+  return text.slice(0, 300) || 'Request failed with status ' + res.status + '.';
+}
+
+interface VerifyWarning {
+  code: string;
+  message: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
+interface VerifyResult {
+  platform: Platform;
+  handle: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  profileUrl: string | null;
+  followers: number | null;
+  alreadyAttached: boolean;
+  warnings: VerifyWarning[];
+}
+
+const SEVERITY_STYLE: Record<VerifyWarning['severity'], string> = {
+  high: 'border-red-300 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300',
+  medium: 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300',
+  low: 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400',
+};
+
+/**
+ * Add a channel in two steps: look it up, then confirm what came back.
+ *
+ * WHY TWO STEPS
+ * "Does this handle exist" is the wrong question. During setup, @thebside
+ * resolved cleanly to a private individual named Kevin with 14 followers, and
+ * @bostonherald to a squatted account with 2. Both would have saved without
+ * complaint, ingested without complaint, and sat in a leaderboard for weeks
+ * looking like competitors who never post. The only reliable check is a human
+ * looking at the account that actually came back, so the form makes that
+ * unavoidable rather than optional.
+ */
 function AddChannelForm({
   companyId,
   existing,
@@ -249,12 +340,36 @@ function AddChannelForm({
   );
   const [input, setInput] = React.useState('');
   const [isOwned, setIsOwned] = React.useState(false);
+  const [checking, setChecking] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [found, setFound] = React.useState<VerifyResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  const submit = async (e: React.FormEvent) => {
+  // Any edit invalidates a previous lookup, so the confirm button can never
+  // apply to an account other than the one on screen.
+  const reset = () => { setFound(null); setError(null); };
+
+  const verify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/companies/' + companyId + '/channels/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ platform, input: input.trim() }),
+      });
+      if (!res.ok) throw new Error(await readApiError(res));
+      setFound(await res.json() as VerifyResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not look that up.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const confirm = async () => {
     setSaving(true);
     setError(null);
     try {
@@ -263,20 +378,7 @@ function AddChannelForm({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ platform, input: input.trim(), isOwned }),
       });
-      if (!res.ok) {
-        // The API returns { error, code }. Showing the raw JSON envelope to a
-        // newsroom user is how you get a support ticket, so unwrap it and fall
-        // back to the body only when it is not the shape we expect.
-        const detail = await res.text();
-        let message = detail.slice(0, 300);
-        try {
-          const parsed: unknown = JSON.parse(detail);
-          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-            message = String((parsed as { error: unknown }).error);
-          }
-        } catch { /* not JSON, use the raw text */ }
-        throw new Error(message || 'Add failed with status ' + res.status + '.');
-      }
+      if (!res.ok) throw new Error(await readApiError(res));
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the channel.');
@@ -286,12 +388,12 @@ function AddChannelForm({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form onSubmit={verify} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
         <Field label="Platform">
           <Select
             value={platform}
-            onChange={(e) => setPlatform(e.target.value as Platform)}
+            onChange={(e) => { setPlatform(e.target.value as Platform); reset(); }}
             options={PLATFORMS.map((p) => ({ value: p, label: PLATFORM_LABELS[p] }))}
           />
         </Field>
@@ -302,8 +404,8 @@ function AddChannelForm({
           <Input
             autoFocus
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="bostonglobe or https://www.instagram.com/bostonglobe"
+            onChange={(e) => { setInput(e.target.value); reset(); }}
+            placeholder="bostonglobe or https://www.tiktok.com/@bostonglobe"
             required
           />
         </Field>
@@ -316,16 +418,76 @@ function AddChannelForm({
         description="Owned channels can use platform insights APIs when credentials are configured, which unlocks reach and view figures that public data does not expose."
       />
 
-      {error ? <p className="text-[11px] text-red-600 dark:text-red-400">{error}</p> : null}
+      {error ? (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
+          {error}
+        </p>
+      ) : null}
+
+      {found ? (
+        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+            Found this account. Is it the right one?
+          </p>
+          <div className="flex items-center gap-3">
+            {found.avatarUrl ? (
+              // Remote avatars from many CDNs; next/image would need every host allow-listed.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={found.avatarUrl}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <span className="h-10 w-10 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                {found.displayName ?? found.handle}
+              </p>
+              <p className="truncate text-xs text-zinc-500">
+                {found.profileUrl ? (
+                  <a href={found.profileUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    @{found.handle}
+                  </a>
+                ) : '@' + found.handle}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="pb-num text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                {found.followers === null ? '--' : found.followers.toLocaleString('en-US')}
+              </p>
+              <p className="text-[11px] text-zinc-500">followers</p>
+            </div>
+          </div>
+
+          {found.warnings.map((w) => (
+            <p key={w.code} className={cn('rounded-md border px-2.5 py-1.5 text-[11px]', SEVERITY_STYLE[w.severity])}>
+              {w.message}
+            </p>
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" variant="primary" size="sm" disabled={saving}>
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-          Add channel
-        </Button>
-        <Button type="button" size="sm" onClick={onCancel}>
-          Cancel
-        </Button>
+        {found ? (
+          <Button type="button" variant="primary" size="sm" disabled={saving} onClick={confirm}>
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Check className="h-3 w-3" aria-hidden />}
+            {found.alreadyAttached ? 'Refresh channel' : 'Yes, add this channel'}
+          </Button>
+        ) : (
+          <Button type="submit" variant="primary" size="sm" disabled={checking || !input.trim()}>
+            {checking ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Search className="h-3 w-3" aria-hidden />}
+            {checking ? 'Looking up' : 'Look up account'}
+          </Button>
+        )}
+        <Button type="button" size="sm" onClick={onCancel}>Cancel</Button>
+        {checking ? (
+          <span className="text-[11px] text-zinc-500">
+            Resolving against the platform. Purchased sources can take up to a minute.
+          </span>
+        ) : null}
       </div>
     </form>
   );
