@@ -169,6 +169,30 @@ export const threadsAdapter: ChannelAdapter = {
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
+    // Preferred vendor first. The profile id is cached on the cursor so only
+    // the first run for a channel pays for the handle-to-id search.
+    const token = ctx.credentials.ensembleDataToken ?? process.env.ENSEMBLEDATA_TOKEN ?? '';
+    if (token) {
+      const { resolveId, fetchPosts } = await import('./threads-ensemble');
+      const { id, profile, audience } = await resolveId(
+        ctx.handle, token, ctx.onApiCall, ctx.signal,
+      );
+      const { posts, warnings } = await fetchPosts(id, ctx.handle, token, {
+        since: ctx.since,
+        until: ctx.until,
+        onApiCall: ctx.onApiCall,
+        signal: ctx.signal,
+      });
+      return {
+        posts,
+        audience: audience ? [audience] : [],
+        profile,
+        cursor: { source: 'ensembledata', threadsId: id, lastRunAt: new Date().toISOString() },
+        hasMore: false,
+        warnings,
+      };
+    }
+
     const apiKey = requireVendorKey(ctx.credentials);
     const row = await readProfile(ctx.handle, apiKey, ctx.onApiCall, ctx.signal);
     const profile = toProfile(row, ctx.handle);

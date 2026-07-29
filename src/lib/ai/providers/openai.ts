@@ -92,9 +92,14 @@ export async function chatCompletion(
    * budget is a ceiling and unused tokens are never billed, so raising a small
    * request costs nothing and removes an entire class of confusing failure.
    */
-  const REASONING_FLOOR = 2048;
   const requested = req.maxTokens ?? conn.maxOutputTokens;
-  const limit = reasoning ? Math.max(requested, REASONING_FLOOR) : requested;
+  // For a reasoning model the caller's figure describes the ANSWER they want,
+  // while the budget has to cover reasoning plus that answer. Those differ by
+  // an order of magnitude on a large prompt, and a caller asking for a
+  // six-sentence reply has no way to know how much thinking it will take. So
+  // reasoning models get the connection's full ceiling, which the user set
+  // deliberately, rather than a per-call guess.
+  const limit = reasoning ? Math.max(requested, conn.maxOutputTokens) : requested;
 
   const payload: Record<string, unknown> = {
     model: t.model,
