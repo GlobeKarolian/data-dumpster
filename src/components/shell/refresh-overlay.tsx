@@ -54,8 +54,14 @@ export function RefreshOverlay({
   // made inset-0 resolve to the 56px header instead of the viewport, so the
   // overlay pinned itself to the top of the page. Portalling to document.body
   // removes the ancestor entirely, which is the only reliable fix.
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
+  // useSyncExternalStore rather than a mount flag set in an effect: it reports
+  // client-versus-server directly, which is what we actually need, and avoids
+  // the synchronous setState the lint rule correctly objects to.
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   React.useEffect(() => {
     const prev = document.body.style.overflow;

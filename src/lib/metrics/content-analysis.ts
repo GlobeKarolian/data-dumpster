@@ -18,7 +18,7 @@
  * because n-gram extraction and stop-word filtering are miserable in SQL and
  * the working set is a few thousand rows.
  */
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte } from 'drizzle-orm';
 import { db } from '@/db';
 import { posts, companies, landscapeCompanies, landscapes } from '@/db/schema';
 import type { Platform, PostType } from '@/lib/types';

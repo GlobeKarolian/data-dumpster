@@ -46,6 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/stories', label: 'Story Cloud', icon: Waypoints },
       { href: '/posts', label: 'Social Posts', icon: FileText },
+      { href: '/content', label: 'Content Analysis', icon: Sparkles },
       { href: '/post-tags', label: 'Post Tags', icon: Tag },
       { href: '/posted-urls', label: 'Posted URLs', icon: Link2 },
     ],
@@ -83,6 +84,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/leaderboard': 'Leaderboards',
   '/stories': 'Story Cloud',
   '/posts': 'Social Posts',
+  '/content': 'Content Analysis',
   '/post-tags': 'Post Tags',
   '/posted-urls': 'Posted URLs',
   '/reports': 'Weekly Report',
