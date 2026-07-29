@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -48,13 +49,23 @@ export function RefreshOverlay({
   // state, so there is no second timer to keep in sync with the first.
   const caption = CAPTIONS[Math.floor(elapsed / 8) % CAPTIONS.length];
 
+  // The topbar is sticky WITH a backdrop-blur, and any ancestor carrying a
+  // filter or transform becomes the containing block for position: fixed. That
+  // made inset-0 resolve to the 56px header instead of the viewport, so the
+  // overlay pinned itself to the top of the page. Portalling to document.body
+  // removes the ancestor entirely, which is the only reliable fix.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+
   React.useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal((
     <div
       role="status"
       aria-live="polite"
@@ -95,5 +106,5 @@ export function RefreshOverlay({
         this runs for a few minutes. You can close this and keep working; the refresh continues.
       </p>
     </div>
-  );
+  ), document.body);
 }
