@@ -228,6 +228,10 @@ function envCredentials(platform: Platform): Record<string, string> {
       pick(out, 'clientSecret', process.env.TIKTOK_CLIENT_SECRET);
       pick(out, 'accessToken', process.env.TIKTOK_ACCESS_TOKEN);
       pick(out, 'refreshToken', process.env.TIKTOK_REFRESH_TOKEN);
+      // Competitor reads are served by a purchased vendor rather than TikTok.
+      // Without this the credential gate skips every competitor channel before
+      // the adapter ever gets a chance to route to the vendor path.
+      pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'linkedin':
       pick(out, 'accessToken', process.env.LINKEDIN_ACCESS_TOKEN);
