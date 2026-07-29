@@ -6,6 +6,7 @@ import { CircleAlert, Loader2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { RefreshOverlay } from './refresh-overlay';
 
 /**
  * The cap is a product fact, not an implementation detail.
@@ -64,6 +65,8 @@ export function RefreshButton({ className }: { className?: string }) {
   const [elapsed, setElapsed] = React.useState(0);
   const [summary, setSummary] = React.useState<RunSummary | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // The overlay is dismissible, but dismissing it must not cancel the run.
+  const [overlayHidden, setOverlayHidden] = React.useState(false);
 
   // Hold the start time rather than resetting a counter inside the effect.
   // Zeroing elapsed on mount of the interval is a synchronous setState in an
@@ -79,6 +82,7 @@ export function RefreshButton({ className }: { className?: string }) {
   }, [running]);
 
   const run = async () => {
+    setOverlayHidden(false);
     startedAtRef.current = Date.now();
     setElapsed(0);
     setRunning(true);
@@ -112,6 +116,9 @@ export function RefreshButton({ className }: { className?: string }) {
 
   return (
     <div className={cn('relative', className)}>
+      {running && !overlayHidden ? (
+        <RefreshOverlay elapsed={elapsed} onCancel={() => setOverlayHidden(true)} />
+      ) : null}
       <Tooltip content={TOOLTIP} side="bottom" align="end" wide>
         <Button
           variant="primary"
