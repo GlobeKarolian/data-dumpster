@@ -19,6 +19,7 @@ import { apiHandler, requireOrg, requireRole, HttpError } from '@/lib/session';
 import { db } from '@/db';
 import { modelConnections, modelProviderEnum } from '@/db/schema';
 import { encrypt, decrypt, maskSecret } from '@/lib/crypto';
+import { checkKeyShape } from '@/lib/ai/key-shape';
 import { getProvider, isProviderImplemented } from '@/lib/ai/registry';
 import { readJson } from '../../_lib/query';
 
@@ -118,6 +119,14 @@ export const POST = apiHandler(async (req: NextRequest) => {
   }
   if (definition.needsApiKey && !body.apiKey) {
     throw new HttpError(422, definition.displayName + ' needs an API key.', 'api_key_required');
+  }
+
+  // A key pasted against the wrong provider stores and encrypts perfectly, then
+  // fails at generation time with "invalid x-api-key", which reads as a bad key
+  // rather than a misfiled one. Refuse it here with the actual explanation.
+  if (body.apiKey) {
+    const shapeProblem = checkKeyShape(body.provider, body.apiKey);
+    if (shapeProblem) throw new HttpError(422, shapeProblem, 'key_shape_mismatch');
   }
 
   /**
