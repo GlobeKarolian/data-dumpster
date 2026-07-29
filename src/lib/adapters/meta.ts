@@ -8,15 +8,30 @@
  *
  * WHAT YOU CAN ACTUALLY SEE HERE — read this before trusting a Meta number:
  *
- *  - **Facebook competitor data does not exist any more.** CrowdTangle was shut
- *    down on 14 August 2024, and it was the only sanctioned route to another
- *    organisation's Page posts. The Graph API has never served Page content to
- *    non-admins without Page Public Content Access, an App Review capability
- *    that is effectively closed to new applicants. The only remaining route is
- *    the Meta Content Library, which is gated to approved academic and
- *    non-profit researchers, is read-only inside Meta's own UI or its Python
- *    SDK, and cannot be pointed at a product like this one. So: Facebook here
- *    is an OWNED-PAGE integration and nothing else.
+ *  - **Facebook competitor data is obtainable, through App Review.** CrowdTangle
+ *    was shut down on 14 August 2024, but it was not the only sanctioned route.
+ *    Meta still ships **Page Public Content Access** (PPCA), an App Review
+ *    feature that lets a live app read public data for Pages it does not
+ *    administer: business metadata, public posts and public comments, plus the
+ *    Pages Search API. Meta's own Pages documentation names the allowed usage as
+ *    "aggregated, anonymized public content for competitive analysis and
+ *    benchmarking", which is exactly what this product does.
+ *    https://developers.facebook.com/docs/features-reference/page-public-content-access/
+ *    https://developers.facebook.com/docs/pages/overview/permissions-features
+ *
+ *    It is gated, not open. It needs App Review, business verification, and
+ *    possibly additional signed contracts. Before approval an app can only read
+ *    Pages whose admin also holds an admin, developer or tester role on the app,
+ *    and once the app is Live it sees no Page public content at all without the
+ *    feature. So the honest framing is "slow and conditional", not "impossible".
+ *    This file implements it as a third read path, gated on an explicit
+ *    ppcaApproved credential so nobody discovers the gate by 400.
+ *
+ *    The Meta Content Library, the research successor to CrowdTangle, remains
+ *    closed to us: it is restricted to approved academic and non-profit
+ *    researchers, read-only through Meta's own UI or Python SDK, and cannot back
+ *    a product like this. It is a fallback we do not qualify for, not the only
+ *    path.
  *
  *  - **Instagram has one narrow exception.** The Business Discovery edge
  *    (business_discovery.username(...)) returns a thin public subset — follower
@@ -36,11 +51,28 @@
  *    total. The per-type breakdown needs six extra sub-queries per post, which
  *    is not worth the quota for a metric nobody ranks on.
  *
- * Quota model: Meta does not publish a call ceiling, it publishes a rolling
- * percentage. The x-app-usage and x-business-use-case-usage headers report how
- * much of a one-hour window you have burned; at 100% you are cut off for the
- * remainder. The rateLimit below is therefore a deliberate under-estimate used
- * only to pace the scheduler, not a documented quota.
+ * Quota model: Meta does not publish a flat call ceiling, it publishes formulas
+ * and a rolling percentage. Confirmed from
+ * https://developers.facebook.com/docs/graph-api/overview/rate-limiting :
+ *
+ *   - Platform rate limit, for calls made with an app or user access token:
+ *     "Calls within one hour = 200 * Number of Users", where Number of Users is
+ *     unique daily active app users. An internal newsroom tool has a handful of
+ *     users, so this is a genuinely small number, on the order of a few hundred
+ *     calls an hour for the whole app.
+ *   - Pages business-use-case rate limit, for calls made with a Page or system
+ *     user access token: "Calls within 24 hours = 4800 * Number of Engaged
+ *     Users", where Engaged Users is users who engaged with that Page per 24
+ *     hours. For a competitor Page we do not own we drive none of that
+ *     engagement, so the ceiling is whatever that Page's own audience gives us.
+ *   - Meta's rate-limit page recommends a system user access token specifically
+ *     to avoid rate limiting when using PPCA.
+ *
+ * Meta publishes no PPCA-specific quota. The x-app-usage and
+ * x-business-use-case-usage headers report how much of the window you have
+ * burned; at 100% you are cut off for the remainder. The rateLimit below is
+ * therefore a deliberate under-estimate used only to pace the scheduler, not a
+ * documented quota.
  */
 import type { Platform } from '@/lib/types';
 import {
@@ -55,6 +87,14 @@ import {
 import { asArray, asCount, asDate, asRecord, asString, fetchJson } from './util/request';
 import { classifyPostType, extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
 
+/**
+ * Pinned deliberately. The current Graph API version is v25.0, released
+ * 18 February 2026
+ * (https://developers.facebook.com/docs/graph-api/changelog/version25.0/), and
+ * this adapter should be moved to it and re-tested. Bumping the constant without
+ * re-reading the changelog is how a field set silently stops returning a metric,
+ * so it is a separate piece of work, not a one-character edit.
+ */
 const GRAPH_VERSION = 'v21.0';
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
@@ -62,6 +102,13 @@ const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PAGE_SIZE = 100;
 /** Hard stop on paging so a Page with a decade of history cannot burn an hour of quota. */
 const MAX_PAGES = 20;
+/**
+ * A much harder stop on the PPCA path. Reading a Page we do not administer burns
+ * quota we do not control the denominator of (see the header), and an over-eager
+ * competitor backfill is the fastest way to take the owned-Page ingest down with
+ * it, because the app-level window is shared.
+ */
+const PPCA_MAX_PAGES = 5;
 
 /**
  * The exact field set documented for this integration. Kept as a constant so
@@ -69,6 +116,15 @@ const MAX_PAGES = 20;
  */
 const FACEBOOK_POST_FIELDS =
   'id,message,created_time,permalink_url,full_picture,shares,comments.summary(true),reactions.summary(true)';
+
+/**
+ * The same list plus `from`, used on the PPCA path.
+ *
+ * /{page-id}/feed can contain posts published by other actors on the Page, and a
+ * visitor post charted as competitor output would be a real measurement error.
+ * `from` is how we tell them apart, so it is requested rather than inferred.
+ */
+const FACEBOOK_FEED_FIELDS = `${FACEBOOK_POST_FIELDS},from`;
 
 /**
  * media_product_type is appended to the documented list on purpose: without it
@@ -352,31 +408,114 @@ function readFacebookPost(raw: Record<string, unknown>): NormalizedPost | undefi
   };
 }
 
+/* ------------------------------------------------- Facebook: which read path */
+
 /**
- * Walk /{page-id}/posts newest-first until we cross `since`.
+ * Owned or competitor, same question the Instagram adapter answers and the same
+ * order of evidence.
+ *
+ *  1. `cursor.__isOwned`, injected by the runner from channels.is_owned and
+ *     stripped again before the cursor is persisted.
+ *  2. Otherwise, if a default Page id is configured, anything that is not it is
+ *     a competitor. With nothing configured we assume owned, because that is the
+ *     behaviour every existing deployment already has.
+ */
+function isOwnedFacebook(ctx: FetchContext): boolean {
+  const flag = ctx.cursor.__isOwned;
+  if (typeof flag === 'boolean') return flag;
+  const configured = ctx.credentials.pageId?.trim();
+  if (!configured) return true;
+  return (ctx.externalId ?? ctx.handle) === configured;
+}
+
+/** Strings a human might type into a "yes we are approved" box. */
+const AFFIRMATIVE = new Set(['1', 'true', 'yes', 'y', 'on', 'approved', 'granted']);
+
+/**
+ * PPCA is an App Review grant, and there is no Graph call that reliably answers
+ * "am I approved" before you make a real request that fails. So the org declares
+ * it, and we believe the declaration. Getting this wrong costs one clear error
+ * message; guessing would cost a silent empty landscape.
+ */
+function isPpcaApproved(credentials: Record<string, string>): boolean {
+  const raw = credentials.ppcaApproved?.trim().toLowerCase();
+  return raw !== undefined && AFFIRMATIVE.has(raw);
+}
+
+const PPCA_DOCS = 'https://developers.facebook.com/docs/features-reference/page-public-content-access/';
+
+/**
+ * The token to read a Page we do not administer with.
+ *
+ * Meta's rate-limit documentation recommends a system user access token
+ * specifically for PPCA, and a system user token is not the same object as the
+ * long-lived Page token used for the owned path, so it gets its own field. If
+ * the org has not set one we fall back to the main token rather than refusing:
+ * the app-level feature grant is what unlocks the read, and some deployments
+ * legitimately use one token for both.
+ */
+function requirePpcaToken(credentials: Record<string, string>): string {
+  const token = credentials.ppcaAccessToken?.trim() || credentials.accessToken?.trim();
+  if (!token) {
+    throw new AdapterError(
+      'Reading a Facebook Page you do not administer needs a token from an app approved for Page '
+      + 'Public Content Access. Add one in Settings, Data Sources. ' + PPCA_DOCS,
+      { platform: FB, retryable: false },
+    );
+  }
+  return token;
+}
+
+/** The one place that says "you have not done the paperwork yet". */
+function refusePpca(handle: string): never {
+  throw new AdapterError(
+    `Facebook competitor data for "${handle}" needs Page Public Content Access (PPCA), and this `
+    + 'organisation has not declared it approved. PPCA is a Meta App Review feature that lets a live '
+    + 'app read public posts, comments and engagement for Pages it does not administer. It requires a '
+    + 'submitted App Review with a screencast, a verified Business, and possibly additional signed '
+    + 'contracts; Meta lists "aggregated, anonymized public content for competitive analysis and '
+    + 'benchmarking" as an allowed usage. Apply, then set the ppcaApproved credential to "true" and '
+    + `supply ppcaAccessToken. See docs/META-PPCA-APPLICATION.md and ${PPCA_DOCS}`,
+    { platform: FB, retryable: false },
+  );
+}
+
+/**
+ * Walk a Page's post edge newest-first until we cross `since`.
+ *
+ * The edge differs by read path and this is not cosmetic. Meta documents
+ * /{page-id}/feed as a PPCA endpoint; it does not list /{page-id}/posts. The
+ * owned path keeps /posts, which returns only the Page's own posts, and the PPCA
+ * path uses /feed, which is what Meta says the feature unlocks. /feed can also
+ * carry posts by others on the Page, so the PPCA caller filters on `from`.
  *
  * `since`/`until` are passed to Graph as unix seconds so the server does the
  * filtering; we still re-check locally because Meta applies them to
  * created_time on the *Page* timezone boundary in some edge cases and has been
  * known to return one extra page either side.
  */
-async function fetchFacebookPosts(ctx: FetchContext, token: string): Promise<{ posts: NormalizedPost[]; hasMore: boolean }> {
+async function fetchFacebookPosts(
+  ctx: FetchContext,
+  token: string,
+  opts: { edge: 'posts' | 'feed'; maxPages: number; authorId?: string }
+    = { edge: 'posts', maxPages: MAX_PAGES },
+): Promise<{ posts: NormalizedPost[]; hasMore: boolean }> {
   const pageId = ctx.externalId ?? ctx.handle;
   const posts: NormalizedPost[] = [];
   let url: string | undefined;
   let pages = 0;
   let hasMore = false;
 
-  while (pages < MAX_PAGES) {
+  while (pages < opts.maxPages) {
     pages++;
     const body: unknown = url
       ? await graph<unknown>(url, { platform: FB, token, ctx })
-      : await graph<unknown>(`${pageId}/posts`, {
+      : await graph<unknown>(`${pageId}/${opts.edge}`, {
         platform: FB,
         token,
         ctx,
         query: {
-          fields: FACEBOOK_POST_FIELDS,
+          fields: opts.edge === 'feed' ? FACEBOOK_FEED_FIELDS : FACEBOOK_POST_FIELDS,
           limit: Math.min(PAGE_SIZE, ctx.limit),
           since: Math.floor(ctx.since.getTime() / 1000),
           until: Math.floor(ctx.until.getTime() / 1000),
@@ -387,6 +526,13 @@ async function fetchFacebookPosts(ctx: FetchContext, token: string): Promise<{ p
     for (const item of items) {
       const rec = asRecord(item);
       if (!rec) continue;
+      // Only on /feed, and only when Graph actually returned `from`. A missing
+      // `from` is treated as "the Page", because dropping every post on a field
+      // Meta declined to serve would silently empty the channel.
+      if (opts.authorId) {
+        const fromId = asString(asRecord(rec.from)?.id);
+        if (fromId && fromId !== opts.authorId) continue;
+      }
       const post = readFacebookPost(rec);
       if (!post) continue;
       if (post.postedAt < ctx.since || post.postedAt > ctx.until) continue;
@@ -402,7 +548,7 @@ async function fetchFacebookPosts(ctx: FetchContext, token: string): Promise<{ p
     url = nextPageUrl(body);
     if (!url) break;
     if (items.length === 0) break;
-    if (pages >= MAX_PAGES) hasMore = true;
+    if (pages >= opts.maxPages) hasMore = true;
   }
 
   return { posts, hasMore };
@@ -412,41 +558,86 @@ export const facebookAdapter: ChannelAdapter = {
   platform: FB,
   displayName: 'Facebook',
   accessNotes:
-    'Owned Pages only. Requires a long-lived Page access token with pages_read_engagement and '
-    + 'pages_show_list on a Page you administer. '
-    + 'COMPETITOR DATA IS NOT OBTAINABLE. CrowdTangle, the only sanctioned route to another '
-    + 'organisation\'s Page posts, was shut down by Meta on 14 August 2024. The Graph API has no '
-    + 'replacement: reading a Page you do not administer needs Page Public Content Access, which is '
-    + 'closed in practice. The Meta Content Library is the only remaining path and it is restricted to '
-    + 'approved academic and non-profit researchers, accessed through Meta\'s own UI or Python SDK, so '
-    + 'it cannot feed a product like this. Treat Facebook competitors as a blind spot and cover them '
-    + 'with RSS where the newsroom publishes a feed. '
-    + 'Reactions arrive as one total, not split by type. Post impressions and saves are not exposed on '
-    + 'this edge and are always reported as 0.',
+    'OWNED PAGES: a long-lived Page access token with pages_read_engagement and pages_show_list on a '
+    + 'Page you administer returns posts, reactions, comments and shares. '
+    + 'COMPETITOR PAGES: obtainable, but only through Page Public Content Access (PPCA), a Meta App '
+    + 'Review feature. PPCA lets a live app read public data for Pages it does not administer: business '
+    + 'metadata, public posts and public comments, plus the Pages Search API. Meta names the allowed '
+    + 'usage as "aggregated, anonymized public content for competitive analysis and benchmarking". '
+    + 'Getting it requires a submitted App Review with a screencast showing the working feature, a '
+    + 'verified Business, and possibly additional signed contracts. Before approval the app can only '
+    + 'read Pages whose admin also has an admin, developer or tester role on the app; once the app is '
+    + 'Live it sees nothing public at all without the feature. Budget weeks, and expect rejections to '
+    + 'be about the demonstration rather than the idea. See docs/META-PPCA-APPLICATION.md. '
+    + 'Once approved, set ppcaApproved and supply ppcaAccessToken (a system user token is what Meta '
+    + 'recommends for PPCA rate limits) and competitor Pages are read from /{page-id}/feed with the '
+    + 'same engagement mapping as owned Pages, so the two are directly comparable. '
+    + 'STILL UNAVAILABLE, with or without PPCA: post impressions and reach for a Page you do not own, '
+    + 'saves, per-reaction-type breakdowns (reactions arrive as one total), Stories, and any history '
+    + 'from before you start collecting. The Meta Content Library holds CrowdTangle-era Facebook data '
+    + 'but is restricted to approved academic and non-profit researchers and cannot back a product '
+    + 'like this. Saves and views are reported as 0, which means "not exposed", not "zero".',
   credentialFields: [
     { key: 'accessToken', label: 'Page access token', secret: true, required: true,
       help: 'Long-lived Page token from Graph API Explorer or your app\'s token exchange. Needs pages_read_engagement.' },
     { key: 'pageId', label: 'Default Page id', required: false,
       help: 'Optional. Only used as a fallback when a channel has no resolved external id.' },
+    { key: 'ppcaApproved', label: 'Page Public Content Access approved', required: false,
+      help: 'Set to "true" only once Meta App Review has actually granted Page Public Content Access to '
+        + 'your app. Until then competitor Pages fail with an explanation instead of returning nothing.' },
+    { key: 'ppcaAccessToken', label: 'PPCA token', secret: true, required: false,
+      help: 'Token used to read Pages you do not administer. Meta recommends a system user access token '
+        + 'here to avoid rate limiting. Falls back to the Page access token above if left blank.' },
   ],
-  // Meta publishes a percentage-of-window model, not a call count. This is a
-  // conservative pacing figure for the scheduler, not a documented quota.
-  rateLimit: { callsPerWindow: 200, windowSeconds: 3_600 },
+  // Meta publishes formulas, not a flat ceiling, and none of them are specific to
+  // PPCA. The binding one for an internal tool is the platform limit for app and
+  // user tokens, "200 * Number of Users" per rolling hour, where Number of Users
+  // is unique daily active app users. A newsroom tool has single-digit daily
+  // users, so the real ceiling is a few hundred calls an hour for the whole app,
+  // shared between owned and competitor reads. 100 is a deliberate under-estimate
+  // that leaves headroom for the owned-Page ingest to finish.
+  rateLimit: { callsPerWindow: 100, windowSeconds: 3_600 },
   worksUnauthenticated: false,
 
   parseHandle: parseFacebookHandle,
 
+  /**
+   * Resolution happens before a channel row exists, so there is no ownership
+   * flag to read here. We try the ordinary token first and, only if that fails
+   * for a non-retryable reason and PPCA is configured with its own token, try
+   * again with the PPCA token. Same shape as the Instagram insights fallback:
+   * degrade to the other credential rather than fail a lookup we can serve.
+   */
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
     const token = requireToken(credentials, FB);
-    const body = await graph<unknown>(handle, {
-      platform: FB, token, query: { fields: FACEBOOK_PROFILE_FIELDS },
-    });
-    return readPageProfile(body, handle).profile;
+    const read = async (withToken: string): Promise<AdapterProfile> => {
+      const body = await graph<unknown>(handle, {
+        platform: FB, token: withToken, query: { fields: FACEBOOK_PROFILE_FIELDS },
+      });
+      return readPageProfile(body, handle).profile;
+    };
+
+    try {
+      return await read(token);
+    } catch (err) {
+      const ppca = credentials.ppcaAccessToken?.trim();
+      const worthRetrying = err instanceof AdapterError && !err.opts.retryable
+        && isPpcaApproved(credentials) && Boolean(ppca) && ppca !== token;
+      if (!worthRetrying) throw err;
+      return read(ppca as string);
+    }
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
-    const token = requireToken(ctx.credentials, FB);
-    const target = ctx.externalId ?? ctx.credentials.pageId ?? ctx.handle;
+    const owned = isOwnedFacebook(ctx);
+
+    // Refuse loudly before spending a call. A competitor Page without PPCA is a
+    // configuration problem, and returning an empty result would quietly draw a
+    // flat line where the honest answer is "you have not applied yet".
+    if (!owned && !isPpcaApproved(ctx.credentials)) refusePpca(ctx.handle);
+
+    const token = owned ? requireToken(ctx.credentials, FB) : requirePpcaToken(ctx.credentials);
+    const target = ctx.externalId ?? (owned ? ctx.credentials.pageId ?? ctx.handle : ctx.handle);
     const warnings: string[] = [];
 
     const profileBody = await graph<unknown>(target, {
@@ -455,11 +646,29 @@ export const facebookAdapter: ChannelAdapter = {
     const { profile, audience } = readPageProfile(profileBody, ctx.handle);
 
     const { posts, hasMore } = await fetchFacebookPosts(
-      { ...ctx, externalId: profile.externalId }, token,
+      { ...ctx, externalId: profile.externalId },
+      token,
+      owned
+        ? { edge: 'posts', maxPages: MAX_PAGES }
+        // PPCA is documented against /{page-id}/feed, not /posts, so the
+        // competitor path uses feed and filters to the Page's own posts.
+        : { edge: 'feed', maxPages: PPCA_MAX_PAGES, authorId: profile.externalId },
     );
 
     if (audience.followers === 0) {
-      warnings.push('Graph returned no follower count. The token may lack pages_read_engagement on this Page.');
+      warnings.push(owned
+        ? 'Graph returned no follower count. The token may lack pages_read_engagement on this Page.'
+        : 'Graph returned no follower count for this Page. Public follower and fan counts are not '
+          + 'guaranteed under Page Public Content Access; treat 0 as unknown.');
+    }
+
+    if (!owned) {
+      warnings.push(
+        'Read through Page Public Content Access. Reactions, comments and shares are the same fields '
+        + 'as an owned Page and are directly comparable. Impressions, reach and saves are not exposed '
+        + 'for a Page you do not administer and are reported as 0. Paging is capped at '
+        + `${PPCA_MAX_PAGES} pages per run to stay inside Meta's shared app-level rate limit.`,
+      );
     }
 
     return {
@@ -468,6 +677,7 @@ export const facebookAdapter: ChannelAdapter = {
       profile,
       cursor: {
         pageId: profile.externalId,
+        mode: owned ? 'owned' : 'ppca',
         lastRunAt: new Date().toISOString(),
         graphVersion: GRAPH_VERSION,
       },
@@ -483,7 +693,16 @@ export const facebookAdapter: ChannelAdapter = {
       // user, which is itself a useful diagnostic ("you pasted the wrong token").
       const body = await graph<unknown>('me', { platform: FB, token, query: { fields: 'id,name' } });
       const name = asString(asRecord(body)?.name) ?? asString(asRecord(body)?.id) ?? 'unknown';
-      return { ok: true, message: `Token valid, acting as ${name}.` };
+      // The health check cannot prove PPCA: Meta exposes no endpoint that says
+      // "this app holds this feature", and the only real test is reading a Page
+      // you do not administer, which would fail for a dozen other reasons too.
+      // So we report what was declared and leave the proof to the first run.
+      const ppca = isPpcaApproved(credentials)
+        ? 'Page Public Content Access is declared approved, so competitor Pages will be attempted. '
+          + 'That declaration is not verified here; the first competitor run is the real test.'
+        : 'Page Public Content Access is not declared, so only Pages you administer can be read. '
+          + 'See docs/META-PPCA-APPLICATION.md to apply.';
+      return { ok: true, message: `Token valid, acting as ${name}. ${ppca}` };
     } catch (err) {
       if (err instanceof AdapterError) return { ok: false, message: err.message };
       return { ok: false, message: err instanceof Error ? err.message : 'Unknown error' };
@@ -808,8 +1027,9 @@ export const instagramAdapter: ChannelAdapter = {
     + 'OWNED accounts return posts, likes, comments, saves and reach. '
     + 'COMPETITOR data is severely limited. CrowdTangle, which used to serve competitor Instagram and '
     + 'Facebook content, was shut down on 14 August 2024, and the Meta Content Library that replaced it '
-    + 'is gated to approved researchers and cannot be queried from a product like this. The one '
-    + 'remaining route is the Business Discovery edge, which returns follower count, media count and '
+    + 'is gated to approved researchers and cannot be queried from a product like this. Page Public '
+    + 'Content Access does not help here either: it is a Pages feature and grants nothing on Instagram. '
+    + 'The one route for Instagram is the Business Discovery edge, which returns follower count, media count and '
     + 'recent media with likes and comments for public Business or Creator accounts only, queried '
     + 'through an Instagram account you own. It returns no saves, no reach, no impressions, no Stories '
     + 'and nothing at all for Personal accounts, and Meta has never committed to keeping it. '

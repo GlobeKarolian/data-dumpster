@@ -14,22 +14,37 @@ scraping question past BGM counsel before signing anything.
 **Yes, a single vendor will sell you one API that covers YouTube, Meta, X, TikTok,
 LinkedIn, Instagram, Facebook, Reddit, Threads, Bluesky and Pinterest, with
 competitor and public-account data, for under $100 a month at our scale. It is a
-scraping vendor. There is no officially sanctioned version of this product and
-there will not be one.**
+scraping vendor. There is no sanctioned equivalent that covers all of it in one
+contract.**
 
-That is the whole trade. The market splits cleanly in two and there is nothing in
-the middle:
+**But there is no longer a single sanctioned gap on Facebook, and that changes
+the recommendation.** An earlier version of this document, and of
+`DATA-ACCESS.md`, treated Facebook competitor data as unobtainable through
+sanctioned channels. That was wrong. Meta's **Page Public Content Access**
+feature grants a live app the ability to read public posts, comments and
+engagement for Pages it does not administer, and Meta's own Pages documentation
+names the allowed usage as "aggregated, anonymized public content for competitive
+analysis and benchmarking". It is App Review plus business verification, it takes
+weeks, and it can be refused. But it is free, it is first-party, and it is the
+route a newsroom should try first. See `docs/META-PPCA-APPLICATION.md`.
+
+TikTok and LinkedIn are unchanged. TikTok's Research API bars commercial use and
+LinkedIn has no competitor read path at any price. Those two gaps are still
+scrape-or-nothing.
+
+The market splits four ways:
 
 | | Officially sanctioned | Covers competitors |
 |---|---|---|
 | Publishing APIs (Ayrshare, Phyllo Connect, Unipile, Mixpost) | Yes | **No** |
+| **Meta App Review features (Page Public Content Access)** | **Yes** | **Yes, for Facebook Pages only, after review** |
 | Scraping / data-as-a-service (ScrapeCreators, Bright Data, Apify, EnsembleData, Data365, Oxylabs) | **No** | Yes |
 | Listening suites (Brandwatch, Meltwater, Sprinklr, Talkwalker) | Partly, via licensed firehoses | Yes, but not as a per-post competitive dataset, and they cost $25k to $130k a year |
 | Official research programs (Meta Content Library, TikTok Research API) | Yes | Yes, but for-profit newsrooms are ineligible |
 
-Every vendor in category one is disqualified by the single requirement that
-drives this project. That is not a knock on them. They are correctly built for a
-different problem.
+Every vendor in the publishing category is disqualified by the single requirement
+that drives this project. That is not a knock on them. They are correctly built
+for a different problem.
 
 ---
 
@@ -96,19 +111,24 @@ matches are **LamaTok** (a TikTok-only scraping API) and **Lamatic.ai** (an
 unrelated agent-orchestration platform). If someone recommended "Lamatic," ask
 them which they meant. Neither is a multi-platform aggregator.
 
-### 3.2 The thing that actually matters: they fill our three named blind spots
+### 3.2 What they cover, and what we no longer need them for
 
-`DATA-ACCESS.md` lists Facebook competitors, TikTok competitors and LinkedIn
-competitors as structural blind spots, unobtainable at any price through
-sanctioned channels. That is true of sanctioned channels. It is not true of the
-scraping market.
+`DATA-ACCESS.md` used to list Facebook, TikTok and LinkedIn competitors as three
+structural blind spots unobtainable through sanctioned channels. That was wrong
+about Facebook: **Page Public Content Access covers it, sanctioned and free,
+subject to App Review.** It remains right about TikTok and LinkedIn.
+
+So the vendors below fill two genuine gaps, not three. The Facebook endpoints are
+still listed because they matter as a fallback if PPCA review is refused, and
+because a vendor is the only way to get Facebook data faster than App Review can
+deliver it.
 
 ScrapeCreators, verified from their own endpoint documentation:
 
 | Blind spot | Endpoint | What it returns | Caveat |
 |---|---|---|---|
-| **Facebook competitors** | `GET /v1/facebook/profile/posts` | Public page posts as an incognito browser would see them, with engagement | **3 posts per call.** A 30-day backfill for one busy page is roughly 100+ paginated calls. Budget accordingly |
-| **Facebook competitors** | `GET /v1/facebook/profile/reels`, `/post`, `/post/comments` | Reels with view counts, post detail, comments | Reel view_count can be null or lower than the public badge. They document the workaround |
+| **Facebook competitors (fallback only)** | `GET /v1/facebook/profile/posts` | Public page posts as an incognito browser would see them, with engagement | **3 posts per call.** A 30-day backfill for one busy page is roughly 100+ paginated calls. Budget accordingly. Prefer PPCA, which returns 100 per page and is sanctioned |
+| **Facebook competitors (fallback only)** | `GET /v1/facebook/profile/reels`, `/post`, `/post/comments` | Reels with view counts, post detail, comments | Reel view_count can be null or lower than the public badge. They document the workaround. Reel view counts are the one thing here PPCA does not give us |
 | **LinkedIn competitors** | `GET /v1/linkedin/company/posts` | Company page posts, public view | **Hard cap of 7 pages.** LinkedIn-side limit. No deep history |
 | **LinkedIn competitors** | `GET /v1/linkedin/company` | Company page metadata incl. follower count | Public fields only |
 | **TikTok competitors** | `GET /v1/tiktok/profile`, `/v3/tiktok/profile/videos`, `/v2/tiktok/video` | Profile, video list, full video stats, transcripts, audience demographics | The richest of the three |

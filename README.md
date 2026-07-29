@@ -83,14 +83,18 @@ encrypted at rest, and company and landscape management.
 | RSS / Atom | Full, where a publisher runs a feed | Nothing | Works out of the box |
 | X / Twitter | Posts, likes, replies, reposts, quotes. No impressions | Paid API access, metered | Works with a paid key |
 | Instagram | Thin: followers, media, likes, comments, on Business accounts only | Meta app plus App Review, weeks | Works with review approval |
-| Facebook | None. Not obtainable and not purchasable since CrowdTangle closed | Meta app, owned Pages only | Owned channels only |
+| Facebook | Public Page posts, reactions, comments, shares, via Page Public Content Access | Meta app plus App Review for PPCA, business verification, weeks | Implemented; owned channels only until PPCA is granted |
 | TikTok | None available to a commercial organisation | Developer app, owned accounts only | Owned channels only |
 | LinkedIn | None, at any price | Marketing API approval, owned pages only | Owned channels only |
 | Threads, Reddit | Reddit is feasible, Threads is not | No adapter written yet | Not built |
 
-The distinction between the last four rows and the first four is the single most
+The distinction between the open rows and the gated ones is the single most
 important fact about this product category, and "docs/DATA-ACCESS.md" is the
-long version with costs, approval burden and sources.
+long version with costs, approval burden and sources. Facebook sits in between:
+the data exists and Meta will grant access to it, but only through
+[Page Public Content Access](https://developers.facebook.com/docs/features-reference/page-public-content-access/),
+which is App Review plus business verification and takes weeks.
+"docs/META-PPCA-APPLICATION.md" is the guide to applying.
 
 AI features need a model connection. Configure one in Settings, or set
 DEFAULT_MODEL_PROVIDER and the matching key in the environment. Ollama needs no
@@ -202,13 +206,22 @@ Sign in at http://localhost:3000/login with the seeded admin credentials.
   the conditions under which buying is the right call.
 - **docs/CRONS.md**: why each schedule is what it is.
 - **docs/DEPLOY.md**: production deployment on Vercel, step by step.
+- **docs/META-PPCA-APPLICATION.md**: how to apply for Page Public Content
+  Access, what the screencast has to show, and why applications get rejected.
 - **docs/PITCH.md**: why this exists.
 - **CONTRACTS.md**: the build contract the parallel agents worked from.
 
 ## Honest limits
 
-Facebook, TikTok and LinkedIn competitor data does not exist for a commercial
-organisation in 2026. Pressbox labels those gaps instead of filling them.
+TikTok and LinkedIn competitor data does not exist for a commercial organisation
+in 2026. Pressbox labels those gaps instead of filling them.
+
+Facebook competitor data does exist, but it is gated. Page Public Content Access
+is a real Meta App Review feature, and Meta's own Pages documentation lists
+"aggregated, anonymized public content for competitive analysis and
+benchmarking" as an allowed usage. Until an org is approved for it, Pressbox
+treats Facebook as owned-only and says why rather than charting a zero. Applying
+is weeks of work, not an afternoon. See "docs/META-PPCA-APPLICATION.md".
 
 Rival IQ has been collecting since roughly 2013. A decade of stored competitor
 time series, including CrowdTangle-era Facebook data that exists nowhere else,

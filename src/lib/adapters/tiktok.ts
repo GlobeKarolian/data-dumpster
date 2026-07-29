@@ -395,6 +395,36 @@ function isOwnedTikTok(ctx: FetchContext): boolean {
   return typeof flag === 'boolean' ? flag : true;
 }
 
+/**
+ * Competitor read path, served by a purchased vendor rather than TikTok.
+ *
+ * Kept as a thin delegation so the sanctioned owned path above stays readable
+ * and so the vendor can be removed by deleting one branch and one module.
+ * Profile and post reads are separate vendor calls because followers and video
+ * metrics come from different datasets.
+ */
+async function fetchCompetitorViaVendor(ctx: FetchContext, apiKey: string): Promise<FetchResult> {
+  const { fetchProfile, fetchPosts } = await import('./tiktok-brightdata');
+
+  const { profile, audience } = await fetchProfile(ctx.handle, apiKey, ctx.onApiCall, ctx.signal);
+  const { posts, warnings } = await fetchPosts(ctx.handle, apiKey, {
+    since: ctx.since,
+    until: ctx.until,
+    limit: ctx.limit,
+    onApiCall: ctx.onApiCall,
+    signal: ctx.signal,
+  });
+
+  return {
+    posts,
+    audience: audience ? [audience] : [],
+    profile,
+    cursor: { source: 'brightdata', lastVendorReadAt: new Date().toISOString() },
+    hasMore: false,
+    warnings,
+  };
+}
+
 export const tiktokAdapter: ChannelAdapter = {
   platform: PLATFORM,
   displayName: 'TikTok',
@@ -407,11 +437,18 @@ export const tiktokAdapter: ChannelAdapter = {
     + 'COMPETITOR DATA IS NOT AVAILABLE through this API. The only sanctioned route is the TikTok '
     + 'Research API, which requires a written application, is reviewed case by case, is restricted to '
     + 'approved academic and non-profit researchers in the United States and Europe, and prohibits '
-    + 'commercial use of the results. A commercial newsroom product cannot rely on it. Competitor '
-    + 'TikTok is a blind spot unless the organisation buys the data from a vendor under contract.',
+    + 'commercial use of the results. A commercial newsroom product cannot rely on it. '
+    + 'COMPETITOR DATA IS THEREFORE PURCHASED. Supplying a Bright Data API key enables competitor '
+    + 'reads (followers, videos, views, likes, comments, shares, saves) for any public account, which '
+    + 'is full parity with what Rival IQ shows. This is public data from a vendor holding SOC 2 and '
+    + 'ISO 27001, but collection is contrary to TikTok terms of service. Enable it as a documented '
+    + 'decision by Legal, not a developer default. Without the key, competitor channels fail loudly '
+    + 'rather than charting a silent zero. See docs/DATA-ACCESS.md.',
   credentialFields: [
-    { key: 'accessToken', label: 'Access token', secret: true, required: true,
-      help: 'From the TikTok for Developers OAuth flow, with user.info.profile, user.info.stats and video.list scopes.' },
+    { key: 'accessToken', label: 'Access token', secret: true, required: false,
+      help: 'Owned channels only. From the TikTok for Developers OAuth flow, with user.info.profile, user.info.stats and video.list scopes.' },
+    { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
+      help: 'Competitor channels only. Enables purchased public TikTok data. Read docs/DATA-ACCESS.md before enabling.' },
     { key: 'refreshToken', label: 'Refresh token', secret: true, required: false,
       help: 'Strongly recommended. Access tokens expire after 24 hours; without this every nightly run fails.' },
     { key: 'clientKey', label: 'Client key', required: false, help: 'Needed only for automatic token refresh.' },
@@ -473,11 +510,18 @@ export const tiktokAdapter: ChannelAdapter = {
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
     if (!isOwnedTikTok(ctx)) {
-      throw new AdapterError(
-        `TikTok competitor data is not obtainable. @${ctx.handle} is not marked as an owned channel, `
-        + 'and the Display API only reads the account that granted the token. See docs/DATA-ACCESS.md.',
-        { platform: PLATFORM, retryable: false },
-      );
+      // Competitor channel. The Display API cannot serve this, so route to the
+      // purchased source if the org has configured one.
+      const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+      if (!vendorKey) {
+        throw new AdapterError(
+          `TikTok competitor data requires a purchased source. @${ctx.handle} is not an owned channel, `
+          + 'and the Display API only reads the account that granted the token. Configure a Bright Data '
+          + 'API key in Settings > Data Sources, or mark this channel as owned. See docs/DATA-ACCESS.md.',
+          { platform: PLATFORM, retryable: false },
+        );
+      }
+      return await fetchCompetitorViaVendor(ctx, vendorKey);
     }
 
     const auth: TikTokAuth = { accessToken: requireAccessToken(ctx.credentials) };

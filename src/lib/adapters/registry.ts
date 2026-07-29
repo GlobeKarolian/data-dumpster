@@ -49,10 +49,14 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
  *  - **Owned only, with a thin competitor exception**: `instagram`, via the
  *    Graph Business Discovery edge — followers, media, likes and comments for
  *    public Business/Creator accounts, and nothing else.
- *  - **Owned only, full stop**: `facebook` (CrowdTangle was shut down on
- *    14 August 2024 and the Meta Content Library that replaced it is
- *    research-gated), `tiktok` (Display API reads only the token holder;
- *    the Research API is application-gated and bars commercial use),
+ *  - **Comparable once the paperwork clears**: `facebook`. CrowdTangle was shut
+ *    down on 14 August 2024, but Meta still ships Page Public Content Access,
+ *    an App Review feature that lets a live app read public posts, comments and
+ *    engagement for Pages it does not administer. Until an org is approved and
+ *    says so in its credentials, Facebook behaves as owned-only; after that it
+ *    is comparable, with the same engagement fields as an owned Page.
+ *  - **Owned only, full stop**: `tiktok` (Display API reads only the token
+ *    holder; the Research API is application-gated and bars commercial use),
  *    `linkedin` (no read path for another organisation's page at any price).
  *
  * Each adapter's `accessNotes` says this in the UI. `docs/DATA-ACCESS.md` has
@@ -64,21 +68,45 @@ export const UNIMPLEMENTED_REASONS: Partial<Record<Platform, string>> = {
 };
 
 /**
- * Platforms where an adapter exists but can only ever describe channels the org
- * holds a token for. The UI uses this to keep an owned-only platform out of a
- * competitor comparison instead of charting it as zero.
+ * Platforms that describe only channels the org holds a token for, *by default*.
+ * The UI uses this to keep such a platform out of a competitor comparison
+ * instead of charting it as zero.
+ *
+ * "By default" is load-bearing for Facebook and only Facebook. Two of these
+ * three are permanent; the Facebook entry is a statement about paperwork, not
+ * about the API, and `isOwnedOnly` lifts it once the org's credentials say Page
+ * Public Content Access has been granted.
  */
 export const OWNED_ONLY_PLATFORMS: Partial<Record<Platform, string>> = {
-  facebook: 'Facebook serves no competitor data since the CrowdTangle shutdown in August 2024. '
-    + 'Only Pages you administer can be read.',
-  tiktok: 'The TikTok Display API only reads the account that granted the token. Competitor data '
-    + 'requires the application-gated Research API, which prohibits commercial use.',
+  facebook: 'Facebook competitor Pages need Page Public Content Access, a Meta App Review feature '
+    + 'requiring business verification and a working demonstration. Until this org is approved and '
+    + 'sets the ppcaApproved credential, only Pages you administer can be read. '
+    + 'See docs/META-PPCA-APPLICATION.md.',
+  tiktok: 'The TikTok Display API only reads the account that granted the token, and the Research API '
+    + 'prohibits commercial use. Competitor TikTok is therefore purchased: set a Bright Data API key '
+    + 'and competitor channels read normally, with full parity on views and engagement rate by view. '
+    + 'Without that key, only accounts you own can be read. See docs/DATA-ACCESS.md.',
   linkedin: 'LinkedIn exposes no read endpoint for another organisation\'s page at any price.',
 };
 
-/** True when this platform can only report on channels the org owns. */
-export function isOwnedOnly(platform: Platform): boolean {
-  return OWNED_ONLY_PLATFORMS[platform] !== undefined;
+/** Credential values that count as "yes". Mirrors the Facebook adapter. */
+const AFFIRMATIVE = new Set(['1', 'true', 'yes', 'y', 'on', 'approved', 'granted']);
+
+/**
+ * True when this platform can only report on channels the org owns.
+ *
+ * Pass the org's credentials for that platform where you have them. Without
+ * them the answer is the conservative one, which is what every existing caller
+ * wants: better to hide a Facebook competitor column that would have worked than
+ * to show one that fails on every run.
+ */
+export function isOwnedOnly(platform: Platform, credentials?: Record<string, string>): boolean {
+  if (OWNED_ONLY_PLATFORMS[platform] === undefined) return false;
+  if (platform === 'facebook' && credentials) {
+    const declared = credentials.ppcaApproved?.trim().toLowerCase();
+    if (declared !== undefined && AFFIRMATIVE.has(declared)) return false;
+  }
+  return true;
 }
 
 /**

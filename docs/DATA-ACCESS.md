@@ -11,6 +11,14 @@ mostly an exercise in being honest about blind spots. Pressbox's differentiator
 is not that it sees more than Rival IQ. It is that it tells you what it cannot
 see instead of charting a zero.
 
+**Correction, July 2026.** An earlier version of this document said Facebook
+competitor data was unobtainable through sanctioned channels and unpurchasable at
+any price. That was wrong. Meta's **Page Public Content Access** feature grants
+exactly that access, through App Review. It is slow, conditional and revocable,
+but it exists, and it should have been applied for in 2024. Section 2.1 is the
+corrected account. The claims about the Meta Content Library, TikTok's Research
+API and LinkedIn are unchanged and still hold.
+
 ---
 
 ## 1. The per-platform table
@@ -25,7 +33,7 @@ do not control. That distinction is the entire story.
 | **RSS** | n/a | **Full**, where the newsroom publishes a feed | HTTP | **$0** | None | Publisher's own; conditional GET keeps it near zero |
 | **X / Twitter** | Everything incl. impressions | **Posts, likes, replies, retweets, quotes, bookmarks. No impressions** | API v2 | **Metered since Feb 2026**, reportedly ~$0.005 per post read, hard cap ~2M reads/mo. Legacy Basic ~$200/mo (~10k reads) and Pro ~$5,000/mo (~1M reads) closed to new signups; Basic subscribers migrated to metering from 1 June 2026. Enterprise from ~$42k/mo. **Confidence: medium — these come from secondary sources, not X's own page, and X has revised pricing repeatedly** | Developer account + payment. Days | Legacy Basic was 5 timeline requests / 15 min. Under metering the binding constraint is spend, not requests |
 | **Instagram** | Full: posts, likes, comments, **saves, reach** | **Thin.** Followers, media count, and recent media with likes, comments, caption, permalink. Business/Creator accounts only. **No saves, no reach, no Stories, nothing for Personal accounts** | Graph API v21.0 `business_discovery` edge, queried through an IG account we own | **$0** beyond a Meta app | Meta app + App Review for `instagram_basic` and `instagram_manage_insights`. Weeks | Percentage-of-window model, not a call count. `x-app-usage` reports burn against a rolling hour |
-| **Facebook** | Full: posts, reactions, comments, shares; impressions via a separate per-post insights call | **Nothing. At all.** | Graph API v21.0, owned Pages only | **$0** for owned. Competitor data is **not purchasable** | Meta app + App Review for `pages_read_engagement`. Weeks | As Instagram |
+| **Facebook** | Full: posts, reactions, comments, shares; impressions via a separate per-post insights call | **Public Page posts, reactions, comments and shares, once approved for Page Public Content Access.** No impressions, no reach, no saves | Graph API v21.0. Owned Pages via `/{page-id}/posts`; competitor Pages via `/{page-id}/feed` under PPCA | **$0** for both. PPCA costs review time, not money | Meta app + App Review for `pages_read_engagement` (owned). For competitors, App Review for **Page Public Content Access** plus business verification and possibly additional signed contracts. Weeks, and it can be refused | As Instagram. Meta publishes no PPCA-specific quota and recommends a system user token to avoid throttling |
 | **TikTok** | Full: videos, views, likes, comments, shares, followers | **Nothing available to a commercial product** | Display API v2 for owned. Research API for competitors is academic/non-profit only | **$0** for owned | Owned: developer app + OAuth consent, days. Research API: written application, case-by-case review, **for-profit organisations are ineligible** | Not publicly guaranteed; revised without notice |
 | **LinkedIn** | Full and unusually deep: impressions, clicks, likes, comments, shares, LinkedIn's own engagement rate, follower demographics | **Nothing, at any price** | Marketing API / Community Management API, versioned REST | **$0** for owned | Marketing Developer Platform or Community Management API application + review. **Weeks, and can be refused.** Tokens are 60-day member OAuth and must be refreshed | Per-app and per-member daily quotas, published per endpoint |
 | **Threads** | Owned only | Nothing | Threads API | $0 | Meta app | — (no adapter yet) |
@@ -49,9 +57,72 @@ volume, reactions, comments, shares, and a usable "overperforming" score. It was
 the single most important source of competitive social data in journalism, and
 it was free.
 
-It is gone, and **nothing has replaced it for a newsroom.**
+It is gone. What replaced it is not one thing but two, and only one of them is
+open to us.
 
-**Meta Content Library** is the official successor. What it does:
+### 2.1 Page Public Content Access is the sanctioned route, and it is real
+
+**Correction to an earlier version of this document.** This file previously said
+Facebook competitor data "does not exist and cannot be bought". That was wrong,
+and it was wrong in the most expensive direction: it talked us out of an
+application we should have started.
+
+**Page Public Content Access (PPCA)** is a Meta App Review feature that is
+current, documented, and grants exactly what we need. From Meta's own feature
+reference:
+
+> The **Page Public Content Access** feature allows an app access to the Pages
+> Search API and to read public data for Pages for which you lack the
+> **pages_read_engagement** permission and the **pages_read_user_content**
+> permission. Readable data includes business metadata, public comments and
+> posts. The allowed usage for this feature is to analyze and/or display posts
+> and engagement on Pages.
+
+Meta's Pages permissions and features page states the allowed usage more
+directly still: **"to provide aggregated, anonymized public content for
+competitive analysis and benchmarking."** Competitive analysis is not a use we
+have to argue Meta into. It is the use Meta names.
+
+| | Detail | Source |
+|---|---|---|
+| Endpoints unlocked | `/{page-id}/feed`, `/{page-post-id}`, `/{page-post-id}/comments`, plus the Pages Search API | Meta feature reference |
+| Fields | Business metadata, public posts, public comments. Our field set (`id,message,created_time,permalink_url,full_picture,shares,comments.summary(true),reactions.summary(true)`) is the same one the owned path uses, so the numbers are directly comparable | Meta feature reference |
+| Requires App Review | Yes, before the app can access live data | Meta feature reference |
+| Requires business verification | Yes. Advanced access has required it since 1 February 2023 | Meta business verification doc |
+| Additional contracts | "You may also need to sign additional contracts" | Meta feature reference |
+| Before approval | The app can only read Pages whose admin also holds an admin, developer or tester role on the app. Once the app is Live it sees **no** Page public content without the feature | Meta feature reference |
+| Rate limits | Meta publishes **no PPCA-specific quota**. Calls with an app or user token fall under the platform limit, "Calls within one hour = 200 * Number of Users" (unique daily active app users). Calls with a Page or system user token fall under the Pages business-use-case limit, "Calls within 24 hours = 4800 * Number of Engaged Users". Meta's rate-limit page explicitly recommends a **system user access token** to avoid throttling when using PPCA | Meta rate limits doc |
+
+**Note what is not in that list.** I could not find any Meta documentation
+stating that PPCA requires an architecture review, or naming news media
+monitoring as an accepted or rejected use case. What Meta documents is App
+Review, business verification, possible additional contracts, and separately a
+Data Protection Assessment for maintaining data access over time. If someone
+tells you an architecture review is a formal PPCA gate, ask them for the URL.
+
+**Page Public Metadata Access** is the narrower predecessor: it gives the Pages
+Search API and public `/page` fields such as like and follower counts, but not
+the feed or comments. Meta's own documentation says it is superseded by PPCA and
+that an app approved for PPCA cannot request it. Do not apply for both.
+
+**The honest caveats**, because "it is possible" is not "it is easy":
+
+- It is App Review, which in 2026 is reported to take around 20 days rather than
+  the 10 the dashboard historically promised. That figure is from a third-party
+  write-up, not Meta, so treat it as indicative.
+- Rejections on restricted features are common and are usually about the
+  demonstration, not the idea. The reviewer has to be able to test the feature
+  in your live app. If they cannot, the whole submission fails.
+- Once approved, the rate limits are strict enough that a competitor backfill has
+  to be paced. The adapter caps competitor paging at five pages per run for this
+  reason.
+- Meta can revoke a feature. This is not a permanent asset.
+
+`docs/META-PPCA-APPLICATION.md` is the practical guide to applying.
+
+### 2.2 Meta Content Library is the research route, and it is closed to us
+
+**Meta Content Library** is the research successor to CrowdTangle. What it does:
 
 - Serves Facebook and Instagram public content, including Pages, with search
   and export.
@@ -70,11 +141,18 @@ What it does **not** do, and this is the part that matters:
   unusable as a backing store for an operational product. It is a research
   environment, not an API you point a cron job at.
 
-**The practical consequence for Pressbox:** Facebook competitor data does not
-exist and cannot be bought. Instagram competitor data survives only through the
+The Content Library matters for one thing only: it is where the CrowdTangle-era
+archive lives, and that archive is genuinely unavailable to us. PPCA gets us
+Facebook data from the day we are approved forward. It does not get us history.
+
+**The practical consequence for Pressbox:** Facebook competitor data is
+obtainable through PPCA, on a timeline measured in weeks and conditional on
+passing App Review. Until then Facebook is owned-only and the product says so.
+Instagram competitor data is separate and unaffected: PPCA is a Pages feature and
+grants nothing on Instagram, so Instagram competitors still come only from the
 Graph `business_discovery` edge, which returns a thin public subset and which
-Meta has never committed to maintaining. Both of these are implemented honestly
-in `src/lib/adapters/meta.ts`, and the adapter's `accessNotes` say so in the UI.
+Meta has never committed to maintaining. All three paths are implemented in
+`src/lib/adapters/meta.ts` and the adapter's `accessNotes` say so in the UI.
 
 There is a European angle worth knowing about but not counting on: the Digital
 Services Act Article 40 vetted-researcher pathway came into force in late 2025
@@ -157,15 +235,17 @@ label it "not available on YouTube" rather than pretending it is zero.
 
 **RSS.** Every newsroom in the landscape publishes feeds, and feeds answer
 questions the social APIs cannot: what did they publish, when, on what desk, at
-what cadence. It is free, it is conditional-GET cheap, and it is the only
-fallback that works for a competitor's Facebook presence. For a newsroom
+what cadence. It is free, it is conditional-GET cheap, and it is the fallback
+that works for a competitor's Facebook presence while PPCA review is pending or
+if it is refused. For a newsroom
 specifically, RSS plus posted-URL analysis is arguably more valuable than any
 single social platform, because it connects social activity back to the
 journalism.
 
 **The strategic read:** build the product's core comparisons on these three,
-treat X as a paid supplement, and treat Meta/TikTok/LinkedIn competitor data as
-a blind spot to be labelled rather than a gap to be filled.
+treat X as a paid supplement, get the PPCA application in so Facebook joins the
+comparable set, and treat TikTok and LinkedIn competitor data as blind spots to
+be labelled rather than gaps to be filled.
 
 ---
 
@@ -186,12 +266,14 @@ metrics are limited to followers, posts, likes and comments — exactly the
 `business_discovery` field set, and exactly what is missing is what that edge
 omits. High confidence in this inference.
 
-**Facebook competitors: they lost this too.** Rival IQ was a CrowdTangle-era
-product. Their public content around the shutdown, and the shape of what their
-Facebook competitor reporting now shows, is consistent with them having lost the
-same access we did. Where they still show Facebook competitor numbers, my guess
-is a mix of historical data collected before August 2024 and Page-level public
-metadata. **Medium confidence.**
+**Facebook competitors: most likely PPCA.** Rival IQ was a CrowdTangle-era
+product and lost that feed like everyone else. But a company whose entire product
+is competitive benchmarking, with a verified business and a decade-old Meta app,
+is close to the archetypal PPCA applicant, and Meta names competitive analysis
+and benchmarking as the allowed usage. The most likely explanation for their
+current Facebook competitor reporting is a PPCA grant plus the pre-August-2024
+archive for history. **Medium confidence, revised from "they lost this too",
+which was based on the incorrect assumption that PPCA was closed.**
 
 **X: a paid enterprise relationship.** They serve a lot of customers a lot of X
 data. At retail metered rates that would be enormous; at Enterprise rates with
@@ -250,13 +332,28 @@ competitors cannot see about us either:
   own channels would additionally unlock shares and impressions via YouTube
   Analytics. Worth doing in phase two.
 
+### Apply for, starting now
+
+**Page Public Content Access.** This is free, it is the only sanctioned route to
+Facebook competitor data, and the cost is calendar time. Start it in week one,
+because the clock does not run until the submission is in. The prerequisites are
+a Meta app in Live mode, a verified Business, a privacy policy URL, and a working
+Facebook competitor feature the reviewer can actually test. The adapter is built;
+what remains is the review. `docs/META-PPCA-APPLICATION.md` has the detail.
+
+Do not apply for Page Public Metadata Access alongside it. Meta's documentation
+says PPCA supersedes it and that an app requesting or holding PPCA cannot request
+the metadata feature.
+
 ### Accept as blind spots
 
 Label these in the product. Do not fill them with estimates.
 
-- **Facebook competitors.** Not obtainable, not purchasable. Cover the
-  competitive question with RSS and cross-platform inference. Say so on the
-  screen.
+- **Facebook competitors until PPCA is granted.** This one is temporary and it is
+  our own timeline, not a platform limitation. Label it as pending review, not as
+  impossible. If review is refused, it becomes a real blind spot and the fallback
+  is section 9.1 of `DATA-VENDORS.md`.
+
 - **TikTok competitors.** Not obtainable for a commercial organisation through
   sanctioned channels. A vendor could sell it; that data is almost certainly
   scraped, and I do not recommend buying scraped data for a newsroom's own
@@ -301,14 +398,19 @@ Things in the code that exist because of the above, listed so nobody
 "simplifies" them later:
 
 - **`registry.ts` exports `OWNED_ONLY_PLATFORMS` and `isOwnedOnly`.** The UI
-  must use these to keep Facebook, TikTok and LinkedIn out of competitor
-  comparisons rather than charting them as zero.
+  must use these to keep TikTok and LinkedIn out of competitor comparisons
+  rather than charting them as zero. Facebook is in that map too, but
+  conditionally: `isOwnedOnly('facebook', credentials)` returns false once the
+  org sets `ppcaApproved`, which is the one entry in the map that describes
+  paperwork rather than an API limit.
 - **Every adapter carries `accessNotes`** and Settings renders it. If a platform
   cannot answer a question, the person configuring it finds out then, not from a
   confusing chart three weeks later.
-- **The runner injects `cursor.__isOwned`** so the Instagram, TikTok and
-  LinkedIn adapters can pick an owned or competitor read path, and strips
-  double-underscore keys before persisting the cursor.
+- **The runner injects `cursor.__isOwned`** so the Facebook, Instagram, TikTok
+  and LinkedIn adapters can pick an owned or competitor read path, and strips
+  double-underscore keys before persisting the cursor. On Facebook that flag
+  chooses between `/{page-id}/posts` with the Page token and `/{page-id}/feed`
+  with the PPCA token.
 - **`views` of 0 means "not exposed", never "no views"**, on YouTube, Bluesky,
   Facebook, and competitor X and Instagram. `engagementRateByView` is stored as
   NULL rather than 0 when views are 0, so the metrics layer can tell the
@@ -331,6 +433,17 @@ are read by the runner and should be added to it:
   Per-org credentials in Settings are the better home for these; the environment
   fallback exists for single-org deployments.
 
+The two Facebook PPCA credentials are deliberately per-org only and have no
+environment fallback, because "is this organisation approved for PPCA" is a fact
+about an organisation, not about a deployment:
+
+- `ppcaApproved` — set to `true` only once Meta App Review has actually granted
+  the feature. Until then, competitor Facebook channels fail with an explanation
+  rather than returning an empty result.
+- `ppcaAccessToken` — the token used to read Pages we do not administer. Meta
+  recommends a system user access token here specifically to avoid rate limiting.
+  Falls back to the main Page token if blank.
+
 Per-org credentials stored in `platform_credentials` always win over the
 environment. They are AES-256-GCM encrypted at rest by `src/lib/crypto.ts`, and
 the runner skips and warns about a credential it cannot decrypt rather than
@@ -340,6 +453,18 @@ failing the whole batch.
 
 ## Sources
 
+- Page Public Content Access, fetched July 2026:
+  [Meta feature reference](https://developers.facebook.com/docs/features-reference/page-public-content-access/),
+  [Pages permissions and features](https://developers.facebook.com/docs/pages/overview/permissions-features),
+  [Page Public Metadata Access, the superseded predecessor](https://developers.facebook.com/docs/features-reference/page-public-metadata-access/)
+- App Review, business verification and rate limits:
+  [App Review overview](https://developers.facebook.com/docs/app-review),
+  [Screen recordings](https://developers.facebook.com/docs/app-review/submission-guide/screen-recordings/),
+  [Business verification](https://developers.facebook.com/docs/development/release/business-verification),
+  [Graph API rate limits](https://developers.facebook.com/docs/graph-api/overview/rate-limiting)
+- Current Graph API version, v25.0, released 18 February 2026:
+  [Meta for Developers blog](https://developers.facebook.com/blog/post/2026/02/18/introducing-graph-api-v25-and-marketing-api-v25/),
+  [v25.0 changelog](https://developers.facebook.com/docs/graph-api/changelog/version25.0/)
 - CrowdTangle shutdown and Meta Content Library eligibility:
   [Meta Transparency Center](https://transparency.meta.com/researchtools/other-data-catalogue/crowdtangle/),
   [Meta Content Library FAQs](https://socialmediaarchive.org/pages/?page=Meta+Content+Library+FAQs&ln=en),

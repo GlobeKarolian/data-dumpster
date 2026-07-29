@@ -7,7 +7,7 @@ import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
 
 /** Platforms that get their own overview screen, in the order newsrooms use them. */
 export const NAV_PLATFORMS: Platform[] = [
-  'facebook', 'instagram', 'twitter', 'youtube', 'tiktok', 'bluesky',
+  'facebook', 'instagram', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky',
 ];
 
 export interface NavItem {
