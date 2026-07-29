@@ -24,12 +24,19 @@ import { getToken } from 'next-auth/jwt';
  * Paths that must work without a session.
  *
  *  /login          the way in
+ *  /invite/*       accepting an invitation, authorized by the token in the path.
+ *                  The person holding it has no account yet, so there is nothing
+ *                  to authenticate; gating it would make every invitation
+ *                  bounce to a sign-in form the invitee cannot pass. The matcher
+ *                  below does not exclude it -- it excludes only framework
+ *                  internals and paths with a file extension -- so it has to be
+ *                  named here.
  *  /api/auth/*     Auth.js itself; gating it would deadlock sign-in
  *  /api/cron/*     called by Vercel Cron with a bearer secret, never a cookie
  *  /api/health     uptime probes have no credentials by design
  *  /share/*        published dashboards, authorized by an unguessable token
  */
-const PUBLIC_PREFIXES = ['/login', '/api/auth', '/api/cron', '/share'] as const;
+const PUBLIC_PREFIXES = ['/login', '/invite', '/api/auth', '/api/cron', '/share'] as const;
 const PUBLIC_EXACT = ['/api/health'] as const;
 
 function isPublic(pathname: string): boolean {

@@ -75,6 +75,37 @@ export const sessions = pgTable('sessions', {
   expires: timestamp('expires', { withTimezone: true }).notNull(),
 });
 
+/**
+ * Pending invitations.
+ *
+ * No email provider is configured for this deployment and no budget decision has
+ * been made about one, so an invitation is a link an administrator hands over in
+ * Slack or in person. That constraint is the whole design: the token in this row
+ * IS the credential. Hence 32 random bytes rather than a sequence, hence an
+ * expiry, and hence the single-statement accept in lib/invites.ts.
+ *
+ * Rows are kept after acceptance rather than deleted. Who let whom into a
+ * newsroom tool, and when, is exactly the question that gets asked six months
+ * later, and a deleted row cannot answer it.
+ */
+export const invites = pgTable('invites', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  role: roleEnum('role').notNull().default('viewer'),
+  /** URL-safe base64 of 32 random bytes. Written once, never regenerated. */
+  token: text('token').notNull(),
+  /** Nullable: removing an administrator must not erase the invites they sent. */
+  invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  acceptedByUserId: uuid('accepted_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('invites_token_uq').on(t.token),
+  index('invites_org_email_idx').on(t.orgId, t.email),
+]);
+
 /* ----------------------------------------------------- entities measured */
 
 export const companies = pgTable('companies', {

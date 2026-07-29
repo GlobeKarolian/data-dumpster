@@ -19,14 +19,19 @@ import type { Session } from 'next-auth';
 import { auth, type Role } from '@/auth';
 import { db } from '@/db';
 import { landscapes } from '@/db/schema';
+import { ROLE_ORDER, rankRole } from '@/lib/roles';
 
 export type { Role };
 
-/** Least privileged first. Index in this array IS the privilege level. */
-export const ROLE_ORDER = ['viewer', 'editor', 'admin', 'owner'] as const;
+/**
+ * Least privileged first; the index in this array IS the privilege level. The
+ * array itself lives in lib/roles.ts so that client components can read the
+ * same ordering without pulling this server-only module into their bundle.
+ */
+export { ROLE_ORDER };
 
 function rank(role: Role): number {
-  return ROLE_ORDER.indexOf(role);
+  return rankRole(role);
 }
 
 /**

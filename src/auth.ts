@@ -121,6 +121,22 @@ export const authConfig: NextAuthConfig = {
         const ok = await compare(password, hash);
         if (!record || !record.passwordHash || !ok) return null;
 
+        /**
+         * Stamp the sign-in, so that settings/users can answer "is this account
+         * still in use" rather than guessing.
+         *
+         * Awaited rather than fired and forgotten: a serverless function can be
+         * frozen the instant authorize returns, and an unawaited write would
+         * land only sometimes, which is worse than not having the column.
+         * Wrapped, because a failed bookkeeping update must never be the reason
+         * somebody cannot sign in. A stale "last seen" beats a locked newsroom.
+         */
+        try {
+          await db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, record.id));
+        } catch (err) {
+          console.error('[pressbox:auth] could not record the sign-in time', err);
+        }
+
         return {
           id: record.id,
           email: record.email,

@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, Cpu, LayoutDashboard, LayoutGrid,
-  MessageSquare, Radio, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints,
+  MessageSquare, Radio, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
 } from 'lucide-react';
 import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -69,6 +69,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'settings',
     label: 'Settings',
     items: [
+      { href: '/settings/users', label: 'Users', icon: Users },
       { href: '/settings/models', label: 'Models', icon: Cpu },
       { href: '/settings/sources', label: 'Sources', icon: Radio },
       { href: '/settings/companies', label: 'Companies', icon: Building2 },
@@ -89,6 +90,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/ask': 'Ask',
   '/alerts': 'Alerts',
   '/dashboards': 'Dashboards',
+  '/settings/users': 'Users and Invitations',
   '/settings/models': 'Model Connections',
   '/settings/sources': 'Sources',
   '/settings/companies': 'Companies and Landscapes',
