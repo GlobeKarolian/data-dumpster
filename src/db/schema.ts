@@ -108,9 +108,30 @@ export const invites = pgTable('invites', {
 
 /* ----------------------------------------------------- entities measured */
 
+/**
+ * An outlet that exists in the world.
+ *
+ * POOLED, NOT OWNED. A company and everything hanging off it (channels, posts,
+ * audience, URLs) is shared across organisations, because public social data is
+ * identical regardless of who is looking. The Boston Globe's TikTok post has one
+ * view count; two newsrooms tracking it do not have different views of it, so
+ * storing it twice is waste rather than isolation.
+ *
+ * This is the mechanism that makes the incumbent cheap: collect a company once,
+ * serve it to every customer who tracks it, and let a new customer inherit
+ * however much history the earliest subscriber has accumulated. See
+ * docs/DATA-POOLING.md for why this, and not better engineering, is how you
+ * beat them on cost.
+ *
+ * `orgId` is retained but nullable and means "added by", not "owned by". It is
+ * attribution and nothing reads it as a tenancy boundary. The boundary lives on
+ * `landscapes`: which outlets you consider rivals is private, the outlets
+ * themselves are not.
+ */
 export const companies = pgTable('companies', {
   id: uuid('id').primaryKey().defaultRandom(),
-  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  /** Attribution only. Null for companies seeded before any org existed. */
+  orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   slug: text('slug').notNull(),
   website: text('website'),
@@ -119,7 +140,11 @@ export const companies = pgTable('companies', {
   segment: text('segment'),
   color: text('color'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [uniqueIndex('companies_org_slug_uq').on(t.orgId, t.slug)]);
+}, (t) => [
+  // Global rather than per-org. Two newsrooms adding The Boston Globe must land
+  // on one row, which is the entire point.
+  uniqueIndex('companies_slug_uq').on(t.slug),
+]);
 
 export const channels = pgTable('channels', {
   id: uuid('id').primaryKey().defaultRandom(),

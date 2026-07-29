@@ -11,7 +11,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { db } from '@/db';
-import { companies, channels, landscapes, landscapeCompanies } from '@/db/schema';
+import { orgs, companies, channels, landscapes, landscapeCompanies } from '@/db/schema';
 import { and, eq, notInArray } from 'drizzle-orm';
 import { slugify } from '@/lib/utils';
 import { getAdapter, hasAdapter } from '@/lib/adapters/registry';
@@ -57,8 +57,9 @@ async function upsertCompanyAndChannels(orgId: string, row: Record<string, strin
   if (!name) return null;
   const slug = slugify(name);
 
-  let [company] = await db.select().from(companies)
-    .where(and(eq(companies.orgId, orgId), eq(companies.slug, slug)));
+  // Lookup is by slug alone: a company is a global entity, so two orgs adding
+  // the same outlet must resolve to one row.
+  let [company] = await db.select().from(companies).where(eq(companies.slug, slug));
   if (!company) {
     [company] = await db.insert(companies)
       .values({ orgId, name, slug, website: row.company_url || null }).returning();
@@ -102,9 +103,11 @@ async function upsertCompanyAndChannels(orgId: string, row: Record<string, strin
 }
 
 async function main() {
-  const [any] = await db.select().from(companies).limit(1);
-  if (!any) throw new Error('Seed the database first.');
-  const orgId = any.orgId;
+  // Companies are pooled and no longer carry a tenancy org, so the org for new
+  // landscapes comes from the org table directly rather than from a company.
+  const [org] = await db.select().from(orgs).limit(1);
+  if (!org) throw new Error('Seed the database first.');
+  const orgId = org.id;
 
   const keepSlugs: string[] = [];
 
