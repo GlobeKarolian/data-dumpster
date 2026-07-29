@@ -234,6 +234,7 @@ function envCredentials(platform: Platform): Record<string, string> {
       // Competitor reads are served by a purchased vendor rather than TikTok.
       // Without this the credential gate skips every competitor channel before
       // the adapter ever gets a chance to route to the vendor path.
+      pick(out, 'ensembleDataToken', process.env.ENSEMBLEDATA_TOKEN);
       pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'linkedin':
