@@ -43,14 +43,31 @@ Snapchat. Not Facebook. Not LinkedIn.
 
 ## Three findings that change the plan
 
-### 1. A YouTube API key is no longer needed
+### 1. YouTube should stay on the official API. This corrects an earlier claim.
 
-EnsembleData covers YouTube completely, and separates Shorts from long-form
-videos, which the official Data API does not do without inspecting each video's
-duration. Two calls per channel replaces a Google Cloud project, an API key and
-a 10,000 unit daily quota. The official API remains the better choice for owned
-channels because it exposes impressions and watch time, which no scraper can
-see.
+An earlier draft of this document said a YouTube API key was no longer needed.
+That was written from the endpoint list rather than from a response body, and
+testing shows it is wrong.
+
+`/youtube/channel/videos` returns YouTube's raw InnerTube renderer shape, which
+carries only:
+
+    videoId, title, viewCountText "167 views", publishedTimeText "1 day ago",
+    lengthText "1:22"
+
+No likes. No comments. And a relative published time, which cannot be bucketed
+into a 28-day window with any confidence once it reads "1 year ago". Real
+engagement would need a `/youtube/video/details` call per video, roughly 690
+extra units per full refresh.
+
+The official Data API returns exact `publishedAt`, `viewCount`, `likeCount` and
+`commentCount`, fifty videos per call, free, against a 10,000 unit daily quota.
+Our existing adapter already uses it at about 3 units per 50 videos, so 23
+channels cost roughly 70 units per refresh: about 140 free refreshes a day.
+
+The lesson generalises. Endpoint inventories say what exists; only a response
+body says what a field contains. Both Instagram bugs and this one came from
+trusting the former.
 
 ### 2. Instagram reels need their own call, and that is where views live
 
