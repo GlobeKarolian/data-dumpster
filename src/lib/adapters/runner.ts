@@ -219,9 +219,11 @@ function envCredentials(platform: Platform): Record<string, string> {
     case 'instagram':
       pick(out, 'accessToken', process.env.META_ACCESS_TOKEN);
       pick(out, 'igUserId', process.env.META_IG_USER_ID);
+      pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'twitter':
       pick(out, 'bearerToken', process.env.TWITTER_BEARER_TOKEN);
+      pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'tiktok':
       pick(out, 'clientKey', process.env.TIKTOK_CLIENT_KEY);

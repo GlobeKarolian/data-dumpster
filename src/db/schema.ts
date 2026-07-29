@@ -426,3 +426,42 @@ export const postTagAssignmentsRelations = relations(postTagAssignments, ({ one 
 }));
 
 export { sql };
+
+/**
+ * Weekly reports.
+ *
+ * Modelled on the Platforms Dashboard and Digest that already goes out every
+ * Monday. Two kinds of content live here and they are deliberately separated:
+ *
+ *  - `computed` is everything Pressbox can derive from ingested data. It is
+ *    regenerated on demand and never hand-edited, so a stale number cannot
+ *    survive a refresh.
+ *  - `manual` is everything that lives in systems Pressbox does not read:
+ *    Search Console clicks, referral traffic by subscriptions driven, paid
+ *    promotion cost per start, Apple News. Those get paste boxes rather than a
+ *    fake integration, because a box someone fills in ninety seconds is better
+ *    than a connector nobody maintains.
+ *
+ * `narrative` holds the so-what commentary, which is the part leadership
+ * actually reads and the part a table cannot supply.
+ */
+export const weeklyReports = pgTable('weekly_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').references(() => landscapes.id, { onDelete: 'set null' }),
+  periodStart: date('period_start').notNull(),
+  periodEnd: date('period_end').notNull(),
+  title: text('title').notNull(),
+  /** Banner note, e.g. a broken data stream that omits a brand this week. */
+  dataNote: text('data_note'),
+  computed: jsonb('computed').$type<Record<string, unknown>>().notNull().default({}),
+  manual: jsonb('manual').$type<Record<string, unknown>>().notNull().default({}),
+  narrative: jsonb('narrative').$type<Record<string, string>>().notNull().default({}),
+  status: text('status').notNull().default('draft'),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('weekly_reports_period_uq').on(t.orgId, t.periodStart, t.periodEnd),
+  index('weekly_reports_org_idx').on(t.orgId, t.periodEnd),
+]);

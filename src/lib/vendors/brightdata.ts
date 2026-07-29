@@ -33,6 +33,9 @@ export const DATASETS = {
   tiktokPost: 'gd_lu702nij2f790tmv9h',
   tiktokPostsByProfile: 'gd_m7n5v2gq296pex2f5m',
   tiktokComments: 'gd_lkf2st302ap89utw5k',
+  instagramProfile: 'gd_l1vikfch901nx3by4',
+  instagramPost: 'gd_lk5ns7kz21pck8jpis',
+  instagramReel: 'gd_lyclm20il4r5helnj',
 } as const;
 
 /** Sync requests accept at most 20 URLs per call. */
@@ -62,20 +65,55 @@ function fail(platform: Platform, message: string, status?: number): never {
   throw new AdapterError('Bright Data: ' + message, { platform, retryable, status });
 }
 
+/**
+ * Bright Data holds the connection open for the whole scrape, which routinely
+ * runs 30 to 110 seconds. Node's default fetch gives up on an idle socket well
+ * before a slow profile finishes, and the failure surfaces as a bare
+ * "fetch failed" with no status. That accounted for every unexplained channel
+ * failure in the first production runs, so retry network faults specifically,
+ * with a longer per-attempt budget than any single scrape should need.
+ */
+const NETWORK_ATTEMPTS = 3;
+
 async function request(
   url: string,
   init: RequestInit,
   opts: BrightDataOptions,
 ): Promise<unknown> {
-  opts.onApiCall?.();
-  let res: Response;
-  try {
-    res = await fetch(url, init);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (opts.signal?.aborted) fail(opts.platform, 'request aborted');
-    return fail(opts.platform, 'network failure: ' + msg);
+  let res: Response | null = null;
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= NETWORK_ATTEMPTS; attempt += 1) {
+    opts.onApiCall?.();
+
+    // Own timeout, so a hung socket fails predictably instead of at whatever
+    // undici's default happens to be on this runtime.
+    const timer = new AbortController();
+    const cancel = setTimeout(() => timer.abort(), opts.timeoutMs ?? 180_000);
+    const signals: AbortSignal[] = [timer.signal];
+    if (opts.signal) signals.push(opts.signal);
+
+    try {
+      res = await fetch(url, {
+        ...init,
+        signal: signals.length > 1 ? AbortSignal.any(signals) : timer.signal,
+      });
+      break;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      if (opts.signal?.aborted) fail(opts.platform, 'request cancelled by caller');
+      if (attempt === NETWORK_ATTEMPTS) {
+        fail(opts.platform, 'network failure after ' + NETWORK_ATTEMPTS + ' attempts: ' + lastError);
+      }
+      // Linear backoff. The vendor is not rate limiting us here, the socket
+      // died, so there is nothing to be gained by backing off aggressively.
+      await new Promise((r) => setTimeout(r, attempt * 2000));
+    } finally {
+      clearTimeout(cancel);
+    }
   }
+
+  if (!res) return fail(opts.platform, 'network failure: ' + lastError);
 
   const text = await res.text();
   let parsed: unknown = undefined;

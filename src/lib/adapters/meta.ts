@@ -1035,10 +1035,12 @@ export const instagramAdapter: ChannelAdapter = {
     + 'and nothing at all for Personal accounts, and Meta has never committed to keeping it. '
     + 'Instagram exposes no share count to anyone, so amplification is always 0.',
   credentialFields: [
-    { key: 'accessToken', label: 'Meta access token', secret: true, required: true,
-      help: 'Long-lived token for the Facebook Page linked to your Instagram Business account.' },
-    { key: 'igUserId', label: 'Your Instagram Business account id', required: true,
-      help: 'The IG user id the token belongs to. Also used as the querying account for competitor Business Discovery lookups.' },
+    { key: 'accessToken', label: 'Meta access token', secret: true, required: false,
+      help: 'Owned accounts. Long-lived token for the Facebook Page linked to your Instagram Business account.' },
+    { key: 'igUserId', label: 'Your Instagram Business account id', required: false,
+      help: 'The IG user id the token belongs to. Also the querying account for competitor Business Discovery lookups.' },
+    { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
+      help: 'Competitor accounts, when no Meta app is approved. Read docs/DATA-ACCESS.md first.' },
   ],
   rateLimit: { callsPerWindow: 200, windowSeconds: 3_600 },
   worksUnauthenticated: false,
@@ -1046,6 +1048,18 @@ export const instagramAdapter: ChannelAdapter = {
   parseHandle: parseInstagramHandle,
 
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
+    // Business Discovery needs an approved Meta app AND an Instagram Business
+    // account we control. Most orgs adding a competitor have neither, so fall
+    // through to the purchased source when one is configured and no Meta token
+    // is. Without this the Sources screen refuses handles the product can
+    // demonstrably read.
+    const vendorKey = credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    if (!credentials.accessToken && vendorKey) {
+      const { fetchProfile } = await import('./instagram-brightdata');
+      const { profile } = await fetchProfile(handle, vendorKey);
+      return profile;
+    }
+
     const token = requireToken(credentials, IG);
     const ownerId = credentials.igUserId?.trim();
 
@@ -1079,6 +1093,27 @@ export const instagramAdapter: ChannelAdapter = {
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
+    // Purchased source first when there is no Meta token. One vendor call
+    // returns the profile and a page of recent posts together.
+    const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    if (!ctx.credentials.accessToken && vendorKey) {
+      const { fetchProfile, postsFromProfile } = await import('./instagram-brightdata');
+      const { profile, audience, raw } = await fetchProfile(
+        ctx.handle, vendorKey, ctx.onApiCall, ctx.signal,
+      );
+      const { posts, warnings: postWarnings } = postsFromProfile(
+        raw, ctx.handle, ctx.since, ctx.until,
+      );
+      return {
+        posts,
+        audience: audience ? [audience] : [],
+        profile,
+        cursor: { source: 'brightdata', mode: 'vendor', lastRunAt: new Date().toISOString() },
+        hasMore: false,
+        warnings: postWarnings,
+      };
+    }
+
     const token = requireToken(ctx.credentials, IG);
     const ownerId = ctx.credentials.igUserId?.trim();
     const warnings: string[] = [];
