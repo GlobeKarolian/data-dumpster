@@ -116,3 +116,46 @@ body {
   outline: 2px solid #C8102E;
   outline-offset: 2px;
 }
+
+
+/* ---------------------------------------------------------------- cursor */
+/*
+ * The raccoon cursor.
+ *
+ * Inlined as a base64 SVG rather than a .cur or .png file: one request fewer,
+ * sharp on every display, and no asset to lose. The hotspot is 4 4 rather than
+ * 0 0 because the artwork starts with the left ear, and a hotspot on empty
+ * pixels makes every click feel a few pixels off.
+ *
+ * Deliberately scoped. Text inputs keep the I-beam and disabled controls keep
+ * not-allowed, because a cursor that never changes stops telling you anything
+ * about what is under it, which is the whole job of a cursor. Pointer targets
+ * get the same raccoon: swapping art on hover is noise at this size.
+ */
+:root {
+  --pb-raccoon: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMSwxKSI+CjxwYXRoIGQ9Ik00LjYgNi4yIDguNCA5LjQgNi4wIDEyLjYgMi42IDkuOFoiIGZpbGw9IiM1YjViNjAiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPHBhdGggZD0iTTI1LjQgNi4yIDIxLjYgOS40IDI0LjAgMTIuNiAyNy40IDkuOFoiIGZpbGw9IiM1YjViNjAiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPHBhdGggZD0iTTE1IDUuMmM2LjIgMCAxMC40IDQuMSAxMC40IDkuNiAwIDUuNi00LjQgOS44LTEwLjQgOS44UzQuNiAyMC40IDQuNiAxNC44QzQuNiA5LjMgOC44IDUuMiAxNSA1LjJaIiBmaWxsPSIjOGE4YTkwIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMS4yIi8+CjxwYXRoIGQ9Ik05LjQgMTIuNmMxLjktMS4xIDMuOS0xLjEgNC44LjEuNC41LjUgMS4yLjQgMS45LS4yIDEuNy0xLjcgMy0zLjUgMy0xLjkgMC0zLjMtMS4zLTMuMy0zIDAtLjkuNS0xLjYgMS42LTJaIiBmaWxsPSIjMmIyYjJlIi8+CjxwYXRoIGQ9Ik0yMC42IDEyLjZjLTEuOS0xLjEtMy45LTEuMS00LjguMS0uNC41LS41IDEuMi0uNCAxLjkuMiAxLjcgMS43IDMgMy41IDMgMS45IDAgMy4zLTEuMyAzLjMtMyAwLS45LS41LTEuNi0xLjYtMloiIGZpbGw9IiMyYjJiMmUiLz4KPGNpcmNsZSBjeD0iMTEuNCIgY3k9IjE0LjIiIHI9IjEuMjUiIGZpbGw9IiNmZmYiLz4KPGNpcmNsZSBjeD0iMTguNiIgY3k9IjE0LjIiIHI9IjEuMjUiIGZpbGw9IiNmZmYiLz4KPHBhdGggZD0iTTE1IDE3LjZjMS44IDAgMyAxIDMgMi4zIDAgMS40LTEuMyAyLjQtMyAyLjRzLTMtMS0zLTIuNGMwLTEuMyAxLjItMi4zIDMtMi4zWiIgZmlsbD0iI2M5YzljZiIvPgo8ZWxsaXBzZSBjeD0iMTUiIGN5PSIxOS4xIiByeD0iMS41IiByeT0iMS4xIiBmaWxsPSIjMmIyYjJlIi8+CjwvZz48L3N2Zz4=') 4 4, auto;
+}
+
+body {
+  cursor: var(--pb-raccoon);
+}
+
+a, button, summary, [role="button"], [role="tab"], label[for],
+select, input[type="checkbox"], input[type="radio"], input[type="range"] {
+  cursor: var(--pb-raccoon);
+}
+
+input[type="text"], input[type="email"], input[type="password"], input[type="search"],
+input[type="number"], input[type="url"], textarea, [contenteditable="true"] {
+  cursor: text;
+}
+
+:disabled, [aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* A pointer device is implied. On touch there is no cursor to style, and on a
+   coarse pointer the artwork would only ever be a wasted download. */
+@media (hover: none) {
+  body, a, button, summary, [role="button"] { cursor: auto; }
+}
