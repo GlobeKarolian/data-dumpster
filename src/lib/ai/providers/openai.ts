@@ -81,7 +81,20 @@ export async function chatCompletion(
   req: CompletionRequest,
 ): Promise<CompletionResult> {
   const reasoning = isReasoningModel(t.model);
-  const limit = req.maxTokens ?? conn.maxOutputTokens;
+
+  /**
+   * Reasoning models bill and consume internal reasoning tokens against the
+   * same output budget, and they spend them BEFORE emitting any visible text.
+   * A caller asking for 100 tokens from gpt-5 therefore gets an empty response
+   * and a length finish reason, which looks like the model refusing to answer.
+   *
+   * Rather than making every call site remember this, enforce a floor here. The
+   * budget is a ceiling and unused tokens are never billed, so raising a small
+   * request costs nothing and removes an entire class of confusing failure.
+   */
+  const REASONING_FLOOR = 2048;
+  const requested = req.maxTokens ?? conn.maxOutputTokens;
+  const limit = reasoning ? Math.max(requested, REASONING_FLOOR) : requested;
 
   const payload: Record<string, unknown> = {
     model: t.model,

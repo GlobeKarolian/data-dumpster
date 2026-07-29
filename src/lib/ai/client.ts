@@ -369,9 +369,15 @@ export async function checkConnection(conn: ResolvedModelConnection): Promise<Co
   let model: string | null = null;
 
   try {
+    // Reasoning models (o-series, gpt-5 family) spend the output budget on
+    // internal reasoning before emitting a single visible character. An eight
+    // token ceiling is therefore not a cheap probe, it is a guaranteed failure,
+    // and it made a perfectly good connection show a red dot forever. Give
+    // those models enough room to think and still answer.
+    const reasoning = /^(o\d|gpt-5)/i.test(conn.model.replace(/^.*\//, ''));
     const result = await provider.complete(conn, {
       messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
-      maxTokens: 8,
+      maxTokens: reasoning ? 2048 : 8,
       temperature: 0,
     });
     ok = true;
