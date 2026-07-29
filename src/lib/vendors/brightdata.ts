@@ -37,6 +37,8 @@ export const DATASETS = {
   instagramPost: 'gd_lk5ns7kz21pck8jpis',
   instagramReel: 'gd_lyclm20il4r5helnj',
   threadsProfile: 'gd_mde7jg3ld2h3hnnf2',
+  facebookPagePosts: 'gd_lkaxegm826bjpoo9m5',
+  twitterPosts: 'gd_lwxkxvnf1cynvib9co',
 } as const;
 
 /** Sync requests accept at most 20 URLs per call. */
@@ -202,7 +204,7 @@ export async function scrapeSync<T = Record<string, unknown>>(
      * difference between twelve posts and a real window of history, so it is a
      * first-class option rather than something callers hand-assemble.
      */
-    discoverBy?: 'url' | 'user_name' | 'keyword';
+    discoverBy?: 'url' | 'profile_url' | 'user_name' | 'keyword';
   },
 ): Promise<T[]> {
   if (input.length === 0) return [];

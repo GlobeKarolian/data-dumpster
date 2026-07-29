@@ -215,6 +215,7 @@ function envCredentials(platform: Platform): Record<string, string> {
       pick(out, 'accessToken', process.env.META_ACCESS_TOKEN);
       pick(out, 'appId', process.env.META_APP_ID);
       pick(out, 'appSecret', process.env.META_APP_SECRET);
+      pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'instagram':
       pick(out, 'accessToken', process.env.META_ACCESS_TOKEN);

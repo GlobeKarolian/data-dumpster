@@ -6,6 +6,7 @@ import { PLATFORMS, PLATFORM_LABELS, type Platform } from '@/lib/types';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { CompanyFilter, type CompanyOption } from './company-filter';
 import { ExportMenu, type ExportTarget } from './export-menu';
+import { RefreshButton } from './refresh-button';
 import { ROUTE_TITLES } from './nav';
 
 const PLATFORM_SET = new Set<string>(PLATFORMS);
@@ -58,6 +59,7 @@ export function Topbar({
         <CompanyFilter companies={companies} focusCompanyId={focusCompanyId} />
         <DateRangePicker />
         <ExportMenu targets={exports} landscapeId={landscapeId} />
+        <RefreshButton />
       </div>
     </header>
   );

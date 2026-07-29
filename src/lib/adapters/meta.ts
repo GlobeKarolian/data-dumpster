@@ -578,7 +578,9 @@ export const facebookAdapter: ChannelAdapter = {
     + 'but is restricted to approved academic and non-profit researchers and cannot back a product '
     + 'like this. Saves and views are reported as 0, which means "not exposed", not "zero".',
   credentialFields: [
-    { key: 'accessToken', label: 'Page access token', secret: true, required: true,
+    { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
+      help: 'Competitor Pages, when Page Public Content Access has not been approved. Read docs/DATA-ACCESS.md first.' },
+    { key: 'accessToken', label: 'Page access token', secret: true, required: false,
       help: 'Long-lived Page token from Graph API Explorer or your app\'s token exchange. Needs pages_read_engagement.' },
     { key: 'pageId', label: 'Default Page id', required: false,
       help: 'Optional. Only used as a fallback when a channel has no resolved external id.' },
@@ -631,9 +633,34 @@ export const facebookAdapter: ChannelAdapter = {
   async fetch(ctx: FetchContext): Promise<FetchResult> {
     const owned = isOwnedFacebook(ctx);
 
-    // Refuse loudly before spending a call. A competitor Page without PPCA is a
-    // configuration problem, and returning an empty result would quietly draw a
-    // flat line where the honest answer is "you have not applied yet".
+    // A competitor Page with no Page Public Content Access approval used to be
+    // a hard refusal. It still is when nothing else is configured, but a
+    // purchased source is a legitimate answer to the same question and most
+    // orgs will have one long before App Review clears.
+    const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    if (!owned && !isPpcaApproved(ctx.credentials) && vendorKey) {
+      const { fetchPagePosts } = await import('./facebook-brightdata');
+      const result = await fetchPagePosts(ctx.handle, vendorKey, {
+        since: ctx.since,
+        until: ctx.until,
+        limit: ctx.limit,
+        onApiCall: ctx.onApiCall,
+        signal: ctx.signal,
+      });
+      return {
+        posts: result.posts,
+        audience: result.audience ? [result.audience] : [],
+        profile: result.profile,
+        cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
+        hasMore: false,
+        warnings: result.warnings,
+      };
+    }
+
+    // Refuse loudly before spending a call. A competitor Page without PPCA and
+    // without a purchased source is a configuration problem, and returning an
+    // empty result would quietly draw a flat line where the honest answer is
+    // "you have not applied yet".
     if (!owned && !isPpcaApproved(ctx.credentials)) refusePpca(ctx.handle);
 
     const token = owned ? requireToken(ctx.credentials, FB) : requirePpcaToken(ctx.credentials);

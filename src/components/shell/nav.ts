@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, Cpu, LayoutDashboard, LayoutGrid,
-  MessageSquare, Radio, Sparkles, Tag, Link2, Trophy, FileText,
+  MessageSquare, Radio, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints,
 } from 'lucide-react';
 import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -44,6 +44,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'content',
     label: 'Content',
     items: [
+      { href: '/stories', label: 'Story Cloud', icon: Waypoints },
       { href: '/posts', label: 'Social Posts', icon: FileText },
       { href: '/post-tags', label: 'Post Tags', icon: Tag },
       { href: '/posted-urls', label: 'Posted URLs', icon: Link2 },
@@ -53,6 +54,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'intelligence',
     label: 'Intelligence',
     items: [
+      { href: '/reports', label: 'Weekly Report', icon: FileSpreadsheet, matchPrefix: true },
       { href: '/briefs', label: 'Briefs', icon: Sparkles, matchPrefix: true },
       { href: '/ask', label: 'Ask', icon: MessageSquare },
       { href: '/alerts', label: 'Alerts', icon: Bell },
@@ -78,9 +80,11 @@ export const NAV_SECTIONS: NavSection[] = [
 export const ROUTE_TITLES: Record<string, string> = {
   '/cross-channel': 'Cross-Channel',
   '/leaderboard': 'Leaderboards',
+  '/stories': 'Story Cloud',
   '/posts': 'Social Posts',
   '/post-tags': 'Post Tags',
   '/posted-urls': 'Posted URLs',
+  '/reports': 'Weekly Report',
   '/briefs': 'Briefs',
   '/ask': 'Ask',
   '/alerts': 'Alerts',

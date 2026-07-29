@@ -470,6 +470,30 @@ export const twitterAdapter: ChannelAdapter = {
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
+    // X sells a sanctioned read, so prefer it whenever a bearer token exists.
+    // Fall back to the purchased source only when it does not, which lets an
+    // org that already pays a data vendor see the platform without also buying
+    // an X subscription.
+    const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    if (!ctx.credentials.bearerToken && vendorKey) {
+      const { fetchProfilePosts } = await import('./twitter-brightdata');
+      const result = await fetchProfilePosts(ctx.handle, vendorKey, {
+        since: ctx.since,
+        until: ctx.until,
+        limit: ctx.limit,
+        onApiCall: ctx.onApiCall,
+        signal: ctx.signal,
+      });
+      return {
+        posts: result.posts,
+        audience: result.audience ? [result.audience] : [],
+        profile: result.profile,
+        cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
+        hasMore: false,
+        warnings: result.warnings,
+      };
+    }
+
     const bearer = requireBearer(ctx.credentials);
     const warnings: string[] = [];
 
