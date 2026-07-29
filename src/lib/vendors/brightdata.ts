@@ -194,16 +194,28 @@ async function awaitSnapshot(
 export async function scrapeSync<T = Record<string, unknown>>(
   datasetId: string,
   input: Record<string, unknown>[],
-  opts: BrightDataOptions,
+  opts: BrightDataOptions & {
+    /**
+     * Discovery mode. Collect endpoints take an exact item URL; discovery
+     * endpoints take a profile URL and enumerate from it. This is the
+     * difference between twelve posts and a real window of history, so it is a
+     * first-class option rather than something callers hand-assemble.
+     */
+    discoverBy?: 'url' | 'user_name' | 'keyword';
+  },
 ): Promise<T[]> {
   if (input.length === 0) return [];
   if (input.length > MAX_SYNC_URLS) {
     fail(opts.platform, 'sync requests accept at most ' + MAX_SYNC_URLS + ' URLs, got ' + input.length);
   }
 
-  const timeout = opts.timeoutMs ?? 120_000;
+  // Discovery enumerates a profile and routinely runs past the sync budget, so
+  // it needs a longer ceiling before the snapshot fallback takes over.
+  const timeout = opts.timeoutMs ?? (opts.discoverBy ? 300_000 : 120_000);
   const deadline = Date.now() + timeout;
-  const url = BASE + '/scrape?dataset_id=' + encodeURIComponent(datasetId) + '&format=json&include_errors=true';
+  const url = BASE + '/scrape?dataset_id=' + encodeURIComponent(datasetId)
+    + '&format=json&include_errors=true'
+    + (opts.discoverBy ? '&type=discover_new&discover_by=' + opts.discoverBy : '');
 
   const body = await request(url, {
     method: 'POST',

@@ -197,3 +197,100 @@ export function postsFromProfile(
 
   return { posts, warnings };
 }
+
+/**
+ * Deep post history for one profile, via the discovery endpoint.
+ *
+ * The profile endpoint returns a hard-capped twelve recent posts regardless of
+ * limit_per_input, which for a busy newsroom account is under a week. This
+ * endpoint takes the same profile URL but enumerates the account, honours a
+ * date range, and returned fifty posts across two weeks in testing where the
+ * profile call returned twelve across two days.
+ *
+ * It costs more time (roughly 90 seconds per profile) and one record per post
+ * rather than one per profile, so it is the right call for a scheduled window
+ * refresh and the wrong one for resolving a handle someone just typed.
+ */
+export async function fetchPostsByProfile(
+  handle: string,
+  apiKey: string,
+  opts: { since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal },
+): Promise<{ posts: NormalizedPost[]; followers: number | null; warnings: string[] }> {
+  const fmt = (d: Date) => {
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return mm + '-' + dd + '-' + d.getUTCFullYear();
+  };
+
+  const rows = await scrapeSync(
+    DATASETS.instagramPost,
+    [{
+      url: profileUrl(handle),
+      num_of_posts: Math.min(opts.limit, 200),
+      start_date: fmt(opts.since),
+      end_date: fmt(opts.until),
+      post_type: '',
+    }],
+    { apiKey, platform: PLATFORM, discoverBy: 'url', onApiCall: opts.onApiCall, signal: opts.signal },
+  );
+
+  const warnings: string[] = [];
+  const posts: NormalizedPost[] = [];
+  let followers: number | null = null;
+
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    if (isErrorRow(row)) {
+      const why = rowError(row);
+      if (why) warnings.push('Instagram row error for @' + handle + ': ' + why);
+      continue;
+    }
+
+    // Each post row carries the account's follower count, so audience comes
+    // free rather than costing a second call.
+    const f = num(pick(row, ['followers']));
+    if (f > 0) followers = f;
+
+    const postedAt = toDate(pick(row, ['date_posted', 'datetime', 'timestamp']));
+    const externalId = str(pick(row, ['post_id', 'content_id', 'pk', 'shortcode']));
+    if (!postedAt || !externalId) continue;
+    if (postedAt < opts.since || postedAt > opts.until) continue;
+
+    const text = str(pick(row, ['description', 'caption', 'post_content'])) ?? '';
+    const rawTags = row.hashtags ?? row.post_hashtags;
+    const hashtags = Array.isArray(rawTags)
+      ? rawTags.map((t) => String(t).replace(/^#/, '')).filter(Boolean)
+      : extractHashtags(text);
+
+    const contentType = pick(row, ['content_type', 'product_type']);
+    const videoUrl = str(pick(row, ['video_url', 'audio_url']));
+
+    posts.push({
+      externalId,
+      postedAt,
+      type: postType(contentType, Boolean(videoUrl)),
+      text,
+      permalink: str(pick(row, ['url', 'post_url'])) ?? null,
+      mediaUrl: videoUrl ?? null,
+      thumbnailUrl: str(pick(row, ['thumbnail', 'display_url'])) ?? null,
+      durationSec: null,
+      language: null,
+      hashtags,
+      mentions: extractMentions(text),
+      urls: extractUrls(text),
+      applause: num(pick(row, ['likes', 'likes_count'])),
+      conversation: num(pick(row, ['num_comments', 'comments'])),
+      // Instagram publishes neither share nor save counts to anyone.
+      amplification: 0,
+      saves: 0,
+      views: num(pick(row, ['video_view_count', 'views', 'video_play_count'])),
+      raw: row,
+    });
+  }
+
+  if (posts.length === 0 && rows.length > 0 && warnings.length === 0) {
+    warnings.push('Instagram for @' + handle + ': rows returned but none fell inside the requested window.');
+  }
+
+  return { posts, followers, warnings };
+}

@@ -1097,20 +1097,50 @@ export const instagramAdapter: ChannelAdapter = {
     // returns the profile and a page of recent posts together.
     const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
     if (!ctx.credentials.accessToken && vendorKey) {
-      const { fetchProfile, postsFromProfile } = await import('./instagram-brightdata');
+      const { fetchProfile, postsFromProfile, fetchPostsByProfile } =
+        await import('./instagram-brightdata');
+
       const { profile, audience, raw } = await fetchProfile(
         ctx.handle, vendorKey, ctx.onApiCall, ctx.signal,
       );
-      const { posts, warnings: postWarnings } = postsFromProfile(
-        raw, ctx.handle, ctx.since, ctx.until,
-      );
+
+      // The profile payload carries twelve recent posts. That is enough for a
+      // daily poll and nowhere near enough for a 28-day window, so ask the
+      // discovery endpoint for real history and fall back to the twelve if it
+      // fails. Losing depth is much better than losing the channel.
+      let posts = postsFromProfile(raw, ctx.handle, ctx.since, ctx.until);
+      const warnings: string[] = [];
+
+      const windowDays = (ctx.until.getTime() - ctx.since.getTime()) / 864e5;
+      if (windowDays > 3) {
+        try {
+          const deep = await fetchPostsByProfile(ctx.handle, vendorKey, {
+            since: ctx.since,
+            until: ctx.until,
+            limit: ctx.limit,
+            onApiCall: ctx.onApiCall,
+            signal: ctx.signal,
+          });
+          if (deep.posts.length > posts.posts.length) {
+            posts = { posts: deep.posts, warnings: deep.warnings };
+          } else {
+            warnings.push(...deep.warnings);
+          }
+        } catch (err) {
+          warnings.push(
+            'Instagram deep history for @' + ctx.handle + ' failed, using the twelve posts from the '
+            + 'profile call instead: ' + (err instanceof Error ? err.message : String(err)),
+          );
+        }
+      }
+
       return {
-        posts,
+        posts: posts.posts,
         audience: audience ? [audience] : [],
         profile,
         cursor: { source: 'brightdata', mode: 'vendor', lastRunAt: new Date().toISOString() },
         hasMore: false,
-        warnings: postWarnings,
+        warnings: [...posts.warnings, ...warnings],
       };
     }
 
