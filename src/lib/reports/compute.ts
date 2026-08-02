@@ -54,19 +54,33 @@ function directionOf(changePct: number | null): Direction {
  * A change against a zero baseline is null rather than infinite. "It grew from
  * nothing" is a sentence, not a percentage.
  */
-function changePctOf(value: number, previousValue: number | null): number | null {
-  if (previousValue === null || previousValue === 0 || !Number.isFinite(previousValue)) return null;
+function changePctOf(value: number | null, previousValue: number | null): number | null {
+  if (
+    value === null
+    || previousValue === null
+    || previousValue === 0
+    || !Number.isFinite(previousValue)
+  ) return null;
   const pct = (value - previousValue) / Math.abs(previousValue);
   return Number.isFinite(pct) ? pct : null;
 }
 
-function movement(value: number, previousValue: number | null): Movement {
+function movement(value: number | null, previousValue: number | null): Movement {
   const changePct = changePctOf(value, previousValue);
   return { value, previousValue, changePct, direction: directionOf(changePct) };
 }
 
 function sumValues(rows: MetricRow[]): number {
-  return rows.reduce((acc, r) => acc + (Number.isFinite(r.value) ? r.value : 0), 0);
+  return rows.reduce(
+    (acc, r) => acc + (r.available && Number.isFinite(r.value) ? r.value : 0),
+    0,
+  );
+}
+
+/** A total that is valid only when every included company was measured. */
+function sumCompleteValues(rows: MetricRow[]): number | null {
+  if (rows.length === 0 || rows.some((row) => !row.available)) return null;
+  return sumValues(rows);
 }
 
 /**
@@ -74,18 +88,19 @@ function sumValues(rows: MetricRow[]): number {
  * a column of nulls into zero would turn "we could not measure last week" into
  * "last week was zero", which reads as a catastrophic decline.
  */
-function sumPrevious(rows: MetricRow[]): number | null {
-  let seen = false;
-  let total = 0;
-  for (const r of rows) {
-    if (r.previousValue === null || r.previousValue === undefined) continue;
-    seen = true;
-    total += r.previousValue;
-  }
-  return seen ? total : null;
+function sumCompletePrevious(rows: MetricRow[]): number | null {
+  if (
+    rows.length === 0
+    || rows.some((row) =>
+      !row.previousAvailable
+      || row.previousValue === null
+      || row.previousValue === undefined)
+  ) return null;
+  return rows.reduce((total, row) => total + (row.previousValue ?? 0), 0);
 }
 
-function perPost(engagement: number, posts: number): number {
+function perPost(engagement: number | null, posts: number | null): number | null {
+  if (engagement === null || posts === null) return null;
   if (!posts) return 0;
   const v = engagement / posts;
   return Number.isFinite(v) ? v : 0;
@@ -97,6 +112,7 @@ function platformSplit(row: MetricRow): Partial<Record<ReportPlatform, number>> 
   const out: Partial<Record<ReportPlatform, number>> = {};
   for (const [platform, value] of Object.entries(row.breakdown ?? {})) {
     if (!REPORT_PLATFORM_SET.has(platform)) continue;
+    if (row.breakdownAvailability?.[platform as ReportPlatform] === false) continue;
     if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) continue;
     out[platform as ReportPlatform] = value;
   }
@@ -159,10 +175,10 @@ export async function computeWeeklyReport(
     return {
       companyId: row.company.id,
       name: row.company.name,
-      rank: row.rank,
-      totalFollowers: row.value,
-      previousTotalFollowers: row.previousValue ?? null,
-      netChange: net?.value ?? 0,
+      rank: row.available ? row.rank : null,
+      totalFollowers: row.available ? row.value : null,
+      previousTotalFollowers: row.previousAvailable ? row.previousValue ?? null : null,
+      netChange: net?.available ? net.value : null,
       changePct: row.changePct ?? null,
       byPlatform: platformSplit(row),
     };
@@ -170,8 +186,14 @@ export async function computeWeeklyReport(
 
   /* ------------------------------------------------------------- portfolio */
 
-  const portfolioEngagement = movement(sumValues(engagementBoard), sumPrevious(engagementBoard));
-  const portfolioPosts = movement(sumValues(postsBoard), sumPrevious(postsBoard));
+  const portfolioEngagement = movement(
+    sumCompleteValues(engagementBoard),
+    sumCompletePrevious(engagementBoard),
+  );
+  const portfolioPosts = movement(
+    sumCompleteValues(postsBoard),
+    sumCompletePrevious(postsBoard),
+  );
   const portfolioPerPost = movement(
     perPost(portfolioEngagement.value, portfolioPosts.value),
     portfolioEngagement.previousValue === null || portfolioPosts.previousValue === null
@@ -193,17 +215,25 @@ export async function computeWeeklyReport(
   const focusFollowers = focusCompany
     ? followerBoard.find((r) => r.company.id === focusCompany.id)
     : undefined;
-  const focusEngagement = movement(headline.engagementTotal.value, headline.engagementTotal.previousValue);
-  const focusPosts = movement(headline.posts.value, headline.posts.previousValue);
+  const focusEngagement = movement(
+    headline.engagementTotal.available ? headline.engagementTotal.value : null,
+    headline.engagementTotal.previousAvailable ? headline.engagementTotal.previousValue : null,
+  );
+  const focusPosts = movement(
+    headline.posts.available ? headline.posts.value : null,
+    headline.posts.previousAvailable ? headline.posts.previousValue : null,
+  );
 
   const focus: ComputedBlock['focus'] = {
     companyName: focusCompany?.name ?? null,
     followers: movement(
-      focusFollowers?.value ?? 0,
-      focusFollowers?.previousValue ?? null,
+      focusFollowers?.available ? focusFollowers.value : null,
+      focusFollowers?.previousAvailable ? focusFollowers.previousValue ?? null : null,
     ),
-    netFollowers: focusNet?.value ?? 0,
-    previousNetFollowers: focusNet?.previousValue ?? null,
+    netFollowers: focusNet?.available ? focusNet.value : null,
+    previousNetFollowers: focusNet?.previousAvailable
+      ? focusNet.previousValue ?? null
+      : null,
     engagementTotal: focusEngagement,
     posts: focusPosts,
     engagementPerPost: movement(
@@ -237,8 +267,11 @@ export async function computeWeeklyReport(
     previousPeriod: { start: facts.previousRange.start, end: facts.previousRange.end },
     focus,
     portfolio: {
-      followers: movement(sumValues(followerBoard), sumPrevious(followerBoard)),
-      netFollowers: sumValues(netFollowerBoard),
+      followers: movement(
+        sumCompleteValues(followerBoard),
+        sumCompletePrevious(followerBoard),
+      ),
+      netFollowers: sumCompleteValues(netFollowerBoard),
       engagementTotal: portfolioEngagement,
       posts: portfolioPosts,
       engagementPerPost: portfolioPerPost,

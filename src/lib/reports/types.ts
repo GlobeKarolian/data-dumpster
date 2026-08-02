@@ -33,7 +33,7 @@ export const REPORT_PLATFORM_LABELS: Record<ReportPlatform, string> = {
 export type Direction = 'up' | 'down' | 'flat' | 'unknown';
 
 export type Movement = {
-  value: number;
+  value: number | null;
   previousValue: number | null;
   /** Fractional, so 0.27 is +27 percent. Null against a zero baseline. */
   changePct: number | null;
@@ -43,11 +43,11 @@ export type Movement = {
 export type BrandRow = {
   companyId: string;
   name: string;
-  rank: number;
-  totalFollowers: number;
+  rank: number | null;
+  totalFollowers: number | null;
   previousTotalFollowers: number | null;
   /** Followers gained inside the window, last observation minus first. */
-  netChange: number;
+  netChange: number | null;
   changePct: number | null;
   byPlatform: Partial<Record<ReportPlatform, number>>;
 };
@@ -88,7 +88,7 @@ export type CohortSummary = {
 export type FocusPerformance = {
   companyName: string | null;
   followers: Movement;
-  netFollowers: number;
+  netFollowers: number | null;
   previousNetFollowers: number | null;
   engagementTotal: Movement;
   posts: Movement;
@@ -107,7 +107,7 @@ export type ComputedBlock = {
   /** Every brand in the landscape, added up. */
   portfolio: {
     followers: Movement;
-    netFollowers: number;
+    netFollowers: number | null;
     engagementTotal: Movement;
     posts: Movement;
     engagementPerPost: Movement;

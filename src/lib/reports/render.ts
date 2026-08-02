@@ -102,9 +102,12 @@ export function executiveLines(doc: ReportDocument): Line[] {
   const c = doc.computed;
   if (c) {
     const brand = c.focus.companyName ?? 'The portfolio';
+    const audienceStatement = c.focus.netFollowers === null
+      ? brand + ' did not have enough audience history to compute net follower change. '
+      : brand + ' gained ' + formatSignedCount(c.focus.netFollowers) + ' net followers. ';
     out.push({
       label: 'Performance',
-      value: brand + ' gained ' + formatSignedCount(c.focus.netFollowers) + ' net followers. '
+      value: audienceStatement
         + 'Engagement was ' + formatCount(c.focus.engagementTotal.value) + ', '
         + describeDirection(c.focus.engagementTotal.changePct) + ', across '
         + formatCount(c.focus.posts.value) + ' posts, or '

@@ -16,20 +16,19 @@
  */
 import 'server-only';
 import { complete } from '@/lib/ai/client';
+import type { NumericGroundingVerification } from '@/lib/ai/verify';
 import type { CompletionRequest } from '@/lib/ai/types';
 import {
-  MANUAL_FIGURES,
-  MANUAL_SECTIONS,
   NARRATIVE_SECTIONS,
-  REPORT_PLATFORM_LABELS,
-  REPORT_PLATFORMS,
   periodLabel,
   type NarrativeSectionSpec,
 } from './types';
+import type { ReportDocument } from './render';
 import {
-  describeDirection, formatCount, formatPct, formatRate, formatSignedCount,
-  type ReportDocument,
-} from './render';
+  buildNarrativeSectionMaterial,
+  ReportNarrativeVerificationError,
+  verifyNarrativeSection,
+} from './narrative-verification';
 
 const RULES = [
   'HONESTY RULES.',
@@ -51,106 +50,12 @@ const VOICE = [
   'document.',
 ].join('\n');
 
-/* ------------------------------------------------------ material rendering */
-
-function computedMaterial(doc: ReportDocument): string[] {
-  const c = doc.computed;
-  if (!c) return ['COMPUTED DATA: not yet computed for this report.'];
-
-  const lines: string[] = [];
-  lines.push('COMPUTED DATA (window ' + periodLabel(c.period)
-    + ', compared against ' + c.previousPeriod.start + ' to ' + c.previousPeriod.end + ').');
-  lines.push('Landscape: ' + c.landscape.name + '.');
-  lines.push('Focus brand: ' + (c.focus.companyName ?? 'not set') + '.');
-  lines.push('Focus followers: ' + formatCount(c.focus.followers.value)
-    + ', net change this week ' + formatSignedCount(c.focus.netFollowers)
-    + ', ' + describeDirection(c.focus.followers.changePct) + '.');
-  lines.push('Focus engagement total: ' + formatCount(c.focus.engagementTotal.value)
-    + ', ' + describeDirection(c.focus.engagementTotal.changePct) + '.');
-  lines.push('Focus posts: ' + formatCount(c.focus.posts.value)
-    + '. Engagement per post: ' + formatRate(c.focus.engagementPerPost.value)
-    + ', ' + describeDirection(c.focus.engagementPerPost.changePct) + '.');
-  lines.push('Portfolio followers: ' + formatCount(c.portfolio.followers.value)
-    + ', net ' + formatSignedCount(c.portfolio.netFollowers) + ' this week.');
-  lines.push('Portfolio engagement: ' + formatCount(c.portfolio.engagementTotal.value)
-    + ', ' + describeDirection(c.portfolio.engagementTotal.changePct) + '.');
-
-  lines.push('');
-  lines.push('BRANDS BY TOTAL FOLLOWERS:');
-  for (const b of c.brands) {
-    const split = REPORT_PLATFORMS
-      .filter((p) => b.byPlatform[p] !== undefined)
-      .map((p) => REPORT_PLATFORM_LABELS[p] + ' ' + formatCount(b.byPlatform[p]))
-      .join(', ');
-    lines.push('  ' + b.rank + '. ' + b.name + ' - ' + formatCount(b.totalFollowers)
-      + ' followers, net ' + formatSignedCount(b.netChange)
-      + (split ? ' (' + split + ')' : ''));
-  }
-
-  if (c.topPosts.length > 0) {
-    lines.push('');
-    lines.push('TOP ENGAGED POSTS:');
-    for (const p of c.topPosts) {
-      lines.push('  ' + p.rank + '. ' + p.companyName + ' on ' + p.platform + ', '
-        + formatCount(p.engagementTotal) + ' engagements: '
-        + (p.text ? p.text.slice(0, 200).replace(/\s+/g, ' ') : 'no post text captured'));
-    }
-  }
-
-  lines.push('');
-  lines.push('COHORT BY ENGAGEMENT (' + c.cohort.memberCount + ' brands):');
-  for (const r of c.cohort.rows.slice(0, 15)) {
-    lines.push('  ' + r.rank + '. ' + r.name + (r.isFocus ? ' (us)' : '') + ' - '
-      + formatCount(r.engagementTotal) + ', ' + formatPct(r.changePct) + ' week over week');
-  }
-  if (c.cohort.focusPostRank) {
-    lines.push('Our best post ranked ' + c.cohort.focusPostRank + ' of the top '
-      + c.cohort.focusPostPool + ' posts in the landscape.');
-  }
-  if (c.caveats.length > 0) {
-    lines.push('');
-    lines.push('MEASUREMENT CAVEATS (repeat these):');
-    for (const caveat of c.caveats) lines.push('  - ' + caveat);
-  }
-  return lines;
-}
-
-function manualMaterial(spec: NarrativeSectionSpec, doc: ReportDocument): string[] {
-  const lines: string[] = [];
-  for (const tableId of spec.sources.manualTables) {
-    const section = MANUAL_SECTIONS.find((s) => s.id === tableId);
-    if (!section) continue;
-    const table = doc.manual.tables[tableId];
-    lines.push('');
-    lines.push('PASTED TABLE: ' + section.title);
-    if (!table || table.rows.length === 0) {
-      lines.push('  (nothing pasted for this table this week)');
-      continue;
-    }
-    lines.push('  ' + section.columns.map((c) => c.label).join(' | '));
-    for (const row of table.rows.slice(0, 25)) lines.push('  ' + row.join(' | '));
-    if (table.rows.length > 25) {
-      lines.push('  (' + (table.rows.length - 25) + ' further rows not shown)');
-    }
-  }
-
-  const figures = spec.sources.manualFigures
-    .map((id) => ({ spec: MANUAL_FIGURES.find((f) => f.id === id), value: doc.manual.figures[id] }))
-    .filter((f) => f.spec && f.value && f.value.trim().length > 0);
-  if (figures.length > 0) {
-    lines.push('');
-    lines.push('HAND-ENTERED FIGURES:');
-    for (const f of figures) lines.push('  ' + f.spec?.label + ': ' + f.value?.trim());
-  }
-  return lines;
-}
-
 /** Build the completion request for one section. Exported so it is inspectable. */
-export function narrativePrompt(spec: NarrativeSectionSpec, doc: ReportDocument): CompletionRequest {
-  const material: string[] = [];
-  if (spec.sources.computed) material.push(...computedMaterial(doc));
-  material.push(...manualMaterial(spec, doc));
-
+export function narrativePrompt(
+  spec: NarrativeSectionSpec,
+  doc: ReportDocument,
+  material = buildNarrativeSectionMaterial(spec, doc),
+): CompletionRequest {
   return {
     temperature: 0.3,
     /**
@@ -185,7 +90,7 @@ export function narrativePrompt(spec: NarrativeSectionSpec, doc: ReportDocument)
           'SECTION: ' + spec.title,
           'SECTION BRIEF: ' + spec.guidance,
           '',
-          material.join('\n'),
+          material,
           '',
           'Write the paragraph for this section now. Prose only.',
         ].join('\n'),
@@ -197,6 +102,7 @@ export function narrativePrompt(spec: NarrativeSectionSpec, doc: ReportDocument)
 export type NarrativeDraft = {
   sectionId: string;
   text: string;
+  verification: NumericGroundingVerification;
   model: string;
   costUsd: number;
   latencyMs: number;
@@ -215,15 +121,26 @@ export async function draftNarrativeSection(
   const spec = NARRATIVE_SECTIONS.find((s) => s.id === sectionId);
   if (!spec) throw new Error('There is no report section called "' + sectionId + '".');
 
-  const result = await complete(orgId, narrativePrompt(spec, doc), {
+  const material = buildNarrativeSectionMaterial(spec, doc);
+  const result = await complete(orgId, narrativePrompt(spec, doc, material), {
     feature: 'weekly-report-narrative',
     connectionId: opts.connectionId,
   });
+  // Models reach for markdown even when told not to; strip the two it reaches for most.
+  const text = result.text.trim().replace(/^#{1,6}\s+/gm, '').replace(/\*\*/g, '');
+  const verification = verifyNarrativeSection(spec.id, text, doc, material);
+  if (!verification.ok) {
+    throw new ReportNarrativeVerificationError({
+      ok: false,
+      sections: { [spec.id]: verification },
+      invalidSectionIds: [spec.id],
+    });
+  }
 
   return {
     sectionId: spec.id,
-    // Models reach for markdown even when told not to; strip the two it reaches for most.
-    text: result.text.trim().replace(/^#{1,6}\s+/gm, '').replace(/\*\*/g, ''),
+    text,
+    verification,
     model: result.model,
     costUsd: result.costUsd,
     latencyMs: result.latencyMs,
