@@ -52,6 +52,17 @@ function captionOf(node: Record<string, unknown>): string {
   return str(node.caption) ?? '';
 }
 
+/** First usable URL from Instagram's ordered media rendition arrays. */
+function firstRenditionUrl(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const rendition of value) {
+    if (!isRecord(rendition)) continue;
+    const url = str(rendition.url);
+    if (url) return url;
+  }
+  return undefined;
+}
+
 /**
  * Profile plus the numeric user id every other endpoint needs.
  *
@@ -109,7 +120,7 @@ export async function fetchProfile(
 }
 
 /** Feed posts. GraphQL edge shape, no play counts on video nodes. */
-function readFeedNode(node: Record<string, unknown>, handle: string): NormalizedPost | undefined {
+function readFeedNode(node: Record<string, unknown>): NormalizedPost | undefined {
   const externalId = str(pick(node, ['id', 'pk']));
   const postedAt = fromUnix(pick(node, ['taken_at_timestamp', 'taken_at']));
   if (!externalId || !postedAt) return undefined;
@@ -147,7 +158,6 @@ function readFeedNode(node: Record<string, unknown>, handle: string): Normalized
 
 export async function fetchFeedPosts(
   userId: string,
-  handle: string,
   token: string,
   opts: { since: Date; until: Date; depth: number; onApiCall?: () => void; signal?: AbortSignal },
 ): Promise<NormalizedPost[]> {
@@ -165,12 +175,60 @@ export async function fetchFeedPosts(
   for (const row of rows) {
     if (!isRecord(row)) continue;
     const node = isRecord(row.node) ? row.node : row;
-    const post = readFeedNode(node, handle);
+    const post = readFeedNode(node);
     if (!post) continue;
     if (post.postedAt < opts.since || post.postedAt > opts.until) continue;
     out.push(post);
   }
   return out;
+}
+
+/**
+ * Map the observed `/instagram/user/reels` row shape.
+ *
+ * Reels carry playable MP4 renditions in `video_versions`, while their poster
+ * candidates live under `image_versions2`. Both are signed CDN URLs, but
+ * retaining them lets the existing post detail view show the current preview.
+ */
+export function mapInstagramEnsembleReel(
+  row: Record<string, unknown>,
+): NormalizedPost | undefined {
+  const media = isRecord(row.media) ? row.media : row;
+
+  const externalId = str(pick(media, ['pk', 'id']));
+  const postedAt = fromUnix(pick(media, ['taken_at', 'device_timestamp']));
+  if (!externalId || !postedAt) return undefined;
+
+  const text = captionOf(media);
+  const code = str(media.code);
+  const durationMs = num(pick(media, ['video_duration']));
+  const imageVersions = isRecord(media.image_versions2) ? media.image_versions2 : undefined;
+
+  return {
+    externalId,
+    postedAt,
+    // product_type clips is Instagram's own marker for a reel. Trusting it
+    // rather than guessing from media type is the entire point of this call.
+    type: str(media.product_type) === 'clips' ? 'reel' : 'video',
+    text,
+    permalink: code ? 'https://www.instagram.com/reel/' + code + '/' : null,
+    mediaUrl: firstRenditionUrl(media.video_versions) ?? str(media.video_url) ?? null,
+    thumbnailUrl: str(media.display_uri)
+      ?? firstRenditionUrl(imageVersions?.candidates)
+      ?? str(media.thumbnail_url)
+      ?? null,
+    durationSec: durationMs > 0 ? Math.round(durationMs > 1000 ? durationMs / 1000 : durationMs) : null,
+    language: null,
+    hashtags: extractHashtags(text),
+    mentions: extractMentions(text),
+    urls: extractUrls(text),
+    applause: num(pick(media, ['like_count'])),
+    conversation: num(pick(media, ['comment_count'])),
+    amplification: num(pick(media, ['reshare_count'])),
+    saves: 0,
+    views: num(pick(media, ['play_count', 'ig_play_count', 'view_count'])),
+    raw: media,
+  };
 }
 
 /**
@@ -198,39 +256,10 @@ export async function fetchReels(
   const out: NormalizedPost[] = [];
   for (const row of rows) {
     if (!isRecord(row)) continue;
-    const media = isRecord(row.media) ? row.media : row;
-
-    const externalId = str(pick(media, ['pk', 'id']));
-    const postedAt = fromUnix(pick(media, ['taken_at', 'device_timestamp']));
-    if (!externalId || !postedAt) continue;
-    if (postedAt < opts.since || postedAt > opts.until) continue;
-
-    const text = captionOf(media);
-    const code = str(media.code);
-    const durationMs = num(pick(media, ['video_duration']));
-
-    out.push({
-      externalId,
-      postedAt,
-      // product_type clips is Instagram's own marker for a reel. Trusting it
-      // rather than guessing from media type is the entire point of this call.
-      type: str(media.product_type) === 'clips' ? 'reel' : 'video',
-      text,
-      permalink: code ? 'https://www.instagram.com/reel/' + code + '/' : null,
-      mediaUrl: null,
-      thumbnailUrl: str(pick(media, ['display_uri', 'thumbnail_url'])) ?? null,
-      durationSec: durationMs > 0 ? Math.round(durationMs > 1000 ? durationMs / 1000 : durationMs) : null,
-      language: null,
-      hashtags: extractHashtags(text),
-      mentions: extractMentions(text),
-      urls: extractUrls(text),
-      applause: num(pick(media, ['like_count'])),
-      conversation: num(pick(media, ['comment_count'])),
-      amplification: num(pick(media, ['reshare_count'])),
-      saves: 0,
-      views: num(pick(media, ['play_count', 'ig_play_count', 'view_count'])),
-      raw: media,
-    });
+    const post = mapInstagramEnsembleReel(row);
+    if (!post) continue;
+    if (post.postedAt < opts.since || post.postedAt > opts.until) continue;
+    out.push(post);
   }
   return out;
 }
@@ -252,7 +281,7 @@ export async function fetchAllPosts(
   const warnings: string[] = [];
 
   const [feed, reels] = await Promise.all([
-    fetchFeedPosts(userId, handle, token, { ...opts, depth }).catch((e: unknown) => {
+    fetchFeedPosts(userId, token, { ...opts, depth }).catch((e: unknown) => {
       warnings.push('Instagram feed for @' + handle + ' failed: ' + (e instanceof Error ? e.message : String(e)));
       return [] as NormalizedPost[];
     }),

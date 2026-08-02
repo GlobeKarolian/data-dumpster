@@ -14,6 +14,7 @@ import { apiHandler, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
 import { weeklyReports } from '@/db/schema';
 import { draftNarrativeSection } from '@/lib/reports/narrative';
+import { ReportNarrativeVerificationError } from '@/lib/reports/narrative-verification';
 import { NARRATIVE_SECTIONS, readNarrative } from '@/lib/reports/types';
 import { ModelError } from '@/lib/ai/types';
 import { readJson } from '../../../_lib/query';
@@ -49,6 +50,9 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
   } catch (err) {
     // A provider that refused is not our bug, and its message names the fix.
     if (err instanceof ModelError) throw new HttpError(502, err.message, 'model_error');
+    if (err instanceof ReportNarrativeVerificationError) {
+      throw new HttpError(422, err.message, 'unverified_narrative');
+    }
     throw err;
   }
 

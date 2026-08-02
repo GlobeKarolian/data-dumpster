@@ -26,7 +26,10 @@ import { PLATFORMS, type Platform } from '@/lib/types';
 import { AdapterError } from '@/lib/adapters/types';
 import { getAdapter, hasAdapter, UNIMPLEMENTED_REASONS } from '@/lib/adapters/registry';
 import { readJson } from '../../../_lib/query';
-import { assertCompanyInOrg } from '../../../_lib/org-scope';
+import {
+  assertCompanyInOrg,
+  assertCompanyNotSharedWithOtherOrgs,
+} from '../../../_lib/org-scope';
 import { loadCredentials } from '../../../_lib/credentials';
 
 export const runtime = 'nodejs';
@@ -83,6 +86,9 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
   }
 
   const credentials = await loadCredentials(orgId, body.platform);
+  // Enforce this server-side as well as in the current form. A tab opened
+  // before the Reddit UI shipped can still submit the old owned-channel toggle.
+  const isOwned = body.platform === 'reddit' ? false : body.isOwned;
 
   let profile;
   try {
@@ -111,7 +117,7 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
       externalId: profile.externalId,
       profileUrl: profile.profileUrl ?? null,
       avatarUrl: profile.avatarUrl ?? null,
-      isOwned: body.isOwned,
+      isOwned,
       active: true,
       meta: profile.meta ?? {},
     })
@@ -121,18 +127,22 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
         externalId: profile.externalId,
         profileUrl: profile.profileUrl ?? null,
         avatarUrl: profile.avatarUrl ?? null,
-        isOwned: body.isOwned,
+        isOwned,
         active: true,
         meta: profile.meta ?? {},
       },
     })
     .returning();
 
+  const { enqueueChannelCollection } = await import('@/lib/adapters/collection-queue');
+  const collectionQueued = await enqueueChannelCollection({ channelId: saved.id, orgId });
+
   return Response.json(
     {
       ...saved,
       displayName: profile.displayName ?? null,
       followers: profile.followers ?? null,
+      collectionQueued: collectionQueued > 0,
     },
     { status: 201 },
   );
@@ -142,6 +152,7 @@ export const DELETE = apiHandler<{ id: string }>(async (req, ctx) => {
   const { orgId } = await requireRole('editor');
   const companyId = idSchema.parse((await ctx.params).id);
   await assertCompanyInOrg(companyId, orgId);
+  await assertCompanyNotSharedWithOtherOrgs(companyId, orgId);
 
   const sp = req.nextUrl.searchParams;
   const target = removeChannelSchema.parse({
@@ -183,6 +194,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
   const { orgId } = await requireRole('editor');
   const companyId = idSchema.parse((await ctx.params).id);
   await assertCompanyInOrg(companyId, orgId);
+  await assertCompanyNotSharedWithOtherOrgs(companyId, orgId);
 
   const body = await readJson(req, patchChannelSchema);
 
@@ -207,6 +219,11 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
     })
     .where(eq(channels.id, body.channelId))
     .returning();
+
+  if (body.active === true) {
+    const { enqueueChannelCollection } = await import('@/lib/adapters/collection-queue');
+    await enqueueChannelCollection({ channelId: saved.id, orgId });
+  }
 
   return Response.json(saved);
 });

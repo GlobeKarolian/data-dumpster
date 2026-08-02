@@ -24,6 +24,8 @@ import { getToken } from 'next-auth/jwt';
  * Paths that must work without a session.
  *
  *  /login          the way in
+ *  /about          public product, privacy and data-deletion information
+ *                  used by customers and platform reviewers
  *  /invite/*       accepting an invitation, authorized by the token in the path.
  *                  The person holding it has no account yet, so there is nothing
  *                  to authenticate; gating it would make every invitation
@@ -36,7 +38,7 @@ import { getToken } from 'next-auth/jwt';
  *  /api/health     uptime probes have no credentials by design
  *  /share/*        published dashboards, authorized by an unguessable token
  */
-const PUBLIC_PREFIXES = ['/login', '/invite', '/api/auth', '/api/cron', '/share'] as const;
+const PUBLIC_PREFIXES = ['/login', '/about', '/invite', '/api/auth', '/api/cron', '/share'] as const;
 const PUBLIC_EXACT = ['/api/health'] as const;
 
 function isPublic(pathname: string): boolean {

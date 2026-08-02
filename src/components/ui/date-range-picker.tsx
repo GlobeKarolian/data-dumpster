@@ -2,21 +2,21 @@
 
 import * as React from 'react';
 import { CalendarDays, Check, ChevronDown } from 'lucide-react';
-import { PRESETS } from '@/lib/dates';
+import { PRESETS, parseLocalDay, toDayString } from '@/lib/dates';
 import { cn } from '@/lib/utils';
 import { useUrlState } from '@/components/common/use-url-state';
 import { Popover, PopoverTriggerSurface } from './popover';
 
 function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return toDayString(d);
 }
 
 function label(startIso: string | null, endIso: string | null, preset: string | null): string {
   if (startIso && endIso) {
     const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const s = new Date(startIso);
-    const e = new Date(endIso);
-    if (!Number.isNaN(+s) && !Number.isNaN(+e)) return fmt.format(s) + ' – ' + fmt.format(e);
+    const s = parseLocalDay(startIso);
+    const e = parseLocalDay(endIso);
+    if (s && e) return fmt.format(s) + ' – ' + fmt.format(e);
   }
   const found = PRESETS.find((p) => p.id === preset);
   return found ? found.label : 'Last 28 days';

@@ -34,6 +34,7 @@ export interface DataTableProps<T> {
   sort?: { id: string; direction: SortDirection };
   onSortChange?: (next: { id: string; direction: SortDirection }) => void;
   onRowClick?: (row: T) => void;
+  rowAriaLabel?: (row: T) => string;
   empty?: React.ReactNode;
   /** Sticky header needs a scroll container with a bounded height. */
   maxHeight?: string;
@@ -68,6 +69,7 @@ export function DataTable<T>({
   sort: controlledSort,
   onSortChange,
   onRowClick,
+  rowAriaLabel,
   empty,
   maxHeight,
   className,
@@ -158,10 +160,22 @@ export function DataTable<T>({
             <tr
               key={getRowKey(row, i)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onKeyDown={onRowClick ? (event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onRowClick(row);
+              } : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              aria-label={rowAriaLabel?.(row)}
               className={cn(
                 'border-b border-zinc-100 last:border-0 dark:border-zinc-800/60',
                 'transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40',
-                onRowClick && 'cursor-pointer',
+                onRowClick && [
+                  'cursor-pointer focus-visible:bg-zinc-50 focus-visible:outline-none',
+                  'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500',
+                  'dark:focus-visible:bg-zinc-800/40',
+                ],
               )}
             >
               {columns.map((c) => (

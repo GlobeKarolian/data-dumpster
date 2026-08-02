@@ -1,6 +1,8 @@
 import { PLATFORMS, POST_TYPES, type CompanyRef, type Platform, type PostType } from '@/lib/types';
 import { autoGranularity, daysIn, parseRangeParams, previousRange } from '@/lib/dates';
 import type { AnalyticsQuery, DateRange } from '@/lib/types';
+import type { Role } from '@/lib/roles';
+import { companiesInScope, effectiveFocusCompanyId } from '@/lib/analytics-scope';
 import type { LandscapeOption } from '@/components/shell/landscape-switcher';
 import { query, type SearchParamsInput } from './data';
 
@@ -12,7 +14,7 @@ export interface LandscapeRecord extends LandscapeOption {
 export interface AppContext {
   orgId: string;
   userId: string;
-  role: string;
+  role: Role;
   landscapes: LandscapeRecord[];
   landscape: LandscapeRecord | null;
   companies: CompanyRef[];
@@ -112,11 +114,12 @@ export async function resolveContext(input: SearchParamsInput): Promise<AppConte
 
   const companiesResult = landscape
     ? await query<CompanyRow>(({ sql }) => sql`
+        -- The org-scoped landscape membership is the boundary. A pooled
+        -- company's org_id is attribution only.
         SELECT c.id, c.name, c.slug, c.logo_url, c.color, c.segment
           FROM landscape_companies lc
           JOIN companies c ON c.id = lc.company_id
          WHERE lc.landscape_id = ${landscape.id}::uuid
-           AND c.org_id = ${session.orgId}::uuid
          ORDER BY lc.sort_order ASC, c.name ASC
       `)
     : { data: [] as CompanyRow[], error: null };
@@ -169,6 +172,7 @@ export function analyticsQuery(
     companyIds: ctx.companyIds.length > 0 ? ctx.companyIds : undefined,
     tagIds: ctx.tagIds.length > 0 ? ctx.tagIds : undefined,
     postTypes: ctx.postTypes.length > 0 ? ctx.postTypes : undefined,
+    search: ctx.search || undefined,
     granularity: ctx.granularity,
     compare: true,
     ...overrides,
@@ -177,16 +181,17 @@ export function analyticsQuery(
 
 /** The company list as chart series definitions, focus first and in accent. */
 export function seriesFor(ctx: AppContext): { key: string; label: string; color: string; emphasis?: boolean }[] {
-  const ordered = [...ctx.companies].sort((a, b) => {
-    if (a.id === ctx.focusCompanyId) return -1;
-    if (b.id === ctx.focusCompanyId) return 1;
+  const focusCompanyId = effectiveFocusCompanyId(ctx.focusCompanyId, ctx.companyIds);
+  const ordered = companiesInScope(ctx.companies, ctx.companyIds).sort((a, b) => {
+    if (a.id === focusCompanyId) return -1;
+    if (b.id === focusCompanyId) return 1;
     return a.name.localeCompare(b.name);
   });
   return ordered.map((c, i) => ({
     key: c.id,
     label: c.name,
-    color: c.id === ctx.focusCompanyId ? '#C8102E' : (c.color ?? PALETTE[i % PALETTE.length]),
-    emphasis: c.id === ctx.focusCompanyId,
+    color: c.id === focusCompanyId ? '#C8102E' : (c.color ?? PALETTE[i % PALETTE.length]),
+    emphasis: c.id === focusCompanyId,
   }));
 }
 

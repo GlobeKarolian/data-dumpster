@@ -6,6 +6,7 @@ import {
   type TooltipContentProps,
 } from 'recharts';
 import type { MetricKey, TimeSeriesPoint } from '@/lib/types';
+import { parseDateValue } from '@/lib/dates';
 import { compactNumber, cn } from '@/lib/utils';
 import { formatMetric } from '@/components/ui/format';
 import { ChartFrame, ChartTooltipCard } from './chart-frame';
@@ -29,7 +30,7 @@ export interface TimeSeriesChartProps {
 }
 
 function tickDate(value: string, granularity: 'day' | 'week' | 'month'): string {
-  const d = new Date(value);
+  const d = parseDateValue(value);
   if (Number.isNaN(+d)) return value;
   if (granularity === 'month') return new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(d);
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
@@ -60,15 +61,22 @@ export function TimeSeriesChart({
     });
   };
 
-  const isEmpty = data.length === 0 || series.length === 0;
+  const hasMeasuredPoint = data.some((point) =>
+    series.some((definition) => typeof point[definition.key] === 'number'));
+  const isEmpty = data.length === 0 || series.length === 0 || !hasMeasuredPoint;
 
   return (
     <div>
       <ChartFrame
         height={height}
         isEmpty={isEmpty}
-        emptyLabel="No activity in this window"
-        emptyHint={emptyHint ?? 'Once channels are connected and ingested, trend lines appear here.'}
+        emptyLabel={hasMeasuredPoint ? 'No activity in this window' : 'No measured values in this window'}
+        emptyHint={
+          emptyHint
+          ?? (metric === 'audienceNetChange' || metric === 'audienceGrowthRate'
+            ? 'Audience change needs at least two observations in each bucket.'
+            : 'Once channels are connected and ingested, trend lines appear here.')
+        }
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
@@ -114,7 +122,7 @@ export function TimeSeriesChart({
                 dot={false}
                 activeDot={{ r: 3, strokeWidth: 0 }}
                 isAnimationActive={false}
-                connectNulls
+                connectNulls={false}
               />
             ))}
           </LineChart>

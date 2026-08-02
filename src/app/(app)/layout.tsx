@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
 import { AppShell, type ShellLandscape } from '@/components/shell/app-shell';
+import type { Role } from '@/lib/roles';
 import { query } from './_lib/data';
 
 export const dynamic = 'force-dynamic';
@@ -30,9 +31,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { requireOrg } = await import('@/lib/session');
 
   let orgId: string;
+  let role: Role;
   try {
     const session = await requireOrg();
     orgId = session.orgId;
+    role = session.role;
   } catch {
     redirect('/login');
   }
@@ -76,5 +79,5 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     companies: byLandscape.get(l.id) ?? [],
   }));
 
-  return <AppShell landscapes={shellLandscapes}>{children}</AppShell>;
+  return <AppShell landscapes={shellLandscapes} role={role}>{children}</AppShell>;
 }

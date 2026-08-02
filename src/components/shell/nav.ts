@@ -7,7 +7,7 @@ import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
 
 /** Platforms that get their own overview screen, in the order newsrooms use them. */
 export const NAV_PLATFORMS: Platform[] = [
-  'facebook', 'instagram', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky',
+  'facebook', 'instagram', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky', 'reddit',
 ];
 
 export interface NavItem {
@@ -46,7 +46,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/stories', label: 'Story Cloud', icon: Waypoints },
       { href: '/posts', label: 'Social Posts', icon: FileText },
-      { href: '/content', label: 'Content Analysis', icon: Sparkles },
       { href: '/post-tags', label: 'Post Tags', icon: Tag },
       { href: '/posted-urls', label: 'Posted URLs', icon: Link2 },
     ],
@@ -72,7 +71,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/settings/users', label: 'Users', icon: Users },
       { href: '/settings/models', label: 'Models', icon: Cpu },
-      { href: '/settings/sources', label: 'Sources', icon: Radio },
+      { href: '/settings/sources', label: 'Social Profiles', icon: Radio },
       { href: '/settings/companies', label: 'Companies', icon: Building2 },
     ],
   },
@@ -84,7 +83,6 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/leaderboard': 'Leaderboards',
   '/stories': 'Story Cloud',
   '/posts': 'Social Posts',
-  '/content': 'Content Analysis',
   '/post-tags': 'Post Tags',
   '/posted-urls': 'Posted URLs',
   '/reports': 'Weekly Report',
@@ -94,6 +92,6 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/dashboards': 'Dashboards',
   '/settings/users': 'Users and Invitations',
   '/settings/models': 'Model Connections',
-  '/settings/sources': 'Sources',
-  '/settings/companies': 'Companies and Landscapes',
+  '/settings/sources': 'Social Profiles',
+  '/settings/companies': 'Companies and Social Profiles',
 };

@@ -165,7 +165,7 @@ function readMetaError(parsed: unknown): MetaErrorInfo {
 
 /**
  * Meta returns rate-limit errors as HTTP 400, so the status-code default in
- * util/http.ts classifies them as fatal. That is exactly backwards: a throttle
+ * the shared status-code default classifies them as fatal. That is exactly backwards: a throttle
  * is the single most retryable thing Meta does. Codes are checked, not the
  * status.
  */
@@ -653,6 +653,8 @@ export const facebookAdapter: ChannelAdapter = {
         profile: result.profile,
         cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
         hasMore: false,
+        exhaustive: result.exhaustive,
+        incompleteReason: result.incompleteReason,
         warnings: result.warnings,
       };
     }

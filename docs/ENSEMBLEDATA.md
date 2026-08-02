@@ -38,8 +38,20 @@ Snapchat. Not Facebook. Not LinkedIn.
 | Threads | `/threads/user/search` | 4 | Handle to numeric id, plus follower count |
 | Threads | `/threads/user/posts` | per post | Posts with likes, replies, reposts, quotes |
 | Twitter | `/twitter/user/info` | 2 | Profile and follower count |
-| Twitter | `/twitter/user/tweets` | 4 | Tweets with full engagement |
+| Twitter | `/twitter/user/tweets` | 4 | Twitter-selected profile highlights with engagement; not a chronological or complete timeline |
+| Reddit | `/reddit/user/posts` | Not published; measure before broad rollout | User-account submissions, score, comments and crossposts; no user audience |
+| Reddit | `/reddit/subreddit/posts` | 2 | Subreddit posts, score, comments, crossposts and current member count |
 | Customer | `/customer/get-used-units` | 0 | Spend to date. Free to poll |
+
+Both Reddit responses were verified live on 30 July 2026. Their actual envelope
+is `{data:{nextCursor,posts:[{kind,data}]}}`; each observed page contained 25
+rows, not a documented fixed page size. The currently published OpenAPI omits
+`/reddit/user/posts`, but the route and its cursor were verified against
+`u/bostonglobe`. `author_fullname` supplies stable user identity. It exposes no
+user avatar or follower stock. `subreddit_subscribers` is the current member
+stock of the community containing a post and must never become the author's
+audience. `score` is Reddit's vote-fuzzed score, not a literal upvote count.
+Neither feed exposes post views or saves.
 
 ## Three findings that change the plan
 
@@ -114,7 +126,11 @@ should be surfaced in Settings rather than estimated in a document.
 1. Instagram on EnsembleData, feed and reels as separate calls, so views and
    reel typing stop being wrong. This is a correctness fix, not an addition.
 2. YouTube on EnsembleData, which needs no key and lights up 23 channels.
-3. Twitter on EnsembleData, which removes the $110 to $150 a month X API line
-   unless owned-account impressions are wanted.
-4. Retire the previous vendor everywhere except Facebook.
-5. Surface unit spend in Settings from `/customer/get-used-units`.
+3. Twitter on EnsembleData for public competitor coverage. The live endpoint
+   returned `profile_best_highlights`, not a chronological timeline, so missing
+   posts must be described as unobserved. Keep X API v2 for owned accounts that
+   need a complete incremental timeline or impressions.
+4. Reddit user-account and subreddit posts through EnsembleData, after Legal
+   confirms the commercial use is covered by the vendor contract.
+5. Retire the previous vendor everywhere except Facebook.
+6. Surface unit spend in Settings from `/customer/get-used-units`.

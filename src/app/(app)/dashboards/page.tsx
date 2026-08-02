@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatRelative } from '@/components/ui/format';
 import { CreateDashboard } from '@/components/dashboards/create-dashboard';
+import { roleAtLeast } from '@/lib/roles';
 import { resolveContext } from '../_lib/context';
 import { query, type SearchParamsInput } from '../_lib/data';
 
@@ -51,10 +52,12 @@ export default async function DashboardsPage({
             date window from the top bar, so a dashboard stays useful as the window moves.
           </p>
         </div>
-        <CreateDashboard
-          landscapes={ctx.landscapes.map((l) => ({ id: l.id, name: l.name }))}
-          defaultLandscapeId={ctx.landscape?.id ?? null}
-        />
+        {roleAtLeast(ctx.role, 'editor') ? (
+          <CreateDashboard
+            landscapes={ctx.landscapes.map((l) => ({ id: l.id, name: l.name }))}
+            defaultLandscapeId={ctx.landscape?.id ?? null}
+          />
+        ) : null}
       </div>
 
       {dashboards.error ? (

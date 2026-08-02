@@ -263,8 +263,11 @@ checked, precision and recall written down. It carries evidence and confidence b
 design; nobody has verified that the design works on this content. If it is not
 good enough, say so and leave rule-based tagging on.
 
-**Add Reddit.** One file and one registry line. It matters for news distribution
-and it is the last open platform not yet covered.
+**Roll out Reddit.** The adapter now tracks user-account submissions plus
+communities through EnsembleData. It maps score, comments and crossposts, and
+adds member count only for communities. Confirm commercial-use coverage with
+Legal, then attach the newsroom accounts and relevant communities and measure
+cost.
 
 **Day 60 test:** six of eight social team members active weekly, alert
 acknowledgement above 50 percent, and at least one publishing decision that

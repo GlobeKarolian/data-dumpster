@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { DashboardEditor } from '@/components/dashboards/dashboard-editor';
 import { WidgetGrid } from '@/components/dashboards/widget-grid';
 import { parseWidgets } from '@/components/dashboards/widget-types';
 import { formatFullDate } from '@/components/ui/format';
+import { roleAtLeast } from '@/lib/roles';
 import { analyticsQuery, resolveContext } from '../../_lib/context';
 import { metricsApi, query, type SearchParamsInput } from '../../_lib/data';
 
@@ -47,8 +48,19 @@ export default async function DashboardDetailPage({
      LIMIT 1
   `);
 
+  if (result.error) throw new Error('Dashboard could not load: ' + result.error);
   const dashboard = result.data[0];
   if (!dashboard) notFound();
+
+  // A saved dashboard owns its landscape. Align the URL-driven shell before
+  // rendering so the top bar cannot name one landscape while the widgets query
+  // another. Company ids belong to the old landscape and must not cross over.
+  if (dashboard.landscape_id && dashboard.landscape_id !== ctx.landscape?.id) {
+    const next = new URLSearchParams(ctx.searchParams);
+    next.set('landscape', dashboard.landscape_id);
+    next.delete('companies');
+    redirect('/dashboards/' + id + '?' + next.toString());
+  }
 
   const widgets = parseWidgets(dashboard.widgets);
   const landscape =
@@ -69,13 +81,15 @@ export default async function DashboardDetailPage({
   let companies = ctx.companies;
   if (!sameAsToolbar) {
     const members = await query<MemberRow>(({ sql }) => sql`
+      -- The dashboard and landscape are already org-scoped. Membership, not
+      -- the pooled company's attribution org, authorizes this read.
       SELECT c.id, c.name, c.slug, c.logo_url, c.color, c.segment
-        FROM landscape_companies lc
+       FROM landscape_companies lc
         JOIN companies c ON c.id = lc.company_id
        WHERE lc.landscape_id = ${landscape.id}::uuid
-         AND c.org_id = ${ctx.orgId}::uuid
        ORDER BY lc.sort_order ASC, c.name ASC
     `);
+    if (members.error) throw new Error('Dashboard companies could not load: ' + members.error);
     companies = members.data.map((c) => ({
       id: c.id,
       name: c.name,
@@ -87,6 +101,7 @@ export default async function DashboardDetailPage({
   }
 
   const api = await metricsApi();
+  const canEdit = roleAtLeast(ctx.role, 'editor');
   const baseQuery = analyticsQuery(
     { ...ctx, landscape, focusCompanyId: landscape.focusCompanyId },
     sameAsToolbar ? undefined : { companyIds: undefined },
@@ -115,12 +130,14 @@ export default async function DashboardDetailPage({
         </p>
       </div>
 
-      <DashboardEditor
-        dashboardId={dashboard.id}
-        widgets={widgets}
-        isShared={dashboard.share_token !== null}
-        shareUrl={dashboard.share_token ? '/share/' + dashboard.share_token : null}
-      />
+      {canEdit ? (
+        <DashboardEditor
+          dashboardId={dashboard.id}
+          widgets={widgets}
+          isShared={dashboard.share_token !== null}
+          shareUrl={dashboard.share_token ? '/share/' + dashboard.share_token : null}
+        />
+      ) : null}
 
       <WidgetGrid
         widgets={widgets}
@@ -128,6 +145,7 @@ export default async function DashboardDetailPage({
         companies={companies}
         focusCompanyId={landscape.focusCompanyId}
         api={api}
+        readOnly={!canEdit}
       />
     </div>
   );

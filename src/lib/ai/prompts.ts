@@ -46,6 +46,28 @@ function trim(text: string | null | undefined, max = MAX_TEXT): string {
   return flat.length > max ? flat.slice(0, max) + '…' : flat;
 }
 
+function unavailableMetricField(record: Record<string, unknown>, key: string): boolean {
+  if (record.available === false && (key === 'value' || key === 'rank' || key === 'changePct')) {
+    return true;
+  }
+  return record.previousAvailable === false && key === 'previousValue';
+}
+
+function availableBreakdown(
+  record: Record<string, unknown>,
+  value: unknown,
+): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const availability = record.breakdownAvailability;
+  if (!availability || typeof availability !== 'object' || Array.isArray(availability)) {
+    return value as Record<string, unknown>;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([platform]) =>
+      (availability as Record<string, unknown>)[platform] !== false),
+  );
+}
+
 /**
  * Strip the fields that cost tokens and carry no analytical signal: image URLs,
  * logos, permalinks, and long post bodies. Keeping the shape identical to the
@@ -56,8 +78,15 @@ function slimForPrompt(value: unknown, key?: string): unknown {
   if (Array.isArray(value)) return value.map((v) => slimForPrompt(v, key));
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    const record = value as Record<string, unknown>;
+    for (const [k, v] of Object.entries(record)) {
       if (k === 'thumbnailUrl' || k === 'logoUrl' || k === 'color' || k === 'mediaUrl') continue;
+      if (unavailableMetricField(record, k)) continue;
+      if (k === 'breakdown') {
+        const measured = availableBreakdown(record, v);
+        if (measured) out[k] = slimForPrompt(measured, k);
+        continue;
+      }
       out[k] = slimForPrompt(v, k);
     }
     return out;
@@ -88,7 +117,14 @@ export function numberIndex(facts: FactSheet, limit = 600): { path: string; valu
       return;
     }
     if (node && typeof node === 'object') {
-      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      const record = node as Record<string, unknown>;
+      for (const [k, v] of Object.entries(record)) {
+        if (unavailableMetricField(record, k)) continue;
+        if (k === 'breakdown') {
+          const measured = availableBreakdown(record, v);
+          if (measured) walk(measured, path ? path + '.' + k : k);
+          continue;
+        }
         walk(v, path ? path + '.' + k : k);
       }
     }
@@ -130,7 +166,9 @@ const HONESTY_RULES = [
   '   attached to the claim it qualifies. Do not collect them in a footnote and do not drop one.',
   '5. UNCERTAINTY. If the data does not support a conclusion, say so plainly in one sentence.',
   '   "The data does not show why" is an acceptable and often correct thing to write.',
-  '6. NO OUTSIDE KNOWLEDGE. Do not use anything you know about these companies beyond the fact',
+  '6. AVAILABILITY. A metric row with available=false was not measured. Do not call it zero,',
+  '   rank it, compare it, or include it in an average. Its numeric fallback is omitted.',
+  '7. NO OUTSIDE KNOWLEDGE. Do not use anything you know about these companies beyond the fact',
   '   sheet. No industry context, no news events, no benchmarks, no guesses about strategy.',
 ].join('\n');
 

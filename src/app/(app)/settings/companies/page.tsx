@@ -1,10 +1,20 @@
 import type { Metadata } from 'next';
+import type { Platform } from '@/lib/types';
+import { roleAtLeast } from '@/lib/roles';
 import {
   CompaniesManager, type CompanyRecord, type LandscapeRecordFull,
 } from '@/components/settings/companies-manager';
 import { query, type SearchParamsInput } from '../../_lib/data';
 
-export const metadata: Metadata = { title: 'Companies and Landscapes' };
+export const metadata: Metadata = { title: 'Companies and Social Profiles' };
+
+type CompanyProfileRow = {
+  id: string;
+  platform: Platform;
+  handle: string;
+  profileUrl: string | null;
+  active: boolean;
+};
 
 type CompanyRow = {
   id: string;
@@ -12,7 +22,9 @@ type CompanyRow = {
   website: string | null;
   segment: string | null;
   color: string | null;
+  attributed_to_org: boolean;
   channel_count: number | string;
+  channels: CompanyProfileRow[] | null;
 };
 
 type LandscapeRow = {
@@ -31,15 +43,37 @@ export default async function CompaniesSettingsPage({
 }) {
   await searchParams;
   const { requireOrg } = await import('@/lib/session');
-  const { orgId } = await requireOrg();
+  const { orgId, role } = await requireOrg();
 
   const [companies, landscapes] = await Promise.all([
     query<CompanyRow>(({ sql }) => sql`
       SELECT c.id, c.name, c.website, c.segment, c.color,
-             count(ch.id) AS channel_count
+             (c.org_id = ${orgId}::uuid) AS attributed_to_org,
+             count(ch.id) AS channel_count,
+             coalesce(
+               jsonb_agg(
+                 jsonb_build_object(
+                   'id', ch.id,
+                   'platform', ch.platform,
+                   'handle', ch.handle,
+                   'profileUrl', ch.profile_url,
+                   'active', ch.active
+                 )
+                 ORDER BY ch.platform ASC, ch.handle ASC
+               ) FILTER (WHERE ch.id IS NOT NULL),
+               '[]'::jsonb
+             ) AS channels
         FROM companies c
         LEFT JOIN channels ch ON ch.company_id = c.id
        WHERE c.org_id = ${orgId}::uuid
+          OR EXISTS (
+               SELECT 1
+                 FROM landscape_companies visible_lc
+                 JOIN landscapes visible_l
+                   ON visible_l.id = visible_lc.landscape_id
+                WHERE visible_lc.company_id = c.id
+                  AND visible_l.org_id = ${orgId}::uuid
+             )
        GROUP BY c.id
        ORDER BY c.name ASC
     `),
@@ -63,7 +97,9 @@ export default async function CompaniesSettingsPage({
     website: c.website,
     segment: c.segment,
     color: c.color,
+    attributedToOrg: c.attributed_to_org === true,
     channelCount: Number(c.channel_count) || 0,
+    channels: Array.isArray(c.channels) ? c.channels : [],
   }));
 
   const landscapeRecords: LandscapeRecordFull[] = landscapes.data.map((l) => ({
@@ -79,12 +115,11 @@ export default async function CompaniesSettingsPage({
     <div className="mx-auto max-w-5xl space-y-4">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Companies and landscapes
+          Companies and social profiles
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          A company is something Data Dumpster measures. A landscape is a named set of them with one brand
-          at the center. Getting the set right is the highest-leverage decision in the product:
-          share-of-voice and share-of-engagement are defined entirely by who is in it.
+          Add the brands you measure, connect their social profiles, then group them into landscapes.
+          Share of voice and share of engagement are defined entirely by who is in each landscape.
         </p>
       </div>
 
@@ -94,7 +129,12 @@ export default async function CompaniesSettingsPage({
         </p>
       ) : null}
 
-      <CompaniesManager companies={companyRecords} landscapes={landscapeRecords} />
+      <CompaniesManager
+        companies={companyRecords}
+        landscapes={landscapeRecords}
+        canEdit={roleAtLeast(role, 'editor')}
+        canDeleteCompanies={roleAtLeast(role, 'admin')}
+      />
     </div>
   );
 }

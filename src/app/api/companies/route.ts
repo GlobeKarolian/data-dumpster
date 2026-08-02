@@ -9,11 +9,11 @@
  * that can fail halfway through resolving four profiles is a bad create endpoint.
  */
 import { z } from 'zod';
-import { and, asc, eq } from 'drizzle-orm';
+import { asc, eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { apiHandler, requireOrg, requireRole, HttpError } from '@/lib/session';
 import { db } from '@/db';
-import { channels, companies } from '@/db/schema';
+import { channels, companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { readJson } from '../_lib/query';
 
@@ -32,7 +32,7 @@ export const GET = apiHandler(async () => {
   const { orgId } = await requireOrg();
 
   const rows = await db
-    .select({
+    .selectDistinct({
       id: companies.id,
       name: companies.name,
       slug: companies.slug,
@@ -51,7 +51,9 @@ export const GET = apiHandler(async () => {
     })
     .from(companies)
     .leftJoin(channels, eq(channels.companyId, companies.id))
-    .where(eq(companies.orgId, orgId))
+    .leftJoin(landscapeCompanies, eq(landscapeCompanies.companyId, companies.id))
+    .leftJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
+    .where(or(eq(companies.orgId, orgId), eq(landscapes.orgId, orgId)))
     .orderBy(asc(companies.name), asc(channels.platform));
 
   const byId = new Map<string, {
@@ -92,11 +94,19 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (!slug) throw new HttpError(422, 'That name has no usable characters for a URL.', 'invalid_name');
 
   const [existing] = await db
-    .select({ id: companies.id })
+    .select({ id: companies.id, orgId: companies.orgId })
     .from(companies)
-    .where(and(eq(companies.orgId, orgId), eq(companies.slug, slug)))
+    .where(eq(companies.slug, slug))
     .limit(1);
-  if (existing) throw new HttpError(409, 'A company with that name already exists.', 'duplicate_company');
+  if (existing) {
+    throw new HttpError(
+      409,
+      existing.orgId === orgId
+        ? 'A company with that name already exists.'
+        : 'That company already exists in the shared company pool. Add it through a landscape import to reuse its history.',
+      'duplicate_company',
+    );
+  }
 
   const [created] = await db
     .insert(companies)

@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DumpsterMark } from './logo';
-import { hrefWithParams } from '@/components/common/use-url-state';
+import { hrefWithGlobalParams } from '@/components/common/use-url-state';
 import { usePersistentFlag } from '@/components/common/use-persistent-flag';
 import { NAV_SECTIONS } from './nav';
 import { LandscapeSwitcher, type LandscapeOption } from './landscape-switcher';
@@ -34,7 +34,11 @@ export function Sidebar({ landscapes, activeLandscapeId }: SidebarProps) {
       )}
     >
       <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800')}>
-        <Link href="/cross-channel" className="flex min-w-0 items-center gap-2">
+        <Link
+          href={hrefWithGlobalParams('/cross-channel', searchParams)}
+          prefetch={false}
+          className="flex min-w-0 items-center gap-2"
+        >
           <span
             aria-hidden
             className="grid h-6 w-6 shrink-0 place-items-center rounded bg-accent-600 text-white"
@@ -77,7 +81,8 @@ export function Sidebar({ landscapes, activeLandscapeId }: SidebarProps) {
                 return (
                   <li key={item.href}>
                     <Link
-                      href={hrefWithParams(item.href, searchParams)}
+                      href={hrefWithGlobalParams(item.href, searchParams)}
+                      prefetch={false}
                       title={collapsed ? item.label : undefined}
                       aria-current={active ? 'page' : undefined}
                       className={cn(

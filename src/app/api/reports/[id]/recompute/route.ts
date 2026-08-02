@@ -2,8 +2,8 @@
  * POST /api/reports/[id]/recompute
  *
  * Throws the computed block away and derives it again from the warehouse. The
- * manual paste boxes and the narrative are untouched, because they are the
- * author's work and this endpoint has no business editing prose.
+ * manual paste boxes are untouched. Narrative is cleared because every numeric
+ * claim in it was verified against the computed snapshot being replaced.
  *
  * Recompute exists so that late-arriving data -- a platform backfill on
  * Tuesday, a channel reconnected on Wednesday -- can be picked up without
@@ -42,7 +42,7 @@ export const POST = apiHandler<{ id: string }>(async (_req, ctx) => {
 
   const [row] = await db
     .update(weeklyReports)
-    .set({ computed, updatedAt: new Date() })
+    .set({ computed, narrative: {}, updatedAt: new Date() })
     .where(and(eq(weeklyReports.id, id), eq(weeklyReports.orgId, orgId)))
     .returning();
 

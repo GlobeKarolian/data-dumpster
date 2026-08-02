@@ -15,7 +15,7 @@ import { db } from '@/db';
 import { companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { readJson } from '../../_lib/query';
-import { assertCompaniesInOrg } from '../../_lib/org-scope';
+import { assertCompaniesVisibleToOrg } from '../../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,7 +76,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
     if (!slug) throw new HttpError(422, 'That name has no usable characters for a URL.', 'invalid_name');
   }
 
-  if (body.focusCompanyId) await assertCompaniesInOrg([body.focusCompanyId], orgId);
+  if (body.focusCompanyId) await assertCompaniesVisibleToOrg([body.focusCompanyId], orgId);
 
   const [updated] = await db
     .update(landscapes)
@@ -90,7 +90,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
   if (!updated) throw new AuthError('not_found', 'That landscape does not exist.');
 
   if (body.companyIds !== undefined) {
-    const memberIds = await assertCompaniesInOrg(
+    const memberIds = await assertCompaniesVisibleToOrg(
       updated.focusCompanyId ? [updated.focusCompanyId, ...body.companyIds] : body.companyIds,
       orgId,
     );

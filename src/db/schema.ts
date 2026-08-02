@@ -443,6 +443,35 @@ export const ingestionRuns = pgTable('ingestion_runs', {
   detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default({}),
 }, (t) => [index('ingestion_runs_time_idx').on(t.startedAt)]);
 
+/**
+ * Durable work and coverage state for pooled public profiles.
+ *
+ * A channel row says what to collect; this row says whether the requested
+ * historical window has actually finished. Keeping it separate from
+ * `last_ingested_at` prevents a one-page or `hasMore` response from certifying
+ * a landscape as complete. The lease makes overlapping cron/manual runs safe.
+ */
+export const channelCollectionState = pgTable('channel_collection_state', {
+  channelId: uuid('channel_id').primaryKey().references(() => channels.id, { onDelete: 'cascade' }),
+  requestedByOrgId: uuid('requested_by_org_id').references(() => orgs.id, { onDelete: 'set null' }),
+  requiredSince: timestamp('required_since', { withTimezone: true }).notNull(),
+  requiredUntil: timestamp('required_until', { withTimezone: true }).notNull(),
+  coverageSince: timestamp('coverage_since', { withTimezone: true }),
+  coverageUntil: timestamp('coverage_until', { withTimezone: true }),
+  status: ingestStatusEnum('status').notNull().default('queued'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+  leaseToken: uuid('lease_token'),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  hasMore: boolean('has_more').notNull().default(true),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('channel_collection_runnable_idx').on(t.status, t.nextAttemptAt, t.leaseUntil),
+  index('channel_collection_coverage_idx').on(t.coverageUntil),
+]);
+
 /* ------------------------------------------------------------ relations */
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
@@ -518,6 +547,75 @@ export const weeklyReports = pgTable('weekly_reports', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex('weekly_reports_period_uq').on(t.orgId, t.periodStart, t.periodEnd),
+  uniqueIndex('weekly_reports_period_uq').on(
+    t.orgId, t.landscapeId, t.periodStart, t.periodEnd,
+  ),
   index('weekly_reports_org_idx').on(t.orgId, t.periodEnd),
+]);
+
+/**
+ * Scheduled report delivery.
+ *
+ * A schedule is intentionally weekly and deliberately does not turn on a
+ * Vercel cron by itself. The route can be exercised manually before vendor
+ * spend is approved; adding it to vercel.json is a separate operating decision.
+ * `dayOfWeek` uses ISO numbering (Monday 1 through Sunday 7).
+ */
+export const reportSchedules = pgTable('report_schedules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').notNull().references(() => landscapes.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  recipients: jsonb('recipients').$type<string[]>().notNull().default([]),
+  formats: jsonb('formats').$type<Array<'pptx' | 'csv'>>().notNull().default(['pptx', 'csv']),
+  includeSlack: boolean('include_slack').notNull().default(false),
+  dayOfWeek: integer('day_of_week').notNull().default(1),
+  hour: integer('hour').notNull().default(8),
+  timeZone: text('time_zone').notNull().default('America/New_York'),
+  enabled: boolean('enabled').notNull().default(true),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('report_schedules_org_idx').on(t.orgId, t.enabled),
+  index('report_schedules_landscape_idx').on(t.landscapeId),
+]);
+
+/**
+ * Immutable-enough delivery audit trail. Failed rows are retried in place for
+ * the same schedule window so the unique key is also the double-send guard.
+ */
+export const reportDeliveries = pgTable('report_deliveries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  claimToken: uuid('claim_token').notNull().defaultRandom(),
+  scheduleId: uuid('schedule_id').references(() => reportSchedules.id, { onDelete: 'set null' }),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  landscapeIdSnapshot: uuid('landscape_id_snapshot'),
+  reportPeriodStart: date('report_period_start'),
+  reportPeriodEnd: date('report_period_end'),
+  reportId: uuid('report_id').references(() => weeklyReports.id, { onDelete: 'set null' }),
+  scheduledFor: text('scheduled_for').notNull(),
+  formats: jsonb('formats').$type<Array<'pptx' | 'csv'>>().notNull().default([]),
+  recipients: jsonb('recipients').$type<string[]>().notNull().default([]),
+  includeSlack: boolean('include_slack').notNull().default(false),
+  status: text('status').notNull().default('running'),
+  attemptCount: integer('attempt_count').notNull().default(1),
+  emailStatus: text('email_status').notNull().default('not_requested'),
+  emailProviderMessageId: text('provider_message_id'),
+  emailError: text('email_error'),
+  emailAttemptedAt: timestamp('email_attempted_at', { withTimezone: true }),
+  emailFinishedAt: timestamp('email_finished_at', { withTimezone: true }),
+  slackStatus: text('slack_status').notNull().default('not_requested'),
+  slackError: text('slack_error'),
+  slackAttemptedAt: timestamp('slack_attempted_at', { withTimezone: true }),
+  slackFinishedAt: timestamp('slack_finished_at', { withTimezone: true }),
+  error: text('error'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+}, (t) => [
+  uniqueIndex('report_deliveries_schedule_window_uq').on(t.scheduleId, t.scheduledFor),
+  index('report_deliveries_org_time_idx').on(t.orgId, t.startedAt),
 ]);

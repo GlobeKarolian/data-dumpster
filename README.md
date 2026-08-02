@@ -86,7 +86,8 @@ encrypted at rest, and company and landscape management.
 | Facebook | Public Page posts, reactions, comments, shares, via Page Public Content Access | Meta app plus App Review for PPCA, business verification, weeks | Implemented; owned channels only until PPCA is granted |
 | TikTok | None available to a commercial organisation | Developer app, owned accounts only | Owned channels only |
 | LinkedIn | None, at any price | Marketing API approval, owned pages only | Owned channels only |
-| Threads, Reddit | Reddit is feasible, Threads is not | No adapter written yet | Not built |
+| Threads | Public posts and engagement through a purchased source | EnsembleData token | Works with a paid key |
+| Reddit | Public user-account submissions plus subreddit posts, score, comments and crossposts. Member count for subreddits only; no account audience, views or saves | EnsembleData token plus commercial-use approval/contract review | Implemented; enable after review |
 
 The distinction between the open rows and the gated ones is the single most
 important fact about this product category, and "docs/DATA-ACCESS.md" is the

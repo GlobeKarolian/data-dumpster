@@ -50,15 +50,28 @@ export interface CompanyRef {
 export interface MetricRow {
   company: CompanyRef;
   value: number;
+  /**
+   * False when the source observations needed to compute this metric do not
+   * exist. Consumers must render a blank rather than treating `value` as zero.
+   */
+  available: boolean;
   previousValue?: number | null;
+  /** Whether `previousValue` was measured rather than supplied as a fallback. */
+  previousAvailable?: boolean;
   /** Fractional change, e.g. 0.27 for +27%. Null when the prior period is zero. */
   changePct?: number | null;
   rank: number;
   /** Optional per-platform split for cross-channel views. */
   breakdown?: Partial<Record<Platform, number>>;
+  /** Presence metadata for each entry in `breakdown`. */
+  breakdownAvailability?: Partial<Record<Platform, boolean>>;
 }
 
-export interface TimeSeriesPoint { date: string; [seriesKey: string]: string | number }
+export interface TimeSeriesPoint {
+  date: string;
+  /** Null is an honest gap: the metric could not be computed for that bucket. */
+  [seriesKey: string]: string | number | null;
+}
 
 export interface Paged<T> { items: T[]; total: number; page: number; pageSize: number }
 
@@ -73,6 +86,8 @@ export interface AnalyticsQuery {
   companyIds?: string[];
   tagIds?: string[];
   postTypes?: PostType[];
+  /** Post content, permalink, linked URL, domain, or linked-page title. */
+  search?: string;
   granularity?: Granularity;
   /** When true, also compute the immediately preceding window for deltas. */
   compare?: boolean;

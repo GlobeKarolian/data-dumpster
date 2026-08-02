@@ -12,6 +12,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { orgs, weeklyReports } from '@/db/schema';
 import { AuthError } from '@/lib/session';
+import { sanitizeReportNarrative } from '@/lib/reports/narrative-verification';
 import {
   defaultReportTitle,
   readComputed,
@@ -87,6 +88,18 @@ export function serializeReport(row: ReportRow): {
   createdAt: string;
   updatedAt: string;
 } {
+  const computed = readComputed(row.computed);
+  const manual = readManual(row.manual);
+  const storedNarrative = readNarrative(row.narrative);
+  const { narrative } = sanitizeReportNarrative({
+    title: row.title,
+    orgName: '',
+    period: { start: row.periodStart, end: row.periodEnd },
+    dataNote: row.dataNote,
+    computed,
+    manual,
+    narrative: storedNarrative,
+  });
   return {
     id: row.id,
     landscapeId: row.landscapeId,
@@ -95,9 +108,9 @@ export function serializeReport(row: ReportRow): {
     title: row.title,
     dataNote: row.dataNote,
     status: row.status,
-    computed: readComputed(row.computed),
-    manual: readManual(row.manual),
-    narrative: readNarrative(row.narrative),
+    computed,
+    manual,
+    narrative,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

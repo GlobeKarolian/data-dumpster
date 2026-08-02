@@ -2,10 +2,11 @@
 
 Assumes you are comfortable with Vercel, Postgres and a terminal, and have never
 seen this repository. Start to finish is about 45 minutes if you stick to the
-sources that need no approval (Bluesky, YouTube, RSS).
+sources that need no approval (Bluesky and YouTube).
 
-Read "docs/DATA-ACCESS.md" before promising anyone a Facebook, TikTok or LinkedIn
-competitor chart. Those do not exist.
+Read "docs/DATA-ACCESS.md" before promising competitor coverage for Facebook,
+TikTok or LinkedIn. Coverage depends on approved purchased-data vendors and
+carries platform-specific cost, completeness and legal constraints.
 
 ---
 
@@ -97,7 +98,9 @@ these. The environment values are a fallback for a single-org deployment.
 | Variable | Notes |
 |---|---|
 | YOUTUBE_API_KEY | Free. console.cloud.google.com, create a project, enable YouTube Data API v3, create an API key. Ten minutes. 10,000 units a day |
-| TWITTER_BEARER_TOKEN | Paid. Metered since February 2026. See docs/DATA-ACCESS.md before enabling |
+| ENSEMBLEDATA_TOKEN | Primary purchased public-data source for Instagram, TikTok, Threads, competitor X, Reddit user accounts and Reddit communities. Enabling it consumes vendor units; confirm the Reddit commercial-use terms are covered before collecting Reddit data |
+| BRIGHTDATA_API_KEY | Purchased fallback for public data that the primary source cannot return. Enable only after the vendor-spend and legal decision |
+| TWITTER_BEARER_TOKEN | Optional owned-account X path with a complete incremental timeline. X pricing changes frequently; verify the current developer plan before enabling |
 | BLUESKY_IDENTIFIER, BLUESKY_APP_PASSWORD | Optional. Public reads need no key at all; an app password lifts rate limits |
 | META_ACCESS_TOKEN, META_APP_ID, META_APP_SECRET | Owned Pages and Instagram Business. Requires Meta App Review, weeks |
 | META_IG_USER_ID | The Instagram Business account id your token belongs to. Required for competitor Business Discovery lookups, not just your own account |
@@ -118,7 +121,11 @@ Configure connections in Settings, Models instead. These are a fallback default.
 
 | Variable | Notes |
 |---|---|
-| SLACK_WEBHOOK_URL | Default alert destination. Per-rule destinations override it |
+| SLACK_WEBHOOK_URL | Optional scheduled-report webhook |
+| REPORT_SLACK_ORG_ID | Required with Slack report delivery. Must equal the one org allowed to use the global webhook; missing or mismatched values fail closed |
+| RESEND_API_KEY | Enables scheduled report email through the Resend HTTPS API |
+| REPORT_FROM_EMAIL | Verified sender, for example `Data Dumpster <reports@example.com>` |
+| APP_URL | Canonical production origin used for authenticated Slack export links |
 
 ---
 
@@ -175,15 +182,15 @@ sit in the environment.
 
 ## 6. First ingestion
 
-Run it by hand before trusting the cron. Bluesky and RSS need no credentials, so
-this works on a clean deployment.
+Run it by hand before trusting the cron. Bluesky needs no credentials, so this
+works on a clean deployment.
 
-    NODE_ENV=development npm run ingest:once -- --platform=bluesky,rss --dry-run
+    NODE_ENV=development npm run ingest:once -- --platform=bluesky --dry-run
 
 Dry run fetches and reports and writes nothing. If the numbers look sane, do it
 for real:
 
-    NODE_ENV=development npm run ingest:once -- --platform=bluesky,rss
+    NODE_ENV=development npm run ingest:once -- --platform=bluesky
 
 Useful flags: --channel=<uuid> for exactly one channel, --company=<slug>,
 --since=YYYY-MM-DD to override the window, --limit=N (default 500),
@@ -198,20 +205,25 @@ Then open the app, sign in, and confirm Cross-Channel renders numbers.
 
 ---
 
-## 7. Verify the cron jobs
+## 7. Verify the scheduled endpoints
 
-Three are declared in "vercel.json" and appear under Project, Settings, Cron Jobs
-after the first production deploy.
+The endpoints exist, but no jobs are declared in `vercel.json`. Automated
+ingestion and delivery remain off until the vendor-spend decision is made.
+Turning them on is an operating change, not part of deploying the application.
+Schedule creation, editing, deletion and run-now are admin-only. A run-now
+request must include a stable `Idempotency-Key` header; retry the same intended
+run with the same key.
 
 | Path | Schedule | maxDuration |
 |---|---|---|
 | /api/cron/ingest | 0 */3 * * * | 300s |
 | /api/cron/alerts | 20 * * * * | 120s |
 | /api/cron/brief | 0 6 * * 1 | 300s |
+| /api/cron/reports | 10 * * * * | 300s |
 
-Reasoning for each schedule is in "docs/CRONS.md". maxDuration is route segment
-config inside each route file rather than in "vercel.json", which is authoritative
-on Vercel and cannot silently stop matching if a file moves.
+These are the proposed schedules, documented in `docs/CRONS.md`. Add only the
+jobs whose spend and delivery behavior have been approved. `maxDuration` is
+route segment config inside each route file.
 
 Vercel Cron sends the CRON_SECRET automatically in the Authorization header on
 Pro plans. Test one by hand:
@@ -363,7 +375,7 @@ changing anything.
 - [ ] An uptime monitor is pointed at /api/health
 - [ ] Signed in with the seeded admin, then changed the password
 - [ ] SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD removed from Vercel
-- [ ] All three cron jobs listed in the Vercel dashboard and manually triggered once
+- [ ] Only approved cron routes activated; all four manually tested before activation
 - [ ] At least one ingestion run succeeded for Bluesky and one for YouTube
 - [ ] Cross-Channel renders real numbers for a real landscape
 - [ ] A model connection saved with a passing health check

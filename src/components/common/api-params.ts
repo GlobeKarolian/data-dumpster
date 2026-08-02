@@ -14,7 +14,7 @@ const RENAME: Record<string, string> = {
 };
 
 /** Screen params that never belong on an API request. */
-const DROP = new Set(['landscape', 'groupBy', 'view']);
+const DROP = new Set(['landscape', 'groupBy', 'view', 'columns', 'showPostTags']);
 
 export function toApiParams(
   screen: URLSearchParams,

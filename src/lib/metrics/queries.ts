@@ -48,6 +48,7 @@ import type {
   FactSheet,
   HeadlineStat,
   MetricsApi,
+  PostDetailDto,
   PostDto,
   PostTypeRow,
   PostingCadenceCell,
@@ -103,6 +104,8 @@ type ScopeRow = {
  */
 async function resolveScope(q: Scoped<AnalyticsQuery>): Promise<Scope> {
   const orgGuard = q.orgId ? sql` AND l.org_id = ${q.orgId}::uuid` : sql``;
+  // The guarded landscape and its membership rows are the tenancy boundary.
+  // companies.org_id records who added a pooled company and must not filter it.
   const { rows } = await db.execute<ScopeRow>(sql`
     SELECT l.id            AS landscape_id,
            l.name          AS landscape_name,
@@ -116,7 +119,7 @@ async function resolveScope(q: Scoped<AnalyticsQuery>): Promise<Scope> {
            c.segment
       FROM landscapes l
       LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
-      LEFT JOIN companies c ON c.id = lc.company_id AND c.org_id = l.org_id
+      LEFT JOIN companies c ON c.id = lc.company_id
      WHERE l.id = ${q.landscapeId}::uuid${orgGuard}
      ORDER BY lc.sort_order NULLS LAST, c.name
   `);
@@ -213,6 +216,152 @@ export function changePct(current: number, previous: number | null | undefined):
   return Number.isFinite(pct) ? pct : null;
 }
 
+type AudienceSnapshotReading = {
+  channelId: string;
+  /** ISO calendar date (`YYYY-MM-DD`), matching audience_snapshots.day. */
+  day: string;
+  followers: number;
+};
+
+/**
+ * Executable specification for the audience stock rule used by the SQL below.
+ * Production reads stay aggregated in Postgres; this pure form exists so the
+ * latest-per-channel behavior can be protected without a database fixture.
+ */
+function audienceStockTotal(snapshots: readonly AudienceSnapshotReading[]): number {
+  const latestByChannel = new Map<string, AudienceSnapshotReading>();
+
+  for (const snapshot of snapshots) {
+    const latest = latestByChannel.get(snapshot.channelId);
+    if (!latest || snapshot.day > latest.day) {
+      latestByChannel.set(snapshot.channelId, snapshot);
+    }
+  }
+
+  let total = 0;
+  for (const snapshot of latestByChannel.values()) total += snapshot.followers;
+  return total;
+}
+
+/**
+ * Availability rule shared by leaderboard, fact-sheet and time-series paths.
+ * A single audience snapshot establishes a stock, but it cannot establish
+ * change. Growth also needs a non-zero measured baseline.
+ */
+function audienceMetricAvailable(
+  key: MetricKey,
+  observedDays: number,
+  firstFollowers: number,
+): boolean {
+  if (key === 'audience') return observedDays >= 1;
+  if (key === 'audienceNetChange') return observedDays >= 2;
+  if (key === 'audienceGrowthRate') return observedDays >= 2 && firstFollowers !== 0;
+  return true;
+}
+
+function metricAvailabilityForCoverage(
+  key: MetricKey,
+  applicablePlatforms: number,
+  minimumObservedDays: number,
+  maximumObservedDays: number,
+  firstFollowers: number,
+): boolean {
+  if (applicablePlatforms === 0) return false;
+  return audienceMetricAvailable(
+    key,
+    key === 'audience' ? maximumObservedDays : minimumObservedDays,
+    firstFollowers,
+  );
+}
+
+function mergeMinimumObservedDays(
+  currentMinimum: number,
+  applicablePlatforms: number,
+  nextObservedDays: number,
+): number {
+  return applicablePlatforms === 0
+    ? nextObservedDays
+    : Math.min(currentMinimum, nextObservedDays);
+}
+
+/**
+ * Reddit user profiles do not expose a follower stock through the account-post
+ * source. They are still valid post sources, but they must not count as missing
+ * audience coverage for a measured subreddit channel on the same company.
+ */
+function channelProvidesAudience(platform: Platform, handle: string): boolean {
+  return platform !== 'reddit' || !handle.toLowerCase().startsWith('u/');
+}
+
+/**
+ * A company-platform total is only comparable after every configured profile
+ * has completed collection. One successful profile out of several would make
+ * the partial sum look like a real total, which is worse than leaving it blank.
+ */
+function platformHasCompleteFlow(trackedChannels: number, ingestedChannels: number): boolean {
+  return trackedChannels > 0 && ingestedChannels >= trackedChannels;
+}
+
+function followerRateContribution(
+  ratedEngagementTotal: number,
+  ratedPosts: number,
+  followers: number,
+): { numerator: number; posts: number } {
+  if (followers <= 0 || ratedPosts <= 0) return { numerator: 0, posts: 0 };
+  return {
+    numerator: safeDiv(ratedEngagementTotal, followers),
+    posts: ratedPosts,
+  };
+}
+
+function followerRateAvailable(ratedPosts: number): boolean {
+  return ratedPosts > 0;
+}
+
+/**
+ * Executable specification for the source-scoped percentile used by `loadPosts`.
+ * PostgreSQL's percentile_cont interpolates the middle pair, hence the average
+ * for an even-sized source.
+ */
+function sourceMedianEngagement(
+  rows: readonly { sourceId: string; engagementTotal: number }[],
+): Map<string, number> {
+  const grouped = new Map<string, number[]>();
+  for (const row of rows) {
+    const values = grouped.get(row.sourceId) ?? [];
+    values.push(row.engagementTotal);
+    grouped.set(row.sourceId, values);
+  }
+
+  const medians = new Map<string, number>();
+  for (const [sourceId, values] of grouped) {
+    values.sort((a, b) => a - b);
+    const middle = Math.floor(values.length / 2);
+    medians.set(
+      sourceId,
+      values.length % 2 === 0
+        ? (values[middle - 1] + values[middle]) / 2
+        : values[middle],
+    );
+  }
+  return medians;
+}
+
+/** Narrow test seam for arithmetic that otherwise stays private to this module. */
+export const metricTestHelpers = {
+  safeDiv,
+  audienceStockTotal,
+  audienceMetricAvailable,
+  metricAvailabilityForCoverage,
+  mergeMinimumObservedDays,
+  channelProvidesAudience,
+  platformHasCompleteFlow,
+  followerRateContribution,
+  followerRateAvailable,
+  sourceMedianEngagement,
+  aggregateTagPerformanceRows,
+};
+
 /** `a, b, c` as uuid-cast literals. Never call with an empty array. */
 function idList(ids: readonly string[]): SQL {
   return sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
@@ -276,23 +425,25 @@ function postWhere(scope: Scope, range: DateRange, f: PostFilters): SQL {
   }
   if (f.search && f.search.trim()) {
     const needle = `%${f.search.trim()}%`;
-    parts.push(sql`p.text ILIKE ${needle}`);
+    parts.push(sql`(
+      p.text ILIKE ${needle}
+      OR p.permalink ILIKE ${needle}
+      OR EXISTS (
+        SELECT 1
+          FROM posted_urls search_url
+         WHERE search_url.post_id = p.id
+           AND (
+             search_url.url ILIKE ${needle}
+             OR search_url.domain ILIKE ${needle}
+             OR search_url.title ILIKE ${needle}
+           )
+      )
+    )`);
   }
   return sql.join(parts, sql` AND `);
 }
 
-/** Audience is channel-scoped, so it takes only the company and platform filters. */
-function audienceWhere(scope: Scope, range: DateRange, f: PostFilters): SQL {
-  const parts: SQL[] = [
-    sql`ch.company_id IN (${idList(scope.companyIds)})`,
-    sql`a.day >= ${dayParam(range.start)}`,
-    sql`a.day <= ${dayParam(range.end)}`,
-  ];
-  if (f.platforms?.length) parts.push(sql`ch.platform IN (${platformList(f.platforms)})`);
-  return sql.join(parts, sql` AND `);
-}
-
-function filtersOf(q: AnalyticsQuery & { search?: string }): PostFilters {
+function filtersOf(q: AnalyticsQuery): PostFilters {
   return {
     platforms: q.platforms,
     postTypes: q.postTypes,
@@ -314,9 +465,17 @@ type AggRow = {
   saves: string | number | null;
   views: string | number | null;
   posts_missing_followers: string | number | null;
+  rated_engagement_total: string | number | null;
+  rated_post_count: string | number | null;
   followers_last: string | number | null;
   followers_first: string | number | null;
   audience_days: string | number | null;
+  audience_max_days: string | number | null;
+  audience_tracked_channels: string | number | null;
+  audience_observed_channels: string | number | null;
+  audience_change_channels: string | number | null;
+  tracked_channels: string | number | null;
+  ingested_channels: string | number | null;
 };
 
 interface PlatformAgg {
@@ -329,12 +488,28 @@ interface PlatformAgg {
   saves: number;
   views: number;
   postsMissingFollowers: number;
+  /** Engagement from posts with a real followers-at-post denominator. */
+  ratedEngagementTotal: number;
+  /** Posts with a real followers-at-post denominator. */
+  ratedPosts: number;
   /** Latest follower reading inside the window -- a stock. */
   followersLast: number;
   /** Earliest follower reading inside the window. */
   followersFirst: number;
   /** How many days of the window actually have an audience reading. */
   audienceDays: number;
+  /** Most-observed included channel, used to establish stock presence. */
+  audienceMaxDays: number;
+  /** Active profiles whose platform exposes an audience stock. */
+  audienceTrackedChannels: number;
+  /** Audience-bearing profiles with a stock reading in the selected window. */
+  audienceObservedChannels: number;
+  /** Audience-bearing profiles with at least two readings in the selected window. */
+  audienceChangeChannels: number;
+  /** Active channels represented by this company+platform aggregate. */
+  trackedChannels: number;
+  /** Active channels with at least one completed ingest. */
+  ingestedChannels: number;
 }
 
 interface CompanyAgg {
@@ -349,6 +524,20 @@ interface CompanyAgg {
   postsMissingFollowers: number;
   followersLast: number;
   followersFirst: number;
+  /** Latest/earliest audience totals; availability decides whether change may use them. */
+  audienceChangeLast: number;
+  audienceChangeFirst: number;
+  /** Minimum observed days across every applicable channel/platform. */
+  audienceDays: number;
+  /** Maximum observed days on any included audience channel. */
+  audienceMaxDays: number;
+  trackedChannels: number;
+  ingestedChannels: number;
+  audienceTrackedChannels: number;
+  audienceObservedChannels: number;
+  audienceChangeChannels: number;
+  /** Number of platform rows that are actually applicable to this company. */
+  applicablePlatforms: number;
   /**
    * Sum over platforms of (platform engagement / platform followers). Divide by
    * `erfPosts` to get engagement rate by follower. Kept separate so the rate is
@@ -365,7 +554,14 @@ function emptyCompanyAgg(companyId: string): CompanyAgg {
     companyId,
     posts: 0, engagementTotal: 0, applause: 0, conversation: 0,
     amplification: 0, saves: 0, views: 0, postsMissingFollowers: 0,
-    followersLast: 0, followersFirst: 0, erfNumerator: 0, erfPosts: 0,
+    followersLast: 0, followersFirst: 0,
+    audienceChangeLast: 0, audienceChangeFirst: 0,
+    audienceDays: 0, audienceMaxDays: 0,
+    trackedChannels: 0, ingestedChannels: 0,
+    audienceTrackedChannels: 0, audienceObservedChannels: 0,
+    audienceChangeChannels: 0,
+    applicablePlatforms: 0,
+    erfNumerator: 0, erfPosts: 0,
     byPlatform: new Map(),
   };
 }
@@ -382,9 +578,9 @@ function emptyCompanyAgg(companyId: string): CompanyAgg {
  *
  * Posts, by contrast, are a flow, and are genuinely summed over the window.
  *
- * FULL OUTER JOIN because a company can have audience with no posts (a dormant
- * account) or posts with no audience reading (a channel we just started tracking),
- * and both are facts worth reporting rather than rows to drop.
+ * The `keys` union keeps companies that have audience with no posts, posts with
+ * no audience reading, or only configured channels. Those states mean different
+ * things, so none may disappear as a side effect of a join.
  */
 async function companyPlatformAgg(
   scope: Scope,
@@ -395,24 +591,64 @@ async function companyPlatformAgg(
   if (scope.companyIds.length === 0) return out;
 
   const { rows } = await db.execute<AggRow>(sql`
-    WITH aud_channel AS (
+    WITH tracked AS (
       SELECT ch.company_id,
              ch.platform,
-             a.channel_id,
-             (array_agg(a.followers ORDER BY a.day DESC))[1] AS f_last,
-             (array_agg(a.followers ORDER BY a.day ASC))[1]  AS f_first,
-             count(*)::int                                    AS days_observed
-        FROM audience_snapshots a
-        JOIN channels ch ON ch.id = a.channel_id
-       WHERE ${audienceWhere(scope, range, f)}
-       GROUP BY ch.company_id, ch.platform, a.channel_id
+             count(*)::int AS tracked_channels,
+             count(*) FILTER (
+               WHERE EXISTS (
+                 SELECT 1
+                   FROM channel_collection_state state
+                  WHERE state.channel_id = ch.id
+                    AND state.status = 'succeeded'
+                    AND NOT state.has_more
+                    AND state.coverage_since::date <= ${dayParam(range.start)}
+                    AND state.coverage_until::date >= ${dayParam(range.end)}
+               )
+             )::int
+               AS ingested_channels
+        FROM channels ch
+       WHERE ch.company_id IN (${idList(scope.companyIds)})
+         AND ch.active
+         ${f.platforms?.length
+           ? sql`AND ch.platform IN (${platformList(f.platforms)})`
+           : sql``}
+       GROUP BY ch.company_id, ch.platform
+    ),
+    aud_channel AS (
+      SELECT ch.company_id,
+             ch.platform,
+             ch.id AS channel_id,
+             (array_agg(a.followers ORDER BY a.day DESC)
+               FILTER (WHERE a.day IS NOT NULL))[1] AS f_last,
+             (array_agg(a.followers ORDER BY a.day ASC)
+               FILTER (WHERE a.day IS NOT NULL))[1] AS f_first,
+             count(a.day)::int AS days_observed
+        FROM channels ch
+        LEFT JOIN audience_snapshots a
+          ON a.channel_id = ch.id
+         AND a.day >= ${dayParam(range.start)}
+         AND a.day <= ${dayParam(range.end)}
+       WHERE ch.company_id IN (${idList(scope.companyIds)})
+         AND ch.active
+         AND NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
+         ${f.platforms?.length
+           ? sql`AND ch.platform IN (${platformList(f.platforms)})`
+           : sql``}
+       GROUP BY ch.company_id, ch.platform, ch.id
     ),
     aud AS (
       SELECT company_id,
              platform,
-             sum(f_last)        AS followers_last,
-             sum(f_first)       AS followers_first,
-             max(days_observed) AS audience_days
+             coalesce(sum(f_last), 0)  AS followers_last,
+             coalesce(sum(f_first), 0) AS followers_first,
+             min(days_observed)        AS audience_days,
+             max(days_observed)        AS audience_max_days,
+             count(*)::int             AS audience_tracked_channels,
+             count(*) FILTER (WHERE f_last IS NOT NULL)::int
+               AS audience_observed_channels,
+             count(*) FILTER (WHERE days_observed >= 2)::int
+               AS audience_change_channels
         FROM aud_channel
        GROUP BY company_id, platform
     ),
@@ -428,13 +664,26 @@ async function companyPlatformAgg(
              coalesce(sum(p.views), 0)            AS views,
              count(*) FILTER (
                WHERE p.followers_at_post IS NULL OR p.followers_at_post = 0
-             )::int                               AS posts_missing_followers
+             )::int                               AS posts_missing_followers,
+             coalesce(sum(p.engagement_total) FILTER (
+               WHERE p.followers_at_post > 0
+             ), 0)                                AS rated_engagement_total,
+             count(*) FILTER (
+               WHERE p.followers_at_post > 0
+             )::int                               AS rated_post_count
         FROM posts p
        WHERE ${postWhere(scope, range, f)}
        GROUP BY p.company_id, p.platform
+    ),
+    keys AS (
+      SELECT company_id, platform FROM tracked
+      UNION
+      SELECT company_id, platform FROM pa
+      UNION
+      SELECT company_id, platform FROM aud
     )
-    SELECT coalesce(pa.company_id, aud.company_id) AS company_id,
-           coalesce(pa.platform, aud.platform)     AS platform,
+    SELECT keys.company_id,
+           keys.platform,
            coalesce(pa.post_count, 0)              AS post_count,
            coalesce(pa.engagement_total, 0)        AS engagement_total,
            coalesce(pa.applause, 0)                AS applause,
@@ -443,12 +692,24 @@ async function companyPlatformAgg(
            coalesce(pa.saves, 0)                   AS saves,
            coalesce(pa.views, 0)                   AS views,
            coalesce(pa.posts_missing_followers, 0) AS posts_missing_followers,
+           coalesce(pa.rated_engagement_total, 0)  AS rated_engagement_total,
+           coalesce(pa.rated_post_count, 0)        AS rated_post_count,
            aud.followers_last,
            aud.followers_first,
-           aud.audience_days
-      FROM pa
-      FULL OUTER JOIN aud
-        ON aud.company_id = pa.company_id AND aud.platform = pa.platform
+           aud.audience_days,
+           aud.audience_max_days,
+           coalesce(aud.audience_tracked_channels, 0) AS audience_tracked_channels,
+           coalesce(aud.audience_observed_channels, 0) AS audience_observed_channels,
+           coalesce(aud.audience_change_channels, 0) AS audience_change_channels,
+           coalesce(tracked.tracked_channels, 0)   AS tracked_channels,
+           coalesce(tracked.ingested_channels, 0)  AS ingested_channels
+      FROM keys
+      LEFT JOIN tracked
+        ON tracked.company_id = keys.company_id AND tracked.platform = keys.platform
+      LEFT JOIN pa
+        ON pa.company_id = keys.company_id AND pa.platform = keys.platform
+      LEFT JOIN aud
+        ON aud.company_id = keys.company_id AND aud.platform = keys.platform
   `);
 
   for (const r of rows) {
@@ -466,9 +727,17 @@ async function companyPlatformAgg(
       saves: num(r.saves),
       views: num(r.views),
       postsMissingFollowers: num(r.posts_missing_followers),
+      ratedEngagementTotal: num(r.rated_engagement_total),
+      ratedPosts: num(r.rated_post_count),
       followersLast: num(r.followers_last),
       followersFirst: num(r.followers_first),
       audienceDays: num(r.audience_days),
+      audienceMaxDays: num(r.audience_max_days),
+      audienceTrackedChannels: num(r.audience_tracked_channels),
+      audienceObservedChannels: num(r.audience_observed_channels),
+      audienceChangeChannels: num(r.audience_change_channels),
+      trackedChannels: num(r.tracked_channels),
+      ingestedChannels: num(r.ingested_channels),
     };
     agg.byPlatform.set(p.platform, p);
 
@@ -480,14 +749,35 @@ async function companyPlatformAgg(
     agg.saves += p.saves;
     agg.views += p.views;
     agg.postsMissingFollowers += p.postsMissingFollowers;
+    agg.trackedChannels += p.trackedChannels;
+    agg.ingestedChannels += p.ingestedChannels;
+    agg.audienceTrackedChannels += p.audienceTrackedChannels;
+    agg.audienceObservedChannels += p.audienceObservedChannels;
+    agg.audienceChangeChannels += p.audienceChangeChannels;
     agg.followersLast += p.followersLast;
     agg.followersFirst += p.followersFirst;
-
-    // Engagement rate is only meaningful where we know the audience size.
-    if (p.followersLast > 0 && p.posts > 0) {
-      agg.erfNumerator += p.engagementTotal / p.followersLast;
-      agg.erfPosts += p.posts;
+    const applicable = platformHasCompleteFlow(p.trackedChannels, p.ingestedChannels);
+    if (applicable) {
+      agg.audienceDays = mergeMinimumObservedDays(
+        agg.audienceDays,
+        agg.applicablePlatforms,
+        p.audienceDays,
+      );
+      agg.applicablePlatforms += 1;
     }
+    agg.audienceMaxDays = Math.max(agg.audienceMaxDays, p.audienceMaxDays);
+    agg.audienceChangeLast += p.followersLast;
+    agg.audienceChangeFirst += p.followersFirst;
+
+    // Only posts that captured their own denominator participate. This keeps
+    // audience-less Reddit user posts from borrowing a sibling subreddit's members.
+    const erf = followerRateContribution(
+      p.ratedEngagementTotal,
+      p.ratedPosts,
+      p.followersLast,
+    );
+    agg.erfNumerator += erf.numerator;
+    agg.erfPosts += erf.posts;
   }
 
   // Companies with no rows at all still belong in a leaderboard, at zero.
@@ -516,11 +806,34 @@ function totalsOf(aggs: Iterable<CompanyAgg>): LandscapeTotals {
  * every metric in the product; `definitions.ts` describes these formulas in prose
  * and the two must always agree.
  */
+function metricAvailable(a: CompanyAgg, key: MetricKey): boolean {
+  if (key === 'audience') {
+    return a.audienceTrackedChannels > 0
+      && a.audienceObservedChannels >= a.audienceTrackedChannels;
+  }
+  if (key === 'audienceNetChange' || key === 'audienceGrowthRate') {
+    const completeHistory = a.audienceTrackedChannels > 0
+      && a.audienceChangeChannels >= a.audienceTrackedChannels;
+    return completeHistory && (key !== 'audienceGrowthRate' || a.audienceChangeFirst !== 0);
+  }
+
+  if (!platformHasCompleteFlow(a.trackedChannels, a.ingestedChannels)) return false;
+  if (key === 'engagementRateByFollower') return followerRateAvailable(a.erfPosts);
+  return metricAvailabilityForCoverage(
+    key,
+    a.applicablePlatforms,
+    a.audienceDays,
+    a.audienceMaxDays,
+    a.audienceChangeFirst,
+  );
+}
+
 function metricValue(a: CompanyAgg, key: MetricKey, days: number, t: LandscapeTotals): number {
   switch (key) {
     case 'audience': return a.followersLast;
-    case 'audienceNetChange': return a.followersLast - a.followersFirst;
-    case 'audienceGrowthRate': return safeDiv(a.followersLast - a.followersFirst, a.followersFirst);
+    case 'audienceNetChange': return a.audienceChangeLast - a.audienceChangeFirst;
+    case 'audienceGrowthRate':
+      return safeDiv(a.audienceChangeLast - a.audienceChangeFirst, a.audienceChangeFirst);
     case 'posts': return a.posts;
     case 'postsPerDay': return safeDiv(a.posts, days);
     case 'postsPerWeek': return safeDiv(a.posts, days) * 7;
@@ -541,6 +854,11 @@ function metricValue(a: CompanyAgg, key: MetricKey, days: number, t: LandscapeTo
 
 /** The same arithmetic restricted to one platform, for cross-channel breakdowns. */
 function platformMetricValue(p: PlatformAgg, key: MetricKey, days: number, t: LandscapeTotals): number {
+  const erf = followerRateContribution(
+    p.ratedEngagementTotal,
+    p.ratedPosts,
+    p.followersLast,
+  );
   const asCompany: CompanyAgg = {
     companyId: '',
     posts: p.posts,
@@ -553,8 +871,18 @@ function platformMetricValue(p: PlatformAgg, key: MetricKey, days: number, t: La
     postsMissingFollowers: p.postsMissingFollowers,
     followersLast: p.followersLast,
     followersFirst: p.followersFirst,
-    erfNumerator: p.followersLast > 0 && p.posts > 0 ? p.engagementTotal / p.followersLast : 0,
-    erfPosts: p.followersLast > 0 && p.posts > 0 ? p.posts : 0,
+    audienceChangeLast: p.audienceDays >= 2 ? p.followersLast : 0,
+    audienceChangeFirst: p.audienceDays >= 2 ? p.followersFirst : 0,
+    audienceDays: p.audienceDays,
+    audienceMaxDays: p.audienceMaxDays,
+    trackedChannels: p.trackedChannels,
+    ingestedChannels: p.ingestedChannels,
+    audienceTrackedChannels: p.audienceTrackedChannels,
+    audienceObservedChannels: p.audienceObservedChannels,
+    audienceChangeChannels: p.audienceChangeChannels,
+    applicablePlatforms: platformHasCompleteFlow(p.trackedChannels, p.ingestedChannels) ? 1 : 0,
+    erfNumerator: erf.numerator,
+    erfPosts: erf.posts,
     byPlatform: new Map(),
   };
   return metricValue(asCompany, key, days, t);
@@ -564,6 +892,46 @@ function breakdownOf(a: CompanyAgg, key: MetricKey, days: number, t: LandscapeTo
   Partial<Record<Platform, number>> {
   const out: Partial<Record<Platform, number>> = {};
   for (const [platform, p] of a.byPlatform) out[platform] = platformMetricValue(p, key, days, t);
+  return out;
+}
+
+function breakdownAvailabilityOf(a: CompanyAgg, key: MetricKey):
+  Partial<Record<Platform, boolean>> {
+  const out: Partial<Record<Platform, boolean>> = {};
+  for (const [platform, p] of a.byPlatform) {
+    const erf = followerRateContribution(
+      p.ratedEngagementTotal,
+      p.ratedPosts,
+      p.followersLast,
+    );
+    const asCompany: CompanyAgg = {
+      companyId: '',
+      posts: p.posts,
+      engagementTotal: p.engagementTotal,
+      applause: p.applause,
+      conversation: p.conversation,
+      amplification: p.amplification,
+      saves: p.saves,
+      views: p.views,
+      postsMissingFollowers: p.postsMissingFollowers,
+      followersLast: p.followersLast,
+      followersFirst: p.followersFirst,
+      audienceChangeLast: p.audienceDays >= 2 ? p.followersLast : 0,
+      audienceChangeFirst: p.audienceDays >= 2 ? p.followersFirst : 0,
+      audienceDays: p.audienceDays,
+      audienceMaxDays: p.audienceMaxDays,
+      trackedChannels: p.trackedChannels,
+      ingestedChannels: p.ingestedChannels,
+      audienceTrackedChannels: p.audienceTrackedChannels,
+      audienceObservedChannels: p.audienceObservedChannels,
+      audienceChangeChannels: p.audienceChangeChannels,
+      applicablePlatforms: platformHasCompleteFlow(p.trackedChannels, p.ingestedChannels) ? 1 : 0,
+      erfNumerator: erf.numerator,
+      erfPosts: erf.posts,
+      byPlatform: new Map(),
+    };
+    out[platform] = metricAvailable(asCompany, key);
+  }
   return out;
 }
 
@@ -596,26 +964,38 @@ export async function getLeaderboard(
   const rows: MetricRow[] = [];
   for (const company of scope.companies) {
     const agg = current.get(company.id) ?? emptyCompanyAgg(company.id);
+    const available = metricAvailable(agg, q.metric);
     const value = metricValue(agg, q.metric, days, totals);
     let previousValue: number | null = null;
+    let previousAvailable = false;
     if (previousAgg && prevTotals) {
       const pa = previousAgg.get(company.id) ?? emptyCompanyAgg(company.id);
-      previousValue = metricValue(pa, q.metric, prevDays, prevTotals);
+      previousAvailable = metricAvailable(pa, q.metric);
+      previousValue = previousAvailable
+        ? metricValue(pa, q.metric, prevDays, prevTotals)
+        : null;
     }
     rows.push({
       company,
       value,
+      available,
       previousValue,
-      changePct: changePct(value, previousValue),
+      previousAvailable,
+      changePct: available ? changePct(value, previousValue) : null,
       rank: 0,
       breakdown: breakdownOf(agg, q.metric, days, totals),
+      breakdownAvailability: breakdownAvailabilityOf(agg, q.metric),
     });
   }
 
-  // Every metric in the vocabulary is "higher is better"; ties break alphabetically
-  // so a leaderboard of all zeros is still stable between renders.
-  rows.sort((x, y) => (y.value - x.value) || x.company.name.localeCompare(y.company.name));
-  rows.forEach((r, i) => { r.rank = i + 1; });
+  // Unmeasured rows belong at the bottom with no rank. They are not zero-value
+  // competitors and must not influence reference averages.
+  rows.sort((x, y) =>
+    Number(y.available) - Number(x.available)
+    || (y.value - x.value)
+    || x.company.name.localeCompare(y.company.name));
+  let rank = 0;
+  rows.forEach((r) => { r.rank = r.available ? ++rank : 0; });
   return rows;
 }
 
@@ -633,6 +1013,8 @@ type BucketRow = {
   views: string | number | null;
   followers_last: string | number | null;
   followers_first: string | number | null;
+  audience_days: string | number | null;
+  audience_max_days: string | number | null;
   erf_num: string | number | null;
   erf_posts: string | number | null;
 };
@@ -681,7 +1063,15 @@ async function bucketSeries(
 ): Promise<BucketRow[]> {
   if (scope.companyIds.length === 0) return [];
   const { rows } = await db.execute<BucketRow>(sql`
-    WITH pb AS (
+    WITH bucket_list AS (
+      SELECT DISTINCT date_trunc(${g}::text, d.day::timestamp)::date AS bucket
+        FROM generate_series(
+          ${dayParam(range.start)},
+          ${dayParam(range.end)},
+          interval '1 day'
+        ) AS d(day)
+    ),
+    pb AS (
       SELECT p.company_id,
              p.platform,
              date_trunc(${g}::text, p.posted_at AT TIME ZONE ${TZ})::date AS bucket,
@@ -691,7 +1081,13 @@ async function bucketSeries(
              coalesce(sum(p.conversation), 0)     AS conversation,
              coalesce(sum(p.amplification), 0)    AS amplification,
              coalesce(sum(p.saves), 0)            AS saves,
-             coalesce(sum(p.views), 0)            AS views
+             coalesce(sum(p.views), 0)            AS views,
+             coalesce(sum(p.engagement_total) FILTER (
+               WHERE p.followers_at_post > 0
+             ), 0)                                AS rated_engagement_total,
+             count(*) FILTER (
+               WHERE p.followers_at_post > 0
+             )::int                               AS rated_post_count
         FROM posts p
        WHERE ${postWhere(scope, range, f)}
        GROUP BY 1, 2, 3
@@ -699,19 +1095,34 @@ async function bucketSeries(
     ab_channel AS (
       SELECT ch.company_id,
              ch.platform,
-             a.channel_id,
-             date_trunc(${g}::text, a.day::timestamp)::date AS bucket,
-             (array_agg(a.followers ORDER BY a.day DESC))[1] AS f_last,
-             (array_agg(a.followers ORDER BY a.day ASC))[1]  AS f_first
-        FROM audience_snapshots a
-        JOIN channels ch ON ch.id = a.channel_id
-       WHERE ${audienceWhere(scope, range, f)}
-       GROUP BY 1, 2, 3, 4
+             ch.id AS channel_id,
+             b.bucket,
+             (array_agg(a.followers ORDER BY a.day DESC)
+               FILTER (WHERE a.day IS NOT NULL))[1] AS f_last,
+             (array_agg(a.followers ORDER BY a.day ASC)
+               FILTER (WHERE a.day IS NOT NULL))[1] AS f_first,
+             count(a.day)::int AS days_observed
+        FROM channels ch
+        CROSS JOIN bucket_list b
+        LEFT JOIN audience_snapshots a
+          ON a.channel_id = ch.id
+         AND a.day >= ${dayParam(range.start)}
+         AND a.day <= ${dayParam(range.end)}
+         AND date_trunc(${g}::text, a.day::timestamp)::date = b.bucket
+       WHERE ch.company_id IN (${idList(scope.companyIds)})
+         AND ch.active
+         AND NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
+         ${f.platforms?.length
+           ? sql`AND ch.platform IN (${platformList(f.platforms)})`
+           : sql``}
+       GROUP BY ch.company_id, ch.platform, ch.id, b.bucket
     ),
     ab AS (
       SELECT company_id, platform, bucket,
-             sum(f_last)  AS followers_last,
-             sum(f_first) AS followers_first
+             coalesce(sum(f_last), 0)  AS followers_last,
+             coalesce(sum(f_first), 0) AS followers_first,
+             min(days_observed)        AS audience_days,
+             max(days_observed)        AS audience_max_days
         FROM ab_channel
        GROUP BY 1, 2, 3
     ),
@@ -725,8 +1136,12 @@ async function bucketSeries(
              coalesce(pb.amplification, 0)           AS amplification,
              coalesce(pb.saves, 0)                   AS saves,
              coalesce(pb.views, 0)                   AS views,
+             coalesce(pb.rated_engagement_total, 0)  AS rated_engagement_total,
+             coalesce(pb.rated_post_count, 0)        AS rated_post_count,
              coalesce(ab.followers_last, 0)          AS followers_last,
-             coalesce(ab.followers_first, 0)         AS followers_first
+             coalesce(ab.followers_first, 0)         AS followers_first,
+             coalesce(ab.audience_days, 0)           AS audience_days,
+             coalesce(ab.audience_max_days, 0)       AS audience_max_days
         FROM pb
         FULL OUTER JOIN ab
           ON ab.company_id = pb.company_id
@@ -744,10 +1159,12 @@ async function bucketSeries(
            sum(views)                      AS views,
            sum(followers_last)             AS followers_last,
            sum(followers_first)            AS followers_first,
-           coalesce(sum(engagement_total::numeric / nullif(followers_last, 0))
-                    FILTER (WHERE followers_last > 0 AND post_count > 0), 0) AS erf_num,
-           coalesce(sum(post_count)
-                    FILTER (WHERE followers_last > 0 AND post_count > 0), 0)::int AS erf_posts
+           min(audience_days)::int          AS audience_days,
+           max(audience_max_days)::int      AS audience_max_days,
+           coalesce(sum(rated_engagement_total::numeric / nullif(followers_last, 0))
+                    FILTER (WHERE followers_last > 0 AND rated_post_count > 0), 0) AS erf_num,
+           coalesce(sum(rated_post_count)
+                    FILTER (WHERE followers_last > 0 AND rated_post_count > 0), 0)::int AS erf_posts
       FROM cp
      WHERE company_id IS NOT NULL AND bucket IS NOT NULL
      GROUP BY company_id, bucket
@@ -757,6 +1174,10 @@ async function bucketSeries(
 }
 
 function bucketAgg(r: BucketRow): CompanyAgg {
+  const audienceDays = num(r.audience_days);
+  const audienceMaxDays = num(r.audience_max_days);
+  const followersLast = num(r.followers_last);
+  const followersFirst = num(r.followers_first);
   return {
     companyId: r.company_id,
     posts: num(r.post_count),
@@ -767,8 +1188,18 @@ function bucketAgg(r: BucketRow): CompanyAgg {
     saves: num(r.saves),
     views: num(r.views),
     postsMissingFollowers: 0,
-    followersLast: num(r.followers_last),
-    followersFirst: num(r.followers_first),
+    followersLast,
+    followersFirst,
+    audienceChangeLast: audienceDays >= 2 ? followersLast : 0,
+    audienceChangeFirst: audienceDays >= 2 ? followersFirst : 0,
+    audienceDays,
+    audienceMaxDays,
+    trackedChannels: 1,
+    ingestedChannels: 1,
+    audienceTrackedChannels: audienceMaxDays > 0 ? 1 : 0,
+    audienceObservedChannels: audienceMaxDays > 0 ? 1 : 0,
+    audienceChangeChannels: audienceDays >= 2 ? 1 : 0,
+    applicablePlatforms: 1,
     erfNumerator: num(r.erf_num),
     erfPosts: num(r.erf_posts),
     byPlatform: new Map(),
@@ -811,7 +1242,18 @@ export async function getTimeSeries(
     const m = byBucket.get(bucket);
     for (const company of scope.companies) {
       const r = m?.get(company.id);
-      point[company.id] = r ? metricValue(bucketAgg(r), q.metric, bucketDays, t) : 0;
+      if (!r) {
+        point[company.id] = (
+          q.metric === 'audience'
+          || q.metric === 'audienceNetChange'
+          || q.metric === 'audienceGrowthRate'
+        ) ? null : 0;
+        continue;
+      }
+      const agg = bucketAgg(r);
+      point[company.id] = metricAvailable(agg, q.metric)
+        ? metricValue(agg, q.metric, bucketDays, t)
+        : null;
     }
     series.push(point);
   }
@@ -909,7 +1351,7 @@ interface LoadedPosts { items: PostDto[]; total: number }
  *    Fetching 50 posts costs the same number of round trips as fetching 1.
  *
  * 2. OUTLIER SCORE USES A MEDIAN, NOT A MEAN. `percentile_cont(0.5) WITHIN GROUP`
- *    over the company's own posts on that platform inside the window. A mean would
+ *    over the source channel's own posts inside the window. A mean would
  *    be dragged upward by the very viral post we are trying to identify, so every
  *    other post would look like an underperformer. The median is unmoved by the
  *    outlier, which is the entire point.
@@ -932,7 +1374,7 @@ async function loadPosts(
 
   const { rows } = await db.execute<PostRow>(sql`
     WITH filtered AS (
-      SELECT p.id, p.company_id, p.platform, p.type, p.posted_at, p.text,
+      SELECT p.id, p.company_id, p.channel_id, p.platform, p.type, p.posted_at, p.text,
              p.permalink, p.thumbnail_url, p.applause, p.conversation,
              p.amplification, p.saves, p.views, p.engagement_total,
              p.engagement_rate_by_follower, p.followers_at_post
@@ -940,12 +1382,12 @@ async function loadPosts(
        WHERE ${postWhere(scope, range, f)}
     ),
     med AS (
-      SELECT company_id, platform,
+      SELECT channel_id,
              percentile_cont(0.5) WITHIN GROUP (
                ORDER BY engagement_total::double precision
              ) AS median_engagement
         FROM filtered
-       GROUP BY company_id, platform
+       GROUP BY channel_id
     )
     SELECT f.id,
            f.company_id,
@@ -973,8 +1415,10 @@ async function loadPosts(
            tg.tags,
            ur.urls
       FROM filtered f
-      JOIN companies c ON c.id = f.company_id AND c.org_id = ${scope.orgId}::uuid
-      LEFT JOIN med m ON m.company_id = f.company_id AND m.platform = f.platform
+      -- The filtered CTE already contains only verified landscape members. Company
+      -- attribution is intentionally not another ownership check here.
+      JOIN companies c ON c.id = f.company_id
+      LEFT JOIN med m ON m.channel_id = f.channel_id
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object('id', t.id, 'name', t.name, 'color', t.color)
@@ -1023,6 +1467,7 @@ async function loadPosts(
       followersAtPost: numOrNull(r.followers_at_post),
       tags: coerceTags(r.tags),
       urls: coerceUrls(r.urls),
+      medianEngagement: median,
       // A median of zero means at least half this company's posts on this platform
       // earned nothing, so a ratio would be meaningless rather than infinite.
       outlierScore: median && median > 0 ? engagementTotal / median : null,
@@ -1047,6 +1492,222 @@ export async function getPosts(q: Scoped<PostsQuery>): Promise<Paged<PostDto>> {
   });
 
   return { items, total, page, pageSize };
+}
+
+type PostDetailRow = {
+  channel_id: string;
+  channel_handle: string;
+  profile_url: string | null;
+  avatar_url: string | null;
+  media_url: string | null;
+  duration_sec: string | number | null;
+  language: string | null;
+  hashtags: unknown;
+  mentions: unknown;
+  engagement_rate_by_view: string | number | null;
+  first_seen_at: string;
+  last_refreshed_at: string;
+  tags: unknown;
+  urls: unknown;
+  metric_history: unknown;
+};
+
+function coerceStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(str).filter((item): item is string => item !== null);
+}
+
+function coerceDetailTags(value: unknown): PostDetailDto['tags'] {
+  if (!Array.isArray(value)) return [];
+  const out: PostDetailDto['tags'] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const id = str(item.id);
+    const name = str(item.name);
+    const source = str(item.source);
+    if (!id || !name || !source || !['manual', 'rule', 'ai'].includes(source)) continue;
+    out.push({
+      id,
+      name,
+      color: str(item.color),
+      source: source as PostDetailDto['tags'][number]['source'],
+      confidence: numOrNull(item.confidence),
+    });
+  }
+  return out;
+}
+
+function coerceDetailUrls(value: unknown): PostDetailDto['urls'] {
+  if (!Array.isArray(value)) return [];
+  const out: PostDetailDto['urls'] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const url = str(item.url);
+    if (!url) continue;
+    out.push({
+      url,
+      canonicalUrl: str(item.canonicalUrl),
+      domain: str(item.domain) ?? '',
+      title: str(item.title),
+    });
+  }
+  return out;
+}
+
+function coerceMetricHistory(
+  value: unknown,
+  followersAtPost: number | null,
+): PostDetailDto['metricHistory'] {
+  if (!Array.isArray(value)) return [];
+  const out: PostDetailDto['metricHistory'] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const capturedAt = str(item.capturedAt);
+    if (!capturedAt) continue;
+    const engagementTotal = num(item.engagementTotal);
+    const views = num(item.views);
+    out.push({
+      capturedAt,
+      applause: num(item.applause),
+      conversation: num(item.conversation),
+      amplification: num(item.amplification),
+      saves: num(item.saves),
+      views,
+      engagementTotal,
+      engagementRateByFollower:
+        followersAtPost && followersAtPost > 0
+          ? safeDivNull(engagementTotal, followersAtPost)
+          : null,
+      engagementRateByView: views > 0 ? safeDivNull(engagementTotal, views) : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * The richer, on-demand post record used by the detail dialog.
+ *
+ * The summary is resolved through `loadPosts` first. That preserves the exact
+ * explorer filters and source-channel median while proving the post belongs
+ * to the caller's org-private landscape. Only then do we read the pooled post's
+ * safe detail fields. Raw vendor payloads and channel adapter state never leave
+ * the server.
+ */
+export async function getPostDetail(
+  q: Scoped<PostsQuery> & { postId: string },
+): Promise<PostDetailDto | null> {
+  const scope = await resolveScope(q);
+  if (scope.companyIds.length === 0) return null;
+
+  const { items } = await loadPosts(scope, rangeOf(q), filtersOf(q), {
+    restrict: sql`f.id = ${q.postId}::uuid`,
+    sort: q.sort ?? 'engagementTotal',
+    direction: q.direction ?? 'desc',
+    limit: 1,
+    offset: 0,
+  });
+  const summary = items[0];
+  if (!summary) return null;
+
+  const { rows } = await db.execute<PostDetailRow>(sql`
+    SELECT p.channel_id,
+           ch.handle AS channel_handle,
+           ch.profile_url,
+           ch.avatar_url,
+           p.media_url,
+           p.duration_sec,
+           p.language,
+           p.hashtags,
+           p.mentions,
+           p.engagement_rate_by_view,
+           to_char(p.first_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+             AS first_seen_at,
+           to_char(p.last_refreshed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+             AS last_refreshed_at,
+           coalesce((
+             SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'id', t.id,
+                        'name', t.name,
+                        'color', t.color,
+                        'source', pta.source,
+                        'confidence', pta.confidence
+                      )
+                      ORDER BY t.name
+                    )
+               FROM post_tag_assignments pta
+               JOIN post_tags t
+                 ON t.id = pta.tag_id AND t.org_id = ${scope.orgId}::uuid
+              WHERE pta.post_id = p.id
+           ), '[]'::jsonb) AS tags,
+           coalesce((
+             SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'url', u.url,
+                        'canonicalUrl', u.canonical_url,
+                        'domain', u.domain,
+                        'title', u.title
+                      )
+                      ORDER BY u.domain, u.url
+                    )
+               FROM posted_urls u
+              WHERE u.post_id = p.id
+           ), '[]'::jsonb) AS urls,
+           coalesce((
+             SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'capturedAt',
+                          to_char(
+                            history.captured_at AT TIME ZONE 'UTC',
+                            'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+                          ),
+                        'applause', history.applause,
+                        'conversation', history.conversation,
+                        'amplification', history.amplification,
+                        'saves', history.saves,
+                        'views', history.views,
+                        'engagementTotal', history.engagement_total
+                      )
+                      ORDER BY history.captured_at
+                    )
+               FROM (
+                 SELECT captured_at, applause, conversation, amplification,
+                        saves, views, engagement_total
+                   FROM post_metric_snapshots
+                  WHERE post_id = p.id
+                  ORDER BY captured_at DESC
+                  LIMIT 50
+               ) history
+           ), '[]'::jsonb) AS metric_history
+      FROM posts p
+      JOIN channels ch ON ch.id = p.channel_id
+     WHERE p.id = ${q.postId}::uuid
+       AND p.company_id IN (${idList(scope.companyIds)})
+     LIMIT 1
+  `);
+
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...summary,
+    channel: {
+      id: row.channel_id,
+      handle: row.channel_handle,
+      profileUrl: row.profile_url,
+      avatarUrl: row.avatar_url,
+    },
+    mediaUrl: row.media_url,
+    durationSec: numOrNull(row.duration_sec),
+    language: row.language,
+    hashtags: coerceStringArray(row.hashtags),
+    mentions: coerceStringArray(row.mentions),
+    engagementRateByView: numOrNull(row.engagement_rate_by_view),
+    firstSeenAt: row.first_seen_at,
+    lastRefreshedAt: row.last_refreshed_at,
+    tags: coerceDetailTags(row.tags),
+    urls: coerceDetailUrls(row.urls),
+    metricHistory: coerceMetricHistory(row.metric_history, summary.followersAtPost),
+  };
 }
 
 /* ------------------------------------------------------------ posted URLs */
@@ -1163,16 +1824,89 @@ type TagQueryRow = {
   tag_id: string;
   tag_name: string;
   tag_color: string | null;
+  company_id: string;
   post_count: string | number | null;
   engagement_total: string | number | null;
   erf: string | number | null;
+  rated_posts: string | number | null;
   total_posts: string | number | null;
   base_erf: string | number | null;
 };
 
 /**
- * Tag performance, with the landscape-wide baseline computed in the same statement
- * so `lift` is never assembled from two queries that could see different data.
+ * Fold the bounded tag-by-company result set into one row per tag. Lift is the
+ * tagged rate divided by the same company's untagged rate, weighted by the number
+ * of tagged posts with a usable follower reading. That keeps a large account from
+ * becoming every smaller account's baseline.
+ */
+function aggregateTagPerformanceRows(rows: readonly TagQueryRow[]): TagRow[] {
+  type Aggregate = {
+    tag: TagRow['tag'];
+    postCount: number;
+    engagementTotal: number;
+    totalPosts: number;
+    ratedPosts: number;
+    weightedErf: number;
+    comparableRatedPosts: number;
+    weightedLift: number;
+  };
+
+  const byTag = new Map<string, Aggregate>();
+
+  for (const row of rows) {
+    const aggregate = byTag.get(row.tag_id) ?? {
+      tag: { id: row.tag_id, name: row.tag_name, color: row.tag_color },
+      postCount: 0,
+      engagementTotal: 0,
+      totalPosts: num(row.total_posts),
+      ratedPosts: 0,
+      weightedErf: 0,
+      comparableRatedPosts: 0,
+      weightedLift: 0,
+    };
+    const ratedPosts = num(row.rated_posts);
+    const erf = num(row.erf);
+    const baseline = numOrNull(row.base_erf);
+
+    aggregate.postCount += num(row.post_count);
+    aggregate.engagementTotal += num(row.engagement_total);
+    aggregate.ratedPosts += ratedPosts;
+    aggregate.weightedErf += erf * ratedPosts;
+
+    if (ratedPosts > 0 && baseline !== null && baseline > 0) {
+      const companyLift = safeDivNull(erf, baseline);
+      if (companyLift !== null) {
+        aggregate.comparableRatedPosts += ratedPosts;
+        aggregate.weightedLift += companyLift * ratedPosts;
+      }
+    }
+
+    byTag.set(row.tag_id, aggregate);
+  }
+
+  return [...byTag.values()]
+    .map((aggregate): TagRow => ({
+      tag: aggregate.tag,
+      postCount: aggregate.postCount,
+      engagementTotal: aggregate.engagementTotal,
+      engagementPerPost: safeDiv(aggregate.engagementTotal, aggregate.postCount),
+      engagementRateByFollower: safeDiv(aggregate.weightedErf, aggregate.ratedPosts),
+      shareOfPosts: safeDiv(aggregate.postCount, aggregate.totalPosts),
+      // Null, not 1.0: no same-company untagged baseline means no measurable lift.
+      lift: safeDivNull(aggregate.weightedLift, aggregate.comparableRatedPosts),
+    }))
+    .sort(
+      (a, b) =>
+        b.engagementTotal - a.engagementTotal ||
+        b.postCount - a.postCount ||
+        a.tag.name.localeCompare(b.tag.name),
+    );
+}
+
+/**
+ * Tag performance, with each company's untagged baseline computed in the same
+ * statement so `lift` is never assembled from queries that could see different
+ * data.
  *
  * The engagement-rate averages are filtered to posts that actually carry a follower
  * reading. Including posts where we never captured an audience figure would score
@@ -1185,50 +1919,55 @@ export async function getTagPerformance(q: Scoped<AnalyticsQuery>): Promise<TagR
 
   const { rows } = await db.execute<TagQueryRow>(sql`
     WITH filtered AS (
-      SELECT p.id, p.engagement_total, p.engagement_rate_by_follower
+      SELECT p.id, p.company_id, p.engagement_total, p.engagement_rate_by_follower
         FROM posts p
        WHERE ${postWhere(scope, rangeOf(q), filtersOf(q))}
     ),
     overall AS (
-      SELECT count(*)::int AS total_posts,
-             coalesce(avg(engagement_rate_by_follower)
-                      FILTER (WHERE engagement_rate_by_follower > 0), 0) AS base_erf
+      SELECT count(*)::int AS total_posts
         FROM filtered
     ),
-    per_tag AS (
+    tag_company AS (
       SELECT t.id                                AS tag_id,
              t.name                              AS tag_name,
              t.color                             AS tag_color,
+             f.company_id,
              count(*)::int                       AS post_count,
              coalesce(sum(f.engagement_total), 0) AS engagement_total,
              coalesce(avg(f.engagement_rate_by_follower)
-                      FILTER (WHERE f.engagement_rate_by_follower > 0), 0) AS erf
+                      FILTER (WHERE f.engagement_rate_by_follower > 0), 0) AS erf,
+             count(*) FILTER (WHERE f.engagement_rate_by_follower > 0)::int AS rated_posts
         FROM post_tag_assignments pta
         JOIN filtered f  ON f.id = pta.post_id
         JOIN post_tags t ON t.id = pta.tag_id AND t.org_id = ${scope.orgId}::uuid
-       GROUP BY t.id, t.name, t.color
+       GROUP BY t.id, t.name, t.color, f.company_id
+    ),
+    company_baselines AS (
+      SELECT tc.tag_id,
+             tc.company_id,
+             avg(f.engagement_rate_by_follower)
+               FILTER (
+                 WHERE f.engagement_rate_by_follower > 0
+                   AND NOT EXISTS (
+                     SELECT 1
+                       FROM post_tag_assignments baseline_pta
+                      WHERE baseline_pta.post_id = f.id
+                        AND baseline_pta.tag_id = tc.tag_id
+                   )
+               ) AS base_erf
+        FROM (SELECT DISTINCT tag_id, company_id FROM tag_company) tc
+        JOIN filtered f ON f.company_id = tc.company_id
+       GROUP BY tc.tag_id, tc.company_id
     )
-    SELECT per_tag.*, overall.total_posts, overall.base_erf
-      FROM per_tag CROSS JOIN overall
-     ORDER BY per_tag.engagement_total DESC
+    SELECT tc.*, overall.total_posts, cb.base_erf
+      FROM tag_company tc
+      CROSS JOIN overall
+      LEFT JOIN company_baselines cb
+        ON cb.tag_id = tc.tag_id AND cb.company_id = tc.company_id
+     ORDER BY tc.engagement_total DESC
   `);
 
-  return rows.map((r): TagRow => {
-    const postCount = num(r.post_count);
-    const engagementTotal = num(r.engagement_total);
-    const erf = num(r.erf);
-    const baseErf = num(r.base_erf);
-    return {
-      tag: { id: r.tag_id, name: r.tag_name, color: r.tag_color },
-      postCount,
-      engagementTotal,
-      engagementPerPost: safeDiv(engagementTotal, postCount),
-      engagementRateByFollower: erf,
-      shareOfPosts: safeDiv(postCount, num(r.total_posts)),
-      // Null, not 1.0: with no measurable baseline there is nothing to have lift over.
-      lift: safeDivNull(erf, baseErf),
-    };
-  });
+  return aggregateTagPerformanceRows(rows);
 }
 
 /* -------------------------------------------------------------- post types */
@@ -1375,7 +2114,13 @@ export async function getSummary(q: Scoped<AnalyticsQuery>): Promise<SummaryResu
     ?? null;
 
   const emptyStat = (key: MetricKey): HeadlineStat => ({
-    key, value: 0, previousValue: null, changePct: null, spark: [],
+    key,
+    value: 0,
+    available: false,
+    previousValue: null,
+    previousAvailable: false,
+    changePct: null,
+    spark: [],
   });
 
   const base = {
@@ -1418,13 +2163,38 @@ export async function getSummary(q: Scoped<AnalyticsQuery>): Promise<SummaryResu
   const dailyByBucket = new Map(daily.map((r) => [r.bucket, r]));
   const sparkFor = (key: MetricKey) => bucketsFor(range, 'day').map((date) => {
     const row = dailyByBucket.get(date);
-    return { date, value: row ? metricValue(bucketAgg(row), key, 1, totals) : 0 };
+    if (!row) {
+      const audienceMetric =
+        key === 'audience'
+        || key === 'audienceNetChange'
+        || key === 'audienceGrowthRate';
+      return { date, value: audienceMetric ? null : 0 };
+    }
+    const agg = bucketAgg(row);
+    return {
+      date,
+      value: metricAvailable(agg, key)
+        ? metricValue(agg, key, 1, totals)
+        : null,
+    };
   });
 
   const stat = (key: MetricKey): HeadlineStat => {
+    const available = metricAvailable(focusAgg, key);
+    const previousAvailable = metricAvailable(focusPrev, key);
     const value = metricValue(focusAgg, key, days, totals);
-    const previousValue = metricValue(focusPrev, key, daysIn(prev), prevTotals);
-    return { key, value, previousValue, changePct: changePct(value, previousValue), spark: sparkFor(key) };
+    const previousValue = previousAvailable
+      ? metricValue(focusPrev, key, daysIn(prev), prevTotals)
+      : null;
+    return {
+      key,
+      value,
+      available,
+      previousValue,
+      previousAvailable,
+      changePct: available ? changePct(value, previousValue) : null,
+      spark: sparkFor(key),
+    };
   };
 
   const headline = {
@@ -1502,21 +2272,35 @@ function buildLeaderboardRows(
   const rows: MetricRow[] = [];
   for (const company of scope.companies) {
     const agg = current.get(company.id) ?? emptyCompanyAgg(company.id);
+    const available = metricAvailable(agg, metric);
     const value = metricValue(agg, metric, days, totals);
-    const previousValue = previousAgg && prevTotals
-      ? metricValue(previousAgg.get(company.id) ?? emptyCompanyAgg(company.id), metric, prevDays, prevTotals)
+    const previousCompanyAgg = previousAgg
+      ? previousAgg.get(company.id) ?? emptyCompanyAgg(company.id)
+      : null;
+    const previousAvailable = previousCompanyAgg
+      ? metricAvailable(previousCompanyAgg, metric)
+      : false;
+    const previousValue = previousCompanyAgg && prevTotals && previousAvailable
+      ? metricValue(previousCompanyAgg, metric, prevDays, prevTotals)
       : null;
     rows.push({
       company,
       value,
+      available,
       previousValue,
-      changePct: changePct(value, previousValue),
+      previousAvailable,
+      changePct: available ? changePct(value, previousValue) : null,
       rank: 0,
       breakdown: breakdownOf(agg, metric, days, totals),
+      breakdownAvailability: breakdownAvailabilityOf(agg, metric),
     });
   }
-  rows.sort((x, y) => (y.value - x.value) || x.company.name.localeCompare(y.company.name));
-  rows.forEach((r, i) => { r.rank = i + 1; });
+  rows.sort((x, y) =>
+    Number(y.available) - Number(x.available)
+    || (y.value - x.value)
+    || x.company.name.localeCompare(y.company.name));
+  let rank = 0;
+  rows.forEach((r) => { r.rank = r.available ? ++rank : 0; });
   return rows;
 }
 
@@ -1679,6 +2463,7 @@ async function coverageRows(scope: Scope, range: DateRange, f: PostFilters): Pro
        AND a.day <= ${dayParam(range.end)}
      WHERE ch.company_id IN (${idList(scope.companyIds)})
        AND ch.active${platformFilter}
+       AND NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
      GROUP BY ch.company_id, ch.platform, ch.id
   `);
   return rows;
@@ -1730,8 +2515,8 @@ function buildCaveats(
 
     if (cur.posts === 0 && cur.followersLast === 0) {
       out.push(
-        `No data at all was collected for ${company.name} in this window, so it appears at zero ` +
-        'rather than being excluded — treat its rank as unknown, not as last place.',
+        `No post or audience observations were collected for ${company.name} in this window. ` +
+        'Unavailable metrics are left blank and the company is not assigned a measured rank.',
       );
     } else if (cur.posts > 0 && cur.postsMissingFollowers > 0) {
       const share = safeDiv(cur.postsMissingFollowers, cur.posts);
@@ -1742,6 +2527,13 @@ function buildCaveats(
           'and understates true reach.',
         );
       }
+    }
+
+    if (cur.applicablePlatforms > 0 && cur.audienceDays < 2) {
+      out.push(
+        `${company.name} has fewer than two audience observations on at least one included ` +
+        'channel in this window, so audience net change and growth rate are unavailable.',
+      );
     }
   }
 

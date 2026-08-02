@@ -1,42 +1,32 @@
 /**
  * /api/content -- the content analysis behind the Social Posts screen.
+ *
+ * It deliberately uses the same query parsers as /api/posts. A second parser
+ * previously caused multi-value and screen/API filter dialects to diverge.
  */
-import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
-import { apiHandler, requireOrg, AuthError } from '@/lib/session';
-import { db } from '@/db';
-import { landscapes } from '@/db/schema';
-import { PLATFORMS } from '@/lib/types';
-import { parseRangeParams } from '@/lib/dates';
+import type { NextRequest } from 'next/server';
+import { apiHandler, requireOrg } from '@/lib/session';
 import { getContentAnalysis } from '@/lib/metrics/content-analysis';
+import { analyticsJson, resolveAnalyticsQuery } from '../_lib/query';
+import { readPostsParams } from '../_lib/posts-params';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const schema = z.object({
-  landscapeId: z.uuid(),
-  platforms: z.array(z.enum(PLATFORMS)).optional(),
-});
-
-export const GET = apiHandler(async (req) => {
+export const GET = apiHandler(async (req: NextRequest) => {
   const { orgId } = await requireOrg();
-  const sp = req.nextUrl.searchParams;
-  const parsed = schema.parse({
-    landscapeId: sp.get('landscapeId') ?? undefined,
-    platforms: sp.getAll('platforms').length ? sp.getAll('platforms') : undefined,
-  });
-
-  const [owned] = await db.select({ id: landscapes.id }).from(landscapes)
-    .where(and(eq(landscapes.id, parsed.landscapeId), eq(landscapes.orgId, orgId)));
-  if (!owned) throw new AuthError('not_found', 'That landscape does not exist.');
-
-  const range = parseRangeParams(sp, 28);
-  return Response.json(await getContentAnalysis({
-    landscapeId: parsed.landscapeId,
+  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const { search } = readPostsParams(req);
+  return analyticsJson(await getContentAnalysis({
+    landscapeId: query.landscapeId,
     orgId,
-    start: range.start,
-    end: range.end,
-    platforms: parsed.platforms,
+    start: query.start,
+    end: query.end,
+    platforms: query.platforms,
+    companyIds: query.companyIds,
+    postTypes: query.postTypes,
+    tagIds: query.tagIds,
+    search,
   }));
 });

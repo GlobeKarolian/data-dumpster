@@ -128,12 +128,26 @@ export type ManualColumnSpec = {
   numeric?: boolean;
 };
 
+/**
+ * A file format this section can ingest directly, in addition to pasting.
+ *
+ * Some exports cannot survive a clipboard round trip. An Adobe Freeform CSV
+ * holds several stacked tables with two-row headers, so selecting it in a
+ * browser and copying gives a shape no delimiter sniffer can recover. Those
+ * sections take the file itself.
+ */
+export type ManualImporter = 'adobeFreeform';
+
 export type ManualSectionSpec = {
   id: string;
   title: string;
   /** Where the human actually gets this data. Shown above the paste box. */
   hint: string;
   columns: ManualColumnSpec[];
+  /** When set, the section also accepts a dropped file of this format. */
+  importer?: ManualImporter;
+  /** Shown next to the drop zone so the expected export is unambiguous. */
+  importHint?: string;
 };
 
 /**
@@ -181,11 +195,20 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'globeReferral',
     title: 'Globe.com Platform Referral Traffic Sorted By Subscriptions Driven',
-    hint: 'Analytics referral report, sorted by digital subscriptions started.',
+    hint: 'Adobe Analytics, Top referrals for the Bostonglobe.com report suite. '
+      + 'Drop the exported CSV below rather than pasting it.',
+    importer: 'adobeFreeform',
+    importHint: 'Adobe Freeform CSV export. Several stacked tables in one file is expected; '
+      + 'the referring-domain table is found automatically.',
     columns: [
-      { key: 'domain', label: 'Referring Domain' },
-      { key: 'visits', label: 'Visits', numeric: true },
-      { key: 'subs', label: 'BG Digital Subscriptions', numeric: true },
+      { key: 'platform', label: 'Platform' },
+      { key: 'visits', label: 'Logged-out visits', numeric: true },
+      // Adobe calls this "BG Digital Subscriptions (Visit)". "(Visit)" is its
+      // attribution scope, not the unit; the figure counts NEW subscriptions
+      // started. The Adobe wording is not carried through because reading it as
+      // subscriber visits understates every referrer by three orders of magnitude.
+      { key: 'subs', label: 'New subscriptions', numeric: true },
+      { key: 'conversion', label: 'Conversion', numeric: true },
     ],
   },
   {

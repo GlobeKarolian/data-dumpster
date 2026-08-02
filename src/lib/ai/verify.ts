@@ -18,6 +18,8 @@
  * what the model said but what was verified at the time it said it.
  */
 import type { FactSheet } from '@/lib/metrics/contract';
+import { METRIC_DEFS } from '@/lib/metrics/definitions';
+import { METRIC_KEYS, type MetricKey } from '@/lib/types';
 
 export interface NumericClaim {
   /** The sentence the number appeared in, trimmed for display. */
@@ -35,14 +37,19 @@ export interface NumericClaim {
   nearest?: { path: string; value: number; delta: number };
 }
 
-export interface BriefVerification {
-  /** True only when every check passed: numbers, percentages, and caveats. */
+/** Result of checking prose against a closed set of allowed numeric facts. */
+export interface NumericGroundingVerification {
   ok: boolean;
   claims: NumericClaim[];
-  /** Human-readable description of each claim that could not be grounded. */
   unverified: string[];
-  /** Rule violations that are not about grounding, e.g. a printed +4300%. */
   violations: string[];
+  stats: { total: number; grounded: number };
+  checkedAt: string;
+}
+
+export interface BriefVerification extends NumericGroundingVerification {
+  /** True only when every check passed: numbers, percentages, citations, and caveats. */
+  ok: boolean;
   /** Caveats from the fact sheet that did not make it into the text. */
   missingCaveats: string[];
   /** Claims that were grounded but cited a path other than the matching one. */
@@ -53,27 +60,108 @@ export interface BriefVerification {
 
 /* --------------------------------------------------------- fact-sheet index */
 
-interface Entry { path: string; value: number }
+type NumericUnit = 'number' | 'percent' | 'currency';
+
+export interface NumericSourceEntry {
+  path: string;
+  value: number;
+  /**
+   * Every source number is typed so a rank of 5 cannot ground an invented 5%
+   * rate. Fact-sheet units are inferred from their metric and field paths.
+   */
+  unit: NumericUnit;
+  /** Whether a percentage value is stored fractionally or as written points. */
+  percentRepresentation?: 'display' | 'fraction';
+  /** Written precision of rendered material; absent for raw fact-sheet values. */
+  tolerance?: number;
+}
+
+const METRIC_KEY_SET = new Set<string>(METRIC_KEYS);
+const DIRECT_PERCENT_FACT_KEYS = new Set([
+  'changePct',
+  'engagementRateByFollower',
+  'engagementRateByView',
+  'shareOfPosts',
+  'shareOfVoice',
+  'shareOfEngagement',
+]);
+const METRIC_VALUE_FACT_KEYS = new Set([
+  'value',
+  'previousValue',
+  'focusValue',
+  'competitorAverage',
+  'baseline',
+]);
+
+function asMetricKey(value: unknown): MetricKey | undefined {
+  return typeof value === 'string' && METRIC_KEY_SET.has(value)
+    ? value as MetricKey
+    : undefined;
+}
+
+function factNumberUnit(
+  key: string | undefined,
+  metric: MetricKey | undefined,
+  insideMetricValues: boolean,
+): NumericUnit {
+  if (key && DIRECT_PERCENT_FACT_KEYS.has(key)) return 'percent';
+  const isMetricValue = insideMetricValues
+    || (key !== undefined && METRIC_VALUE_FACT_KEYS.has(key));
+  return metric && isMetricValue && METRIC_DEFS[metric].unit === 'percent'
+    ? 'percent'
+    : 'number';
+}
 
 /** Every finite number in the fact sheet, with the path a citation would use. */
-export function indexFactNumbers(facts: FactSheet): Entry[] {
-  const out: Entry[] = [];
+export function indexFactNumbers(facts: FactSheet): NumericSourceEntry[] {
+  const out: NumericSourceEntry[] = [];
   const seen = new Set<string>();
-  const walk = (node: unknown, path: string): void => {
+  const walk = (
+    node: unknown,
+    path: string,
+    key?: string,
+    metric?: MetricKey,
+    insideMetricValues = false,
+  ): void => {
     if (typeof node === 'number') {
       if (Number.isFinite(node)) {
         const dedupe = path + '=' + node;
-        if (!seen.has(dedupe)) { seen.add(dedupe); out.push({ path, value: node }); }
+        if (!seen.has(dedupe)) {
+          const unit = factNumberUnit(key, metric, insideMetricValues);
+          seen.add(dedupe);
+          out.push({
+            path,
+            value: node,
+            unit,
+            ...(unit === 'percent'
+              ? { percentRepresentation: 'fraction' as const }
+              : {}),
+          });
+        }
       }
       return;
     }
     if (Array.isArray(node)) {
-      node.forEach((item, i) => walk(item, path + '[' + i + ']'));
+      node.forEach((item, i) => (
+        walk(item, path + '[' + i + ']', key, metric, insideMetricValues)
+      ));
       return;
     }
     if (node && typeof node === 'object') {
-      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-        walk(v, path ? path + '.' + k : k);
+      const record = node as Record<string, unknown>;
+      const recordMetric = asMetricKey(record.metric) ?? asMetricKey(record.key) ?? metric;
+      for (const [k, v] of Object.entries(record)) {
+        const childMetric = asMetricKey(k) ?? recordMetric;
+        const childInsideMetricValues = insideMetricValues
+          || k === 'breakdown'
+          || k === 'spark';
+        walk(
+          v,
+          path ? path + '.' + k : k,
+          k,
+          childMetric,
+          childInsideMetricValues,
+        );
       }
     }
   };
@@ -95,7 +183,7 @@ const MULTIPLIERS: Record<string, number> = {
  */
 const NUMBER_RE = new RegExp(
   '(?<![\\w.])'
-  + '([+\\-\\u2212]?)\\$?'
+  + '([+\\-\\u2212]?)(\\$?)'
   + '(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)'
   + '\\s*'
   + '(%|k\\b|K\\b|MM\\b|M\\b|bn\\b|B\\b|thousand\\b|million\\b|billion\\b)?',
@@ -115,9 +203,16 @@ function stripNonClaims(markdown: string): string {
     // Fenced and inline code.
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`[^`]*`/g, ' ')
-    // ISO dates and bare years: period boundaries, not measurements.
+    // Dates and years used in explicit temporal phrases are period boundaries,
+    // not measurements. A bare year-shaped value can still be a real metric
+    // ("2,026 engagements"), so do not discard every 19xx/20xx token.
     .replace(/\d{4}-\d{2}-\d{2}/g, ' ')
-    .replace(/(?<![\w.])(19|20)\d{2}(?![\w.])/g, ' ')
+    .replace(/\b\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2})\b/g, ' ')
+    .replace(
+      /\b(?:in|during|since|through|throughout|until|before|after|by|from)\s+(?:19|20)\d{2}\b(?=\s*(?:[,;:.!?)]|$))/gi,
+      ' ',
+    )
+    .replace(/\b(?:(?:calendar|fiscal)\s+)?year\s+(?:19|20)\d{2}\b/gi, ' ')
     // Clock times.
     .replace(/(?<![\w.])\d{1,2}:\d{2}(?::\d{2})?/g, ' ')
     // Calendar dates written in prose ("July 18", "18 July", "Sept. 3rd").
@@ -146,9 +241,24 @@ function toleranceFor(mantissa: string, multiplier: number): number {
 
 /* ---------------------------------------------------------------- matching */
 
-interface Candidate { value: number; tolerance: number }
+interface Candidate {
+  value: number;
+  tolerance: number;
+  unit: NumericUnit;
+  /**
+   * Percentage prose has two possible representations only when it is checked
+   * against an untyped fact-sheet value. Rendered percentages always use
+   * display points, so "50%" cannot ground "0.5%" (or vice versa).
+   */
+  percentRepresentation?: 'display' | 'fraction';
+}
 
-function candidatesFor(sign: number, mantissa: string, suffix: string | undefined): Candidate[] {
+function candidatesFor(
+  sign: number,
+  mantissa: string,
+  suffix: string | undefined,
+  currency: boolean,
+): Candidate[] {
   const bare = Number(mantissa.replace(/,/g, ''));
   if (!Number.isFinite(bare)) return [];
   const unit = suffix ? suffix.toLowerCase() : '';
@@ -160,30 +270,97 @@ function candidatesFor(sign: number, mantissa: string, suffix: string | undefine
     // Fact sheets store fractional change (0.27) but prose says 27%. Accept both,
     // and accept a rate stored as a fraction printed as a percentage.
     return [
-      { value: scaled, tolerance: tol },
-      { value: scaled / 100, tolerance: tol / 100 },
+      {
+        value: scaled,
+        tolerance: tol,
+        unit: 'percent',
+        percentRepresentation: 'display',
+      },
+      {
+        value: scaled / 100,
+        tolerance: tol / 100,
+        unit: 'percent',
+        percentRepresentation: 'fraction',
+      },
     ];
   }
-  return [{ value: scaled, tolerance: tol }];
+  return [{
+    value: scaled,
+    tolerance: tol,
+    unit: currency ? 'currency' : 'number',
+  }];
 }
 
-function matchEntry(entries: Entry[], candidates: Candidate[]): Entry | null {
+function matchEntry(
+  entries: NumericSourceEntry[],
+  candidates: Candidate[],
+): NumericSourceEntry | null {
   for (const c of candidates) {
     for (const e of entries) {
+      if (e.unit !== undefined && e.unit !== c.unit) continue;
+      if (
+        e.unit === 'percent'
+        && c.percentRepresentation !== (e.percentRepresentation ?? 'display')
+      ) continue;
+      if (e.tolerance !== undefined && c.tolerance < e.tolerance) continue;
       if (Math.abs(e.value - c.value) <= c.tolerance) return e;
     }
   }
   return null;
 }
 
-function nearestEntry(entries: Entry[], target: number): { path: string; value: number; delta: number } | undefined {
-  let best: Entry | null = null;
+function nearestEntry(
+  entries: NumericSourceEntry[],
+  target: number,
+): { path: string; value: number; delta: number } | undefined {
+  let best: NumericSourceEntry | null = null;
   let bestDelta = Number.POSITIVE_INFINITY;
   for (const e of entries) {
     const delta = Math.abs(e.value - target);
     if (delta < bestDelta) { bestDelta = delta; best = e; }
   }
   return best ? { path: best.path, value: best.value, delta: bestDelta } : undefined;
+}
+
+/**
+ * Index the figures exactly exposed in a rendered source block. Unlike a
+ * fact-sheet object, a report section has already applied display rounding and
+ * percentage formatting. Indexing the rendered material preserves that
+ * precision boundary: "1.2M" supports "1.2M", but not an invented "1,234,567".
+ */
+export function indexMaterialNumbers(
+  material: string,
+  root = 'material',
+): NumericSourceEntry[] {
+  const entries: NumericSourceEntry[] = [];
+  const seen = new Set<string>();
+  const source = stripNonClaims(material ?? '');
+  NUMBER_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let index = 0;
+  while ((match = NUMBER_RE.exec(source)) !== null) {
+    const [, signRaw, currencyRaw, mantissa, suffix] = match;
+    const sign = signRaw === '-' || signRaw === '−' ? -1 : 1;
+    const candidates = candidatesFor(sign, mantissa, suffix, currencyRaw === '$')
+      .filter((candidate) => candidate.percentRepresentation !== 'fraction');
+    for (const candidate of candidates) {
+      const path = root + '[' + index + ']';
+      const dedupe = path + '=' + candidate.value + ':' + candidate.unit
+        + ':' + candidate.tolerance;
+      if (!seen.has(dedupe)) {
+        seen.add(dedupe);
+        entries.push({
+          path,
+          value: candidate.value,
+          unit: candidate.unit,
+          percentRepresentation: candidate.percentRepresentation,
+          tolerance: candidate.tolerance,
+        });
+      }
+    }
+    index += 1;
+  }
+  return entries;
 }
 
 /* ------------------------------------------------------------ caveat check */
@@ -219,19 +396,30 @@ function caveatCovered(caveat: string, body: string): boolean {
 
 /* ---------------------------------------------------------------- verify */
 
+type CoreVerification = NumericGroundingVerification & {
+  miscited: string[];
+  cited: number;
+};
+
+type VerificationOptions = {
+  sourceLabel: string;
+  requireCitations: boolean;
+  citationFreePathPrefixes?: string[];
+};
+
 /**
- * Check a generated brief against the fact sheet it was generated from.
- *
- * Never throws. A verification pass that can fail is a verification pass that
- * gets caught and ignored at the call site; this one always returns a verdict,
- * and an unparseable brief simply has no grounded claims.
+ * Shared numeric-verification engine. Callers define the allowed numeric
+ * entries; this function owns claim extraction, normalization, matching,
+ * runaway-percentage checks, and optional citation enforcement.
  */
-export function verifyBrief(markdown: string, facts: FactSheet): BriefVerification {
-  const entries = indexFactNumbers(facts);
+function verifyAgainstEntries(
+  markdown: string,
+  entries: NumericSourceEntry[],
+  options: VerificationOptions,
+): CoreVerification {
   // Sentences are split on the original text so citations stay attached to the
   // sentence they qualify; scrubbing happens per sentence, just before parsing.
   const sentences = splitSentences(markdown ?? '');
-
   const claims: NumericClaim[] = [];
   const unverified: string[] = [];
   const violations: string[] = [];
@@ -239,45 +427,26 @@ export function verifyBrief(markdown: string, facts: FactSheet): BriefVerificati
 
   sentences.forEach((original) => {
     const sentence = stripNonClaims(original);
-    const citedPaths = Array.from(original.matchAll(/\[(facts[^\]]*)\]/g)).map((m) => m[1].trim());
+    const citedPaths = Array.from(original.matchAll(/\[(facts[^\]]*)\]/g))
+      .map((match) => match[1].trim());
     const display = original.length > 240 ? original.slice(0, 240) + '\u2026' : original;
 
     NUMBER_RE.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = NUMBER_RE.exec(sentence)) !== null) {
-      const [rawFull, signRaw, mantissa, suffix] = match;
+      const [rawFull, signRaw, currencyRaw, mantissa, suffix] = match;
       const raw = rawFull.trim();
       if (!raw) continue;
       const sign = signRaw === '-' || signRaw === '−' ? -1 : 1;
-      const candidates = candidatesFor(sign, mantissa, suffix);
+      const candidates = candidatesFor(sign, mantissa, suffix, currencyRaw === '$');
       if (candidates.length === 0) continue;
 
       const primary = candidates[0].value;
-
-      // Rule 3: a printed percent change above 1000% is always a near-zero
-      // baseline artefact. The prompt forbids it; this proves it did not happen.
       if (suffix === '%' && Math.abs(primary) > 1000) {
         violations.push(
           'Printed a percent change of ' + raw + ', which the honesty rules require be described '
           + 'qualitatively (near-zero baseline): "' + sentence.slice(0, 160) + '"',
         );
-      }
-
-      // A number the model copied out of a caveat is not a claim it made; it is
-      // a caveat it was required to restate. Ground it to the caveat itself
-      // rather than demanding a citation the prompt never asked for.
-      const caveatIndex = (facts.caveats ?? []).findIndex(
-        (c) => c.replace(/\s+/g, ' ').includes(raw),
-      );
-      if (caveatIndex >= 0) {
-        claims.push({
-          text: display,
-          raw,
-          value: candidates[0].value,
-          found: true,
-          matchedPath: 'facts.caveats[' + caveatIndex + ']',
-        });
-        continue;
       }
 
       const hit = matchEntry(entries, candidates);
@@ -294,42 +463,110 @@ export function verifyBrief(markdown: string, facts: FactSheet): BriefVerificati
 
       if (!hit) {
         unverified.push(
-          raw + ' does not appear in the fact sheet'
+          raw + ' does not appear in ' + options.sourceLabel
           + (claim.nearest
             ? ' (closest: ' + claim.nearest.path + ' = ' + claim.nearest.value + ')'
             : '')
           + ' — "' + claim.text + '"',
         );
-      } else if (citedPaths.length > 0 && !citedPaths.includes(hit.path)) {
-        // Grounded but pointed at the wrong path: the number is real, the
-        // provenance is wrong, and an editor tracing the claim would be misled.
+        continue;
+      }
+
+      const citationFree = options.citationFreePathPrefixes?.some(
+        (prefix) => hit.path.startsWith(prefix),
+      ) ?? false;
+      if (citationFree) continue;
+
+      if (citedPaths.length > 0 && !citedPaths.includes(hit.path)) {
         miscited.push(
           raw + ' matched ' + hit.path + ' but was cited as ' + citedPaths.join(', ')
           + ' — "' + claim.text + '"',
         );
-      } else if (citedPaths.length === 0) {
+      } else if (options.requireCitations && citedPaths.length === 0) {
         violations.push('Uncited figure ' + raw + ' — "' + claim.text + '"');
       }
     }
   });
 
-  const missingCaveats = (facts.caveats ?? []).filter((c) => c.trim() && !caveatCovered(c, markdown ?? ''));
-  for (const c of missingCaveats) {
-    violations.push('Caveat not reflected in the output: "' + c + '"');
-  }
-
-  const grounded = claims.filter((c) => c.found).length;
-  const cited = claims.filter((c) => c.citedPath).length;
-
+  const grounded = claims.filter((claim) => claim.found).length;
+  const cited = claims.filter((claim) => claim.citedPath).length;
   return {
     ok: unverified.length === 0 && violations.length === 0 && miscited.length === 0,
     claims,
     unverified,
     violations,
-    missingCaveats,
     miscited,
-    stats: { total: claims.length, grounded, cited },
+    stats: { total: claims.length, grounded },
+    cited,
     checkedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Verify every quantitative claim in prose against the exact rendered material
+ * supplied to a model or editor. Dates, times, explicitly temporal years,
+ * links, and code are not quantitative claims. Citations are not required
+ * because report narratives render as plain prose.
+ */
+export function verifyNumbersAgainstMaterial(
+  prose: string,
+  material: string,
+): NumericGroundingVerification {
+  const result = verifyAgainstEntries(prose, indexMaterialNumbers(material), {
+    sourceLabel: 'the supplied report section',
+    requireCitations: false,
+  });
+  return {
+    ok: result.ok,
+    claims: result.claims,
+    unverified: result.unverified,
+    violations: result.violations,
+    stats: result.stats,
+    checkedAt: result.checkedAt,
+  };
+}
+
+/**
+ * Check a generated brief against the fact sheet it was generated from.
+ *
+ * Never throws. A verification pass that can fail is a verification pass that
+ * gets caught and ignored at the call site; this one always returns a verdict,
+ * and an unparseable brief simply has no grounded claims.
+ */
+export function verifyBrief(markdown: string, facts: FactSheet): BriefVerification {
+  const caveatEntries = (facts.caveats ?? []).flatMap((caveat, index) => (
+    indexMaterialNumbers(caveat, 'facts.caveats[' + index + ']')
+  ));
+  const result = verifyAgainstEntries(
+    markdown,
+    [...indexFactNumbers(facts), ...caveatEntries],
+    {
+      sourceLabel: 'the fact sheet',
+      requireCitations: true,
+      citationFreePathPrefixes: ['facts.caveats['],
+    },
+  );
+
+  const missingCaveats = (facts.caveats ?? []).filter((c) => c.trim() && !caveatCovered(c, markdown ?? ''));
+  for (const c of missingCaveats) {
+    result.violations.push('Caveat not reflected in the output: "' + c + '"');
+  }
+
+  return {
+    ok: result.unverified.length === 0
+      && result.violations.length === 0
+      && result.miscited.length === 0,
+    claims: result.claims,
+    unverified: result.unverified,
+    violations: result.violations,
+    missingCaveats,
+    miscited: result.miscited,
+    stats: {
+      total: result.stats.total,
+      grounded: result.stats.grounded,
+      cited: result.cited,
+    },
+    checkedAt: result.checkedAt,
   };
 }
 

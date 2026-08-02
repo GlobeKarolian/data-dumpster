@@ -30,14 +30,26 @@ do not control. That distinction is the entire story.
 |---|---|---|---|---|---|---|
 | **Bluesky** | Full: posts, likes, replies, reposts, quotes, followers | **Full, identical to owned** | AT Protocol public appview, `public.api.bsky.app` | **$0** | **None.** No key, no application, no account | ~3,000 req / 5 min per IP (observed, not contractually documented) |
 | **YouTube** | Full public stats + owner-only Analytics if we add OAuth | **Full public stats**: views, likes, comments, subscribers | Data API v3 | **$0** | Google Cloud project, enable one API. Minutes | 10,000 units/day per project. A channel refresh is ~3 units per 50 videos |
-| **RSS** | n/a | **Full**, where the newsroom publishes a feed | HTTP | **$0** | None | Publisher's own; conditional GET keeps it near zero |
 | **X / Twitter** | Everything incl. impressions | **Posts, likes, replies, retweets, quotes, bookmarks. No impressions** | API v2 | **Metered since Feb 2026**, reportedly ~$0.005 per post read, hard cap ~2M reads/mo. Legacy Basic ~$200/mo (~10k reads) and Pro ~$5,000/mo (~1M reads) closed to new signups; Basic subscribers migrated to metering from 1 June 2026. Enterprise from ~$42k/mo. **Confidence: medium — these come from secondary sources, not X's own page, and X has revised pricing repeatedly** | Developer account + payment. Days | Legacy Basic was 5 timeline requests / 15 min. Under metering the binding constraint is spend, not requests |
 | **Instagram** | Full: posts, likes, comments, **saves, reach** | **Thin.** Followers, media count, and recent media with likes, comments, caption, permalink. Business/Creator accounts only. **No saves, no reach, no Stories, nothing for Personal accounts** | Graph API v21.0 `business_discovery` edge, queried through an IG account we own | **$0** beyond a Meta app | Meta app + App Review for `instagram_basic` and `instagram_manage_insights`. Weeks | Percentage-of-window model, not a call count. `x-app-usage` reports burn against a rolling hour |
 | **Facebook** | Full: posts, reactions, comments, shares; impressions via a separate per-post insights call | **Public Page posts, reactions, comments and shares, once approved for Page Public Content Access.** No impressions, no reach, no saves | Graph API v21.0. Owned Pages via `/{page-id}/posts`; competitor Pages via `/{page-id}/feed` under PPCA | **$0** for both. PPCA costs review time, not money | Meta app + App Review for `pages_read_engagement` (owned). For competitors, App Review for **Page Public Content Access** plus business verification and possibly additional signed contracts. Weeks, and it can be refused | As Instagram. Meta publishes no PPCA-specific quota and recommends a system user token to avoid throttling |
 | **TikTok** | Full: videos, views, likes, comments, shares, followers | **Nothing available to a commercial product** | Display API v2 for owned. Research API for competitors is academic/non-profit only | **$0** for owned | Owned: developer app + OAuth consent, days. Research API: written application, case-by-case review, **for-profit organisations are ineligible** | Not publicly guaranteed; revised without notice |
 | **LinkedIn** | Full and unusually deep: impressions, clicks, likes, comments, shares, LinkedIn's own engagement rate, follower demographics | **Nothing, at any price** | Marketing API / Community Management API, versioned REST | **$0** for owned | Marketing Developer Platform or Community Management API application + review. **Weeks, and can be refused.** Tokens are 60-day member OAuth and must be refreshed | Per-app and per-member daily quotas, published per endpoint |
 | **Threads** | Owned only | Nothing | Threads API | $0 | Meta app | — (no adapter yet) |
-| **Reddit** | n/a | Feasible via public JSON endpoints | — | Free tier exists; commercial use has been metered since 2023 | Low | — (no adapter yet) |
+| **Reddit** | **Public user submissions**: score, comments and crossposts. No trustworthy user follower stock, views or saves | **Public subreddit posts**: the same post metrics plus current community member count | EnsembleData `/reddit/user/posts` and `/reddit/subreddit/posts` | Purchased vendor units; subreddit pages cost 2 units when verified 30 Jul 2026; user-page cost has not been measured | **Legal/vendor-contract review.** Reddit's current terms require permission and a contract for commercial use; a third-party vendor does not make that question disappear | Both feeds are cursor-paginated; 25 rows were observed per call, so do not assume a fixed page size |
+
+Reddit is implemented through EnsembleData rather than Reddit's first-party Data
+API. Before production collection, confirm in writing that the vendor agreement
+covers this commercial use and that Boston Globe Media accepts the residual
+platform-terms risk. The adapter is deliberately honest about the limits:
+subreddit audience is the latest `subreddit_subscribers` stock, user-account
+audience is blank, applause is the vote-fuzzed score, and view- or save-based
+metrics are blank. The user endpoint was verified against `u/bostonglobe` on
+30 July 2026. It returns `author_fullname` for stable identity but no user
+profile image or follower count. A post's `subreddit_subscribers` belongs to
+the community containing that post and is never used as the author's audience.
+Current policy references: [Reddit Data API Terms](https://redditinc.com/policies/data-api-terms)
+and [Reddit's commercial-use guidance](https://support.reddithelp.com/hc/en-us/articles/14945211791892-Developer-Platform-Accessing-Reddit-Data).
 
 ### What is missing from every row
 
@@ -209,9 +221,9 @@ saw it".
 
 ---
 
-## 4. Why Bluesky, YouTube and RSS are the highest-leverage sources
+## 4. Why Bluesky and YouTube are the highest-leverage official sources
 
-These three are the backbone. Not because they are the biggest platforms, but
+These two are the backbone. Not because they are the biggest platforms, but
 because they are the only ones where **the data we get for a competitor is
 identical to the data we get for ourselves.** That is the precondition for an
 honest comparison, and it is rarer than it should be.
@@ -233,19 +245,11 @@ refreshed hourly is well inside the free quota. The gap is share counts, removed
 from the API years ago, and impressions, which are owner-only. We report 0 and
 label it "not available on YouTube" rather than pretending it is zero.
 
-**RSS.** Every newsroom in the landscape publishes feeds, and feeds answer
-questions the social APIs cannot: what did they publish, when, on what desk, at
-what cadence. It is free, it is conditional-GET cheap, and it is the fallback
-that works for a competitor's Facebook presence while PPCA review is pending or
-if it is refused. For a newsroom
-specifically, RSS plus posted-URL analysis is arguably more valuable than any
-single social platform, because it connects social activity back to the
-journalism.
-
-**The strategic read:** build the product's core comparisons on these three,
-treat X as a paid supplement, get the PPCA application in so Facebook joins the
-comparable set, and treat TikTok and LinkedIn competitor data as blind spots to
-be labelled rather than gaps to be filled.
+**The strategic read:** build the official-API core on these two, treat X and
+purchased public-data vendors as metered supplements, and get the PPCA
+application in so Facebook joins the comparable set. Data Dumpster deliberately
+does not ingest RSS; posted-URL analysis connects social activity back to the
+journalism without creating a second publishing dataset.
 
 ---
 
@@ -354,12 +358,12 @@ Label these in the product. Do not fill them with estimates.
   impossible. If review is refused, it becomes a real blind spot and the fallback
   is section 9.1 of `DATA-VENDORS.md`.
 
-- **TikTok competitors.** Not obtainable for a commercial organisation through
-  sanctioned channels. A vendor could sell it; that data is almost certainly
-  scraped, and I do not recommend buying scraped data for a newsroom's own
-  measurement — it breaks without warning and it is not defensible if
-  questioned.
-- **LinkedIn competitors.** Not obtainable at any price, from anyone, ever.
+- **TikTok competitors.** The official commercial APIs do not provide the
+  competitive view this product needs. Purchased public-data vendors can fill
+  part of the gap, but the UI must name the source and its completeness limits.
+- **LinkedIn competitors.** Official access is for owned pages. Competitor
+  coverage requires a purchased public-data vendor and must be treated as
+  incomplete rather than equivalent to owned analytics.
 - **Impressions for anyone else's content, everywhere.** Structural.
 - **Instagram competitor saves, reach and Stories.** Business Discovery does not
   serve them.
@@ -370,7 +374,6 @@ Label these in the product. Do not fill them with estimates.
 |---|---|---|
 | Bluesky | $0 | High |
 | YouTube Data API | $0 | High |
-| RSS | $0 | High |
 | Meta Graph API, owned + IG discovery | $0 | High |
 | LinkedIn Marketing API, owned | $0 | High |
 | TikTok Display API, owned | $0 | High |

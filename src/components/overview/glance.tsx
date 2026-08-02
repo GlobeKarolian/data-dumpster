@@ -10,6 +10,7 @@ const ORDER: MetricKey[] = ['audience', 'posts', 'engagementTotal', 'engagementR
 export interface GlanceRowProps {
   summary: SummaryResult | null;
   color?: string;
+  labels?: Partial<Record<MetricKey, string>>;
 }
 
 /**
@@ -18,12 +19,18 @@ export interface GlanceRowProps {
  * and — the only one that survives a size difference — what share of the
  * audience reacted to a typical post.
  */
-export function GlanceRow({ summary, color }: GlanceRowProps) {
+export function GlanceRow({ summary, color, labels }: GlanceRowProps) {
   if (!summary) {
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {ORDER.map((metric) => (
-          <StatTile key={metric} metric={metric} value={null} changePct={null} />
+          <StatTile
+            key={metric}
+            metric={metric}
+            label={labels?.[metric]}
+            value={null}
+            changePct={null}
+          />
         ))}
       </div>
     );
@@ -43,11 +50,12 @@ export function GlanceRow({ summary, color }: GlanceRowProps) {
         <StatTile
           key={metric}
           metric={metric}
-          value={stat.value}
-          previousValue={stat.previousValue}
+          value={stat.available ? stat.value : null}
+          previousValue={stat.previousAvailable ? stat.previousValue : null}
           changePct={stat.changePct}
           spark={stat.spark}
           color={color}
+          label={labels?.[metric]}
           footnote={
             metric === 'audience'
               ? 'Snapshot as of ' + formatFullDate(summary.range.end)

@@ -77,6 +77,14 @@ export interface FetchResult {
   cursor?: Record<string, unknown>;
   /** True when more data is available and the caller should schedule another run. */
   hasMore?: boolean;
+  /**
+   * False when the source hit a hard vendor cap and exposes no continuation.
+   * Such a run may still land useful rows, but it must never certify the
+   * requested window as complete.
+   */
+  exhaustive?: boolean;
+  /** Actionable reason paired with exhaustive=false. */
+  incompleteReason?: string;
   warnings?: string[];
 }
 

@@ -18,7 +18,7 @@ import { db } from '@/db';
 import { companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { readJson } from '../_lib/query';
-import { assertCompaniesInOrg } from '../_lib/org-scope';
+import { assertCompaniesVisibleToOrg } from '../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,7 +86,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   // The focus company is a member whether or not the caller listed it. A
   // landscape whose focus is not in its own set produces empty comparisons.
-  const memberIds = await assertCompaniesInOrg(
+  const memberIds = await assertCompaniesVisibleToOrg(
     body.focusCompanyId ? [body.focusCompanyId, ...body.companyIds] : body.companyIds,
     orgId,
   );

@@ -18,10 +18,18 @@
  * because n-gram extraction and stop-word filtering are miserable in SQL and
  * the working set is a few thousand rows.
  */
-import { and, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, eq, exists, gte, ilike, inArray, lte, or } from 'drizzle-orm';
 import { db } from '@/db';
-import { posts, companies, landscapeCompanies, landscapes } from '@/db/schema';
+import {
+  posts,
+  companies,
+  landscapeCompanies,
+  landscapes,
+  postedUrls,
+  postTagAssignments,
+} from '@/db/schema';
 import type { Platform, PostType } from '@/lib/types';
+import { daysIn, dayStrings } from '@/lib/dates';
 
 export interface DimensionRow {
   /** The hashtag, topic, post type, platform or hour label. */
@@ -43,8 +51,10 @@ export interface RateByBucket {
   bucket: number;
   focusPosts: number;
   focusRate: number;
+  focusEngagementPerPost: number;
   landscapePosts: number;
   landscapeRate: number;
+  landscapeEngagementPerPost: number;
 }
 
 export interface AtAGlance {
@@ -52,15 +62,41 @@ export interface AtAGlance {
   landscapePostsPerDay: number;
   engagementRateByFollower: number;
   landscapeEngagementRate: number;
+  engagementPerPost: number;
+  landscapeEngagementPerPost: number;
   pctWithHashtags: number;
   landscapePctWithHashtags: number;
-  /** Hour of day, 0-23, where the focus company's posts earn the most. */
+  /** Hour of day, 0-23, when the focus company publishes most often. */
   topHour: number | null;
   landscapeTopHour: number | null;
 }
 
+export interface CompanyActivityRow {
+  companyId: string;
+  companyName: string;
+  posts: number;
+  postsPerDay: number;
+  engagementRateByFollower: number;
+  engagementPerPost: number;
+  focus: boolean;
+}
+
+export interface ActivityPoint {
+  date: string;
+  focusPosts: number;
+  landscapePostsPerCompany: number;
+  focusRate: number;
+  landscapeRate: number;
+  focusEngagementPerPost: number;
+  landscapeEngagementPerPost: number;
+}
+
 export interface ContentAnalysis {
+  /** Inclusive number of calendar days in the selected window. */
+  days: number;
   glance: AtAGlance;
+  activity: CompanyActivityRow[];
+  activityByDay: ActivityPoint[];
   hashtags: DimensionRow[];
   topics: DimensionRow[];
   postTypes: DimensionRow[];
@@ -159,20 +195,33 @@ function tally(
   minCompanies: number,
 ): DimensionRow[] {
   const acc = new Map<string, {
-    companies: Set<string>; posts: number; eng: number; reach: number;
+    companies: Set<string>; posts: number; eng: number; ratedEng: number; reach: number;
     focusPosts: number;
   }>();
 
   for (const r of rows) {
     for (const key of keysOf(r)) {
       let e = acc.get(key);
-      if (!e) { e = { companies: new Set(), posts: 0, eng: 0, reach: 0, focusPosts: 0 }; acc.set(key, e); }
+      if (!e) {
+        e = {
+          companies: new Set(),
+          posts: 0,
+          eng: 0,
+          ratedEng: 0,
+          reach: 0,
+          focusPosts: 0,
+        };
+        acc.set(key, e);
+      }
       e.companies.add(r.companyId);
       e.posts += 1;
       e.eng += r.engagementTotal;
       // Rate by follower needs a denominator per post. Posts with no follower
-      // reading are excluded from the rate rather than counted as infinite.
-      if (r.followersAtPost && r.followersAtPost > 0) e.reach += r.followersAtPost;
+      // reading are excluded from both sides of the rate.
+      if (r.followersAtPost && r.followersAtPost > 0) {
+        e.ratedEng += r.engagementTotal;
+        e.reach += r.followersAtPost;
+      }
       if (focusId && r.companyId === focusId) e.focusPosts += 1;
     }
   }
@@ -190,7 +239,7 @@ function tally(
       key,
       companies: e.companies.size,
       posts: e.posts,
-      engagementRateByFollower: e.reach > 0 ? e.eng / e.reach : 0,
+      engagementRateByFollower: e.reach > 0 ? e.ratedEng / e.reach : 0,
       engagementPerPost: e.posts > 0 ? e.eng / e.posts : 0,
       focusUsed: e.focusPosts > 0,
       focusPosts: e.focusPosts,
@@ -201,25 +250,157 @@ function tally(
 
 /** Focus against landscape for a time bucket, which is the shape both charts need. */
 function bucketRates(rows: Row[], focusId: string | null, of: (d: Date) => number, size: number): RateByBucket[] {
-  const f = Array.from({ length: size }, () => ({ posts: 0, eng: 0, reach: 0 }));
-  const l = Array.from({ length: size }, () => ({ posts: 0, eng: 0, reach: 0 }));
+  const f = Array.from(
+    { length: size },
+    () => ({ posts: 0, totalEngagement: 0, ratedEngagement: 0, reach: 0 }),
+  );
+  const l = Array.from(
+    { length: size },
+    () => ({ posts: 0, totalEngagement: 0, ratedEngagement: 0, reach: 0 }),
+  );
 
   for (const r of rows) {
     const b = of(r.postedAt);
     if (b < 0 || b >= size) continue;
-    const target = focusId && r.companyId === focusId ? f : l;
-    target[b].posts += 1;
-    target[b].eng += r.engagementTotal;
-    if (r.followersAtPost && r.followersAtPost > 0) target[b].reach += r.followersAtPost;
+    l[b].posts += 1;
+    l[b].totalEngagement += r.engagementTotal;
+    if (r.followersAtPost && r.followersAtPost > 0) {
+      l[b].ratedEngagement += r.engagementTotal;
+      l[b].reach += r.followersAtPost;
+    }
+    if (focusId && r.companyId === focusId) {
+      f[b].posts += 1;
+      f[b].totalEngagement += r.engagementTotal;
+      if (r.followersAtPost && r.followersAtPost > 0) {
+        f[b].ratedEngagement += r.engagementTotal;
+        f[b].reach += r.followersAtPost;
+      }
+    }
   }
 
   return Array.from({ length: size }, (_, b) => ({
     bucket: b,
     focusPosts: f[b].posts,
-    focusRate: f[b].reach > 0 ? f[b].eng / f[b].reach : 0,
+    focusRate: f[b].reach > 0 ? f[b].ratedEngagement / f[b].reach : 0,
+    focusEngagementPerPost: f[b].posts > 0
+      ? f[b].totalEngagement / f[b].posts
+      : 0,
     landscapePosts: l[b].posts,
-    landscapeRate: l[b].reach > 0 ? l[b].eng / l[b].reach : 0,
+    landscapeRate: l[b].reach > 0 ? l[b].ratedEngagement / l[b].reach : 0,
+    landscapeEngagementPerPost: l[b].posts > 0
+      ? l[b].totalEngagement / l[b].posts
+      : 0,
   }));
+}
+
+function activityByCompany(
+  rows: Row[],
+  focusId: string | null,
+  days: number,
+): CompanyActivityRow[] {
+  const acc = new Map<string, {
+    companyName: string;
+    posts: number;
+    totalEngagement: number;
+    ratedEngagement: number;
+    followers: number;
+  }>();
+  for (const row of rows) {
+    const current = acc.get(row.companyId) ?? {
+      companyName: row.companyName,
+      posts: 0,
+      totalEngagement: 0,
+      ratedEngagement: 0,
+      followers: 0,
+    };
+    current.posts += 1;
+    current.totalEngagement += row.engagementTotal;
+    if (row.followersAtPost && row.followersAtPost > 0) {
+      current.ratedEngagement += row.engagementTotal;
+      current.followers += row.followersAtPost;
+    }
+    acc.set(row.companyId, current);
+  }
+  return [...acc.entries()]
+    .map(([companyId, value]): CompanyActivityRow => ({
+      companyId,
+      companyName: value.companyName,
+      posts: value.posts,
+      postsPerDay: value.posts / days,
+      engagementRateByFollower: value.followers > 0
+        ? value.ratedEngagement / value.followers
+        : 0,
+      engagementPerPost: value.posts > 0 ? value.totalEngagement / value.posts : 0,
+      focus: companyId === focusId,
+    }))
+    .sort((a, b) => b.posts - a.posts || a.companyName.localeCompare(b.companyName));
+}
+
+function activityByDay(
+  rows: Row[],
+  focusId: string | null,
+  range: { start: Date; end: Date },
+  companyCount: number,
+): ActivityPoint[] {
+  const acc = new Map<string, {
+    focusPosts: number;
+    focusTotalEngagement: number;
+    focusRatedEngagement: number;
+    focusFollowers: number;
+    landscapePosts: number;
+    landscapeTotalEngagement: number;
+    landscapeRatedEngagement: number;
+    landscapeFollowers: number;
+  }>();
+  for (const row of rows) {
+    const key = easternDay(row.postedAt);
+    const current = acc.get(key) ?? {
+      focusPosts: 0,
+      focusTotalEngagement: 0,
+      focusRatedEngagement: 0,
+      focusFollowers: 0,
+      landscapePosts: 0,
+      landscapeTotalEngagement: 0,
+      landscapeRatedEngagement: 0,
+      landscapeFollowers: 0,
+    };
+    current.landscapePosts += 1;
+    current.landscapeTotalEngagement += row.engagementTotal;
+    if (row.followersAtPost && row.followersAtPost > 0) {
+      current.landscapeRatedEngagement += row.engagementTotal;
+      current.landscapeFollowers += row.followersAtPost;
+    }
+    if (focusId && row.companyId === focusId) {
+      current.focusPosts += 1;
+      current.focusTotalEngagement += row.engagementTotal;
+      if (row.followersAtPost && row.followersAtPost > 0) {
+        current.focusRatedEngagement += row.engagementTotal;
+        current.focusFollowers += row.followersAtPost;
+      }
+    }
+    acc.set(key, current);
+  }
+
+  return dayStrings(range).map((date) => {
+    const value = acc.get(date);
+    return {
+      date,
+      focusPosts: value?.focusPosts ?? 0,
+      landscapePostsPerCompany: (value?.landscapePosts ?? 0) / companyCount,
+      focusRate: value && value.focusFollowers > 0
+        ? value.focusRatedEngagement / value.focusFollowers
+        : 0,
+      landscapeRate: value && value.landscapeFollowers > 0
+        ? value.landscapeRatedEngagement / value.landscapeFollowers
+        : 0,
+      focusEngagementPerPost: value && value.focusPosts > 0
+        ? value.focusTotalEngagement / value.focusPosts
+        : 0,
+      landscapeEngagementPerPost: value && value.landscapePosts > 0
+        ? value.landscapeTotalEngagement / value.landscapePosts
+        : 0,
+    };
+  });
 }
 
 export interface ContentQuery {
@@ -228,6 +409,45 @@ export interface ContentQuery {
   start: Date;
   end: Date;
   platforms?: Platform[];
+  companyIds?: string[];
+  postTypes?: PostType[];
+  tagIds?: string[];
+  search?: string;
+}
+
+const EASTERN_DAY = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const EASTERN_HOUR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour: '2-digit',
+  hourCycle: 'h23',
+});
+const EASTERN_WEEKDAY = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  weekday: 'short',
+});
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+function easternDay(date: Date): string {
+  const parts = EASTERN_DAY.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '00';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '00';
+  return `${year}-${month}-${day}`;
+}
+
+function easternHour(date: Date): number {
+  return Number(EASTERN_HOUR.format(date));
+}
+
+function easternWeekday(date: Date): number {
+  return WEEKDAY_INDEX[EASTERN_WEEKDAY.format(date)] ?? -1;
 }
 
 /**
@@ -239,14 +459,84 @@ export interface ContentQuery {
  * which ones you are missing, which is the actionable version.
  */
 export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalysis> {
-  const [ls] = await db.select({ focusCompanyId: landscapes.focusCompanyId })
+  const membership = await db.select({
+    focusCompanyId: landscapes.focusCompanyId,
+    companyId: landscapeCompanies.companyId,
+  })
     .from(landscapes)
+    .leftJoin(landscapeCompanies, eq(landscapeCompanies.landscapeId, landscapes.id))
     .where(and(eq(landscapes.id, q.landscapeId), eq(landscapes.orgId, q.orgId)));
-  const focusId = ls?.focusCompanyId ?? null;
+  if (membership.length === 0) {
+    throw new Error(
+      `Landscape ${q.landscapeId} was not found in this organization. ` +
+      'This is a tenancy guard, not a missing-data condition.',
+    );
+  }
+  const landscapeFocusId = membership[0].focusCompanyId;
+  const memberIds = membership.flatMap((row) => row.companyId ? [row.companyId] : []);
+  const memberIdSet = new Set(memberIds);
+  const scopedCompanyIds = q.companyIds?.filter((id) => memberIdSet.has(id));
+  const focusId =
+    scopedCompanyIds
+    && scopedCompanyIds.length > 0
+    && (!landscapeFocusId || !scopedCompanyIds.includes(landscapeFocusId))
+      ? scopedCompanyIds[0]
+      : landscapeFocusId;
 
-  const memberIds = db.select({ id: landscapeCompanies.companyId })
-    .from(landscapeCompanies)
-    .where(eq(landscapeCompanies.landscapeId, q.landscapeId));
+  if (memberIds.length === 0) {
+    return {
+      days: daysIn({ start: q.start, end: q.end }),
+      focusCompanyName: null,
+      totalPosts: 0,
+      glance: {
+        postsPerDay: 0,
+        landscapePostsPerDay: 0,
+        engagementRateByFollower: 0,
+        landscapeEngagementRate: 0,
+        engagementPerPost: 0,
+        landscapeEngagementPerPost: 0,
+        pctWithHashtags: 0,
+        landscapePctWithHashtags: 0,
+        topHour: null,
+        landscapeTopHour: null,
+      },
+      activity: [],
+      activityByDay: [],
+      hashtags: [],
+      topics: [],
+      postTypes: [],
+      channels: [],
+      byHour: [],
+      byWeekday: [],
+    };
+  }
+
+  const search = q.search?.trim();
+  const searchNeedle = search ? `%${search}%` : null;
+  const urlMatches = searchNeedle
+    ? exists(
+      db.select({ id: postedUrls.id })
+        .from(postedUrls)
+        .where(and(
+          eq(postedUrls.postId, posts.id),
+          or(
+            ilike(postedUrls.url, searchNeedle),
+            ilike(postedUrls.domain, searchNeedle),
+            ilike(postedUrls.title, searchNeedle),
+          ),
+        )),
+    )
+    : undefined;
+  const tagMatches = q.tagIds?.length
+    ? exists(
+      db.select({ postId: postTagAssignments.postId })
+        .from(postTagAssignments)
+        .where(and(
+          eq(postTagAssignments.postId, posts.id),
+          inArray(postTagAssignments.tagId, q.tagIds),
+        )),
+    )
+    : undefined;
 
   const raw = await db
     .select({
@@ -267,6 +557,18 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
       gte(posts.postedAt, q.start),
       lte(posts.postedAt, q.end),
       q.platforms && q.platforms.length > 0 ? inArray(posts.platform, q.platforms) : undefined,
+      scopedCompanyIds && scopedCompanyIds.length > 0
+        ? inArray(posts.companyId, scopedCompanyIds)
+        : undefined,
+      q.postTypes && q.postTypes.length > 0 ? inArray(posts.type, q.postTypes) : undefined,
+      tagMatches,
+      searchNeedle
+        ? or(
+          ilike(posts.text, searchNeedle),
+          ilike(posts.permalink, searchNeedle),
+          urlMatches,
+        )
+        : undefined,
     ));
 
   const rows: Row[] = raw.map((r) => ({
@@ -278,23 +580,33 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
   const focusName = focusRows[0]?.companyName ?? null;
 
   // Days in window, used for every per-day figure.
-  const days = Math.max(1, Math.round((q.end.getTime() - q.start.getTime()) / 864e5));
-  const companyCount = new Set(rows.map((r) => r.companyId)).size || 1;
+  const days = daysIn({ start: q.start, end: q.end });
+  const companyCount = Math.max(
+    1,
+    scopedCompanyIds && scopedCompanyIds.length > 0
+      ? scopedCompanyIds.length
+      : memberIds.length,
+  );
 
   const rate = (list: Row[]) => {
     let eng = 0; let reach = 0;
     for (const r of list) {
-      eng += r.engagementTotal;
-      if (r.followersAtPost && r.followersAtPost > 0) reach += r.followersAtPost;
+      if (r.followersAtPost && r.followersAtPost > 0) {
+        eng += r.engagementTotal;
+        reach += r.followersAtPost;
+      }
     }
     return reach > 0 ? eng / reach : 0;
   };
+  const engagementPerPost = (list: Row[]) => list.length > 0
+    ? list.reduce((sum, row) => sum + row.engagementTotal, 0) / list.length
+    : 0;
 
   const withTags = (list: Row[]) =>
     (list.length === 0 ? 0 : list.filter((r) => r.hashtags.length > 0).length / list.length);
 
-  const byHour = bucketRates(rows, focusId, (d) => d.getHours(), 24);
-  const byWeekday = bucketRates(rows, focusId, (d) => d.getDay(), 7);
+  const byHour = bucketRates(rows, focusId, easternHour, 24);
+  const byWeekday = bucketRates(rows, focusId, easternWeekday, 7);
 
   const bestHour = (pick: (b: RateByBucket) => number) => {
     let best: number | null = null; let bestVal = 0;
@@ -306,17 +618,27 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
   };
 
   return {
+    days,
     focusCompanyName: focusName,
     totalPosts: rows.length,
+    activity: activityByCompany(rows, focusId, days),
+    activityByDay: activityByDay(
+      rows,
+      focusId,
+      { start: q.start, end: q.end },
+      companyCount,
+    ),
     glance: {
       postsPerDay: focusRows.length / days,
       landscapePostsPerDay: rows.length / days / companyCount,
       engagementRateByFollower: rate(focusRows),
       landscapeEngagementRate: rate(rows),
+      engagementPerPost: engagementPerPost(focusRows),
+      landscapeEngagementPerPost: engagementPerPost(rows),
       pctWithHashtags: withTags(focusRows),
       landscapePctWithHashtags: withTags(rows),
-      topHour: bestHour((b) => b.focusRate),
-      landscapeTopHour: bestHour((b) => b.landscapeRate),
+      topHour: bestHour((b) => b.focusPosts),
+      landscapeTopHour: bestHour((b) => b.landscapePosts),
     },
     hashtags: tally(rows, focusId, (r) => r.hashtags.map((h) => '#' + h.toLowerCase()), 12, 2),
     topics: tally(rows, focusId, (r) => phrases(r.text ?? ''), 12, 3),

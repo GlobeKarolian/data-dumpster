@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { StoryCloud } from '@/components/stories/story-cloud';
 import { toStoryDto, type StoryCloudDto } from '@/components/stories/types';
-import { PLATFORMS, type Platform } from '@/lib/types';
+import type { Platform } from '@/lib/types';
+import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import { formatDate } from '@/components/ui/format';
 import { resolveContext } from '../_lib/context';
 import { query, tryQuery, type SearchParamsInput } from '../_lib/data';
@@ -10,7 +11,7 @@ import { query, tryQuery, type SearchParamsInput } from '../_lib/data';
 export const metadata: Metadata = { title: 'Story Cloud' };
 export const dynamic = 'force-dynamic';
 
-const PLATFORM_SET = new Set<string>(PLATFORMS);
+const PLATFORM_SET = new Set<string>(ADAPTER_SUPPORTED_PLATFORMS);
 
 /** Loose merges more; tight keeps stories apart. Bounds match the slider. */
 function clamp(value: number, min: number, max: number): number {

@@ -7,16 +7,21 @@
  * numbers in front of them are current, and if they are not, they need a way to
  * make them current that does not involve asking an engineer.
  *
- * The run is bounded rather than exhaustive: it refreshes the channels that are
- * most stale first and stops at a cap, because a serverless request has a
- * ceiling and a partial refresh that returns is worth more than a complete one
- * that times out. The response says exactly what it did so the UI can be honest
- * about what was and was not updated.
+ * One request processes a bounded slice, but the durable queue keeps the whole
+ * selected landscape/window pending. Subsequent batches or the scheduled worker
+ * continue from the same queue, so the cap is a timeout boundary rather than
+ * data loss.
  */
 import { z } from 'zod';
 import { apiHandler, requireRole, HttpError } from '@/lib/session';
 import { PLATFORMS } from '@/lib/types';
-import { runAllDue } from "@/lib/adapters/runner";
+import { db } from '@/db';
+import { landscapes } from '@/db/schema';
+import { and, eq } from 'drizzle-orm';
+import {
+  enqueueLandscapeCollection,
+  runCollectionQueue,
+} from '@/lib/adapters/collection-queue';
 import { readJson } from '../../_lib/query';
 
 export const runtime = 'nodejs';
@@ -25,26 +30,47 @@ export const maxDuration = 300;
 
 const bodySchema = z.object({
   platforms: z.array(z.enum(PLATFORMS)).optional(),
+  landscapeId: z.uuid(),
   /** Cap on channels touched in one press. Keeps the request inside its budget. */
   limit: z.number().int().min(1).max(60).default(24),
   /** Days of history to request from each adapter. */
-  sinceDays: z.number().int().min(1).max(90).default(14),
+  sinceDays: z.number().int().min(1).max(365).default(28),
+  /** False when the same button press is draining a queue it already created. */
+  enqueue: z.boolean().default(true),
 });
 
 export const POST = apiHandler(async (req) => {
   const { orgId } = await requireRole('editor');
   const body = await readJson(req, bodySchema);
 
-  const since = new Date(Date.now() - body.sinceDays * 864e5);
+  const [landscape] = await db
+    .select({ id: landscapes.id })
+    .from(landscapes)
+    .where(and(eq(landscapes.id, body.landscapeId), eq(landscapes.orgId, orgId)))
+    .limit(1);
+  if (!landscape) {
+    throw new HttpError(404, 'Landscape not found.', 'landscape_not_found');
+  }
+
+  const until = new Date();
+  const since = new Date(until.getTime() - body.sinceDays * 864e5);
 
   try {
-    const result = await runAllDue({
+    if (body.enqueue) {
+      await enqueueLandscapeCollection({
+        orgId,
+        landscapeId: body.landscapeId,
+        platforms: body.platforms,
+        since,
+        until,
+      });
+    }
+    const result = await runCollectionQueue({
       orgId,
+      landscapeId: body.landscapeId,
       platforms: body.platforms,
-      since,
-      until: new Date(),
       maxChannels: body.limit,
-      limit: 120,
+      postLimit: 500,
     });
     return Response.json(result);
   } catch (err) {

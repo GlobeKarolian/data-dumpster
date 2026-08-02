@@ -35,7 +35,11 @@ export function Tooltip({ content, children, side = 'top', align = 'center', wid
     onFocus: () => setOpen(true),
     onBlur: () => setOpen(false),
     onKeyDown: (event: React.KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape' && open) {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+      }
     },
   });
 

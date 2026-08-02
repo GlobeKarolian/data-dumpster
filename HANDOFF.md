@@ -79,12 +79,13 @@ Three sources, chosen on measured evidence rather than preference:
 
 | Source | Used for | Cost | Measured |
 |---|---|---|---|
-| EnsembleData | TikTok, Instagram, Threads | $400/mo Silver, 11k units/day | 100% success, 2s median |
-| Bright Data | Facebook only | ~$25/mo pay-as-you-go | 42 to 81% success, 44 to 127s |
+| EnsembleData | TikTok, Instagram, Threads, competitor X | $400/mo Silver, 11k units/day | 100% success, 2s median |
+| Bright Data | Facebook and fallback public scrapers | ~$25/mo pay-as-you-go | 42 to 81% success, 44 to 127s |
 | YouTube Data API | YouTube | free, 10k units/day | 100%, 25 channels in 15s |
 
-Bright Data was first and is being retired everywhere except Facebook, which
-EnsembleData does not cover. The measurements are in `docs/ENSEMBLEDATA.md`.
+EnsembleData is the primary public-data vendor. Bright Data remains the
+Facebook source and a fallback where a public scraper is needed. The
+measurements are in `docs/ENSEMBLEDATA.md`.
 
 **The lesson, stated plainly because it caused three separate bugs:** an
 endpoint inventory tells you what exists; only a response body tells you what a
@@ -112,30 +113,40 @@ custom dashboards, user management with invite links, BYO model settings,
 Content Analysis (topics, hashtags, formats, channels, post times), full-screen
 raccoon refresh overlay, raccoon cursor.
 
+Rival IQ parity work now also includes PowerPoint and sectioned CSV report
+exports, weekly email/Slack schedules with run-now and an audit trail, ten
+dashboard widget types with edit/reorder controls, full landscape leaderboards
+with deltas and platform composition, company-correct Content Analysis, and
+metric guardrail tests. The duplicated adapter HTTP policy has also been folded
+into one implementation. The PPTX renderer passed LibreOffice rendering and
+overflow checks. Apply the schema change and configure the delivery variables
+in `.env.example` before using scheduled delivery.
+
+Reddit sources are account-first in the add-profile flow. A real
+`/reddit/user/posts` response for `u/bostonglobe` was verified and the adapter
+filters exact authors, paginates the live cursor, and leaves user audience and
+follower-rate metrics blank. Explicit `r/name` communities remain supported.
+
 ## What is not done, in the order I would do it
 
-1. **Scheduled exports.** Rival IQ mails PowerPoint and CSV on a schedule. This
-   is the largest gap, because it is how the product reaches people who never
-   log in. The Weekly Report has the content and only exports on demand.
-2. **Twitter ingestion.** 22 channels have never run. EnsembleData covers it at
-   `/twitter/user/info` and `/twitter/user/tweets`; the vendor path is written in
-   `twitter-brightdata.ts` but the EnsembleData version is not.
-3. **Crons are off.** `vercel.json` has an empty `crons` array because Matt
+1. **Crons are off.** `vercel.json` has an empty `crons` array because Matt
    chose manual runs while sources were changing. Turning them back on is a
    decision about vendor spend, not a technical task. Ask first.
-4. **There are no tests.** Zero. The highest-value ones are `changePct` null
-   behaviour, `safeDiv`, and the rule that audience is a stock (latest reading in
-   a window) rather than a flow (never summed).
-5. **Audience history is one day deep.** Every net-change and week-over-week
+2. **Twitter still needs its first ingest.** The live EnsembleData response was
+   inspected and the adapter is implemented. Its `/twitter/user/tweets` result
+   is a Twitter-selected highlights set, not a chronological timeline, so runs
+   carry an explicit coverage warning. The 22 active channels have not been
+   written because that consumes vendor units and needs the same spend decision.
+3. **Audience history is one day deep.** Every net-change and week-over-week
    figure reads blank until a few more days accumulate. Real data, honest blank,
    but it looks empty.
-6. **GBH News has 380 posts and belongs to no landscape.** Not in either CSV.
+4. **GBH News has 380 posts and belongs to no landscape.** Not in either CSV.
    Needs Matt's call, not a guess.
-7. **Post library rebuild.** Matt asked for it and it was not started. The
+5. **Dashboard and widget exports.** Saved dashboards can be edited, reordered
+   and shared, but they do not yet download as a deck/image or export one
+   widget's data. This is the remaining dashboard parity gap.
+6. **Post library rebuild.** Matt asked for it and it was not started. The
    Content Analysis screen is adjacent but not the same thing.
-8. **`src/lib/adapters/util/http.ts` is half dead code**, duplicated in
-   `request.ts`, and its own header comment is now false. A reviewer will spot
-   it in ninety seconds. Fifteen minutes to fold together.
 
 ## Known cosmetic and small issues
 

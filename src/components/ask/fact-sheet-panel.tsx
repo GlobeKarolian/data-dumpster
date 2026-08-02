@@ -114,10 +114,12 @@ export function FactSheetPanel({ facts }: { facts: FactSheet | null }) {
                     key={row.company.id}
                     className="flex items-baseline gap-2 text-[11px] text-zinc-600 dark:text-zinc-400"
                   >
-                    <span className="pb-num w-3 shrink-0 text-zinc-400">{row.rank}</span>
+                    <span className="pb-num w-3 shrink-0 text-zinc-400">
+                      {row.available ? row.rank : '—'}
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{row.company.name}</span>
                     <span className="pb-num shrink-0 font-medium text-zinc-900 dark:text-zinc-200">
-                      {formatMetric(row.value, metric)}
+                      {formatMetric(row.available ? row.value : null, metric)}
                     </span>
                   </li>
                 ))}

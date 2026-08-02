@@ -14,10 +14,13 @@ import type {
 export interface HeadlineStat {
   key: MetricKey;
   value: number;
+  /** False when the source observations needed by this metric are absent. */
+  available: boolean;
   previousValue: number | null;
+  previousAvailable: boolean;
   changePct: number | null;
   /** Sparkline for the current window. */
-  spark: { date: string; value: number }[];
+  spark: { date: string; value: number | null }[];
 }
 
 export interface SummaryResult {
@@ -64,8 +67,56 @@ export interface PostDto {
   followersAtPost: number | null;
   tags: { id: string; name: string; color: string | null }[];
   urls: { url: string; domain: string }[];
-  /** engagementTotal ÷ the company's median for this platform in-window. 1.0 = typical. */
+  /** The source channel's in-window median used to compute `outlierScore`. */
+  medianEngagement: number | null;
+  /** engagementTotal ÷ this source channel's in-window median. 1.0 = typical. */
   outlierScore: number | null;
+}
+
+export interface PostDetailDto extends Omit<PostDto, 'tags' | 'urls'> {
+  channel: {
+    id: string;
+    handle: string;
+    profileUrl: string | null;
+    avatarUrl: string | null;
+  };
+  /**
+   * Stored for provenance, not assumed to be directly playable. Depending on
+   * the adapter this may be an image CDN URL, a signed video URL, a watch page,
+   * or an article URL. The dependable preview remains `thumbnailUrl`.
+   */
+  mediaUrl: string | null;
+  durationSec: number | null;
+  language: string | null;
+  hashtags: string[];
+  mentions: string[];
+  engagementRateByView: number | null;
+  firstSeenAt: string;
+  lastRefreshedAt: string;
+  tags: {
+    id: string;
+    name: string;
+    color: string | null;
+    source: 'manual' | 'rule' | 'ai';
+    confidence: number | null;
+  }[];
+  urls: {
+    url: string;
+    canonicalUrl: string | null;
+    domain: string;
+    title: string | null;
+  }[];
+  metricHistory: {
+    capturedAt: string;
+    applause: number;
+    conversation: number;
+    amplification: number;
+    saves: number;
+    views: number;
+    engagementTotal: number;
+    engagementRateByFollower: number | null;
+    engagementRateByView: number | null;
+  }[];
 }
 
 export interface UrlRow {
@@ -86,7 +137,7 @@ export interface TagRow {
   engagementPerPost: number;
   engagementRateByFollower: number;
   shareOfPosts: number;
-  /** Lift versus the company's overall average rate. 1.2 = 20% better than baseline. */
+  /** Lift versus each company's untagged average rate. 1.2 = 20% better than baseline. */
   lift: number | null;
 }
 

@@ -1,13 +1,16 @@
 import type { Metadata } from 'next';
 import type { Platform } from '@/lib/types';
 import { SourcesManager, type CompanySources } from '@/components/settings/sources-manager';
+import { NoLandscape } from '@/components/common/no-landscape';
 import { query, type SearchParamsInput } from '../../_lib/data';
+import { resolveContext } from '../../_lib/context';
 
-export const metadata: Metadata = { title: 'Sources' };
+export const metadata: Metadata = { title: 'Social Profiles' };
 
 type SourceRow = {
   company_id: string;
   company_name: string;
+  attributed_to_org: boolean;
   channel_id: string | null;
   platform: Platform | null;
   handle: string | null;
@@ -17,6 +20,17 @@ type SourceRow = {
   last_ingested_at: string | null;
   last_run_status: string | null;
   last_run_error: string | null;
+  collection_status: 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | null;
+  collection_required_since: string | null;
+  collection_required_until: string | null;
+  collection_coverage_since: string | null;
+  collection_coverage_until: string | null;
+  collection_attempts: number | string | null;
+  collection_next_attempt_at: string | null;
+  collection_lease_until: string | null;
+  collection_has_more: boolean | null;
+  collection_last_error: string | null;
+  collection_updated_at: string | null;
   post_count: number | string | null;
 };
 
@@ -25,13 +39,14 @@ export default async function SourcesPage({
 }: {
   searchParams: Promise<SearchParamsInput>;
 }) {
-  await searchParams;
-  const { requireOrg } = await import('@/lib/session');
-  const { orgId } = await requireOrg();
+  const ctx = await resolveContext(await searchParams);
+  const landscape = ctx.landscape;
+  if (!landscape) return <NoLandscape reason={ctx.error} />;
 
   const rows = await query<SourceRow>(({ sql }) => sql`
     SELECT c.id   AS company_id,
            c.name AS company_name,
+           (c.org_id = ${ctx.orgId}::uuid) AS attributed_to_org,
            ch.id  AS channel_id,
            ch.platform,
            ch.handle,
@@ -41,9 +56,25 @@ export default async function SourcesPage({
            ch.last_ingested_at,
            run.status AS last_run_status,
            run.error  AS last_run_error,
+           state.status AS collection_status,
+           state.required_since AS collection_required_since,
+           state.required_until AS collection_required_until,
+           state.coverage_since AS collection_coverage_since,
+           state.coverage_until AS collection_coverage_until,
+           state.attempts AS collection_attempts,
+           state.next_attempt_at AS collection_next_attempt_at,
+           state.lease_until AS collection_lease_until,
+           state.has_more AS collection_has_more,
+           state.last_error AS collection_last_error,
+           state.updated_at AS collection_updated_at,
            (SELECT count(*) FROM posts p WHERE p.channel_id = ch.id) AS post_count
-      FROM companies c
+      FROM landscapes selected_l
+      JOIN landscape_companies lc
+        ON lc.landscape_id = selected_l.id
+      JOIN companies c
+        ON c.id = lc.company_id
       LEFT JOIN channels ch ON ch.company_id = c.id
+      LEFT JOIN channel_collection_state state ON state.channel_id = ch.id
       LEFT JOIN LATERAL (
         SELECT r.status, r.error
           FROM ingestion_runs r
@@ -51,8 +82,9 @@ export default async function SourcesPage({
          ORDER BY r.started_at DESC
          LIMIT 1
       ) run ON true
-     WHERE c.org_id = ${orgId}::uuid
-     ORDER BY c.name ASC, ch.platform ASC
+     WHERE selected_l.id = ${landscape.id}::uuid
+       AND selected_l.org_id = ${ctx.orgId}::uuid
+     ORDER BY lc.sort_order ASC, c.name ASC, ch.platform ASC
   `);
 
   const byCompany = new Map<string, CompanySources>();
@@ -60,6 +92,7 @@ export default async function SourcesPage({
     const entry = byCompany.get(row.company_id) ?? {
       id: row.company_id,
       name: row.company_name,
+      manageable: row.attributed_to_org === true,
       channels: [],
     };
     if (row.channel_id && row.platform && row.handle) {
@@ -73,6 +106,17 @@ export default async function SourcesPage({
         lastIngestedAt: row.last_ingested_at,
         lastRunStatus: row.last_run_status,
         lastRunError: row.last_run_error,
+        collectionStatus: row.collection_status,
+        collectionRequiredSince: row.collection_required_since,
+        collectionRequiredUntil: row.collection_required_until,
+        collectionCoverageSince: row.collection_coverage_since,
+        collectionCoverageUntil: row.collection_coverage_until,
+        collectionAttempts: Number(row.collection_attempts) || 0,
+        collectionNextAttemptAt: row.collection_next_attempt_at,
+        collectionLeaseUntil: row.collection_lease_until,
+        collectionHasMore: row.collection_has_more,
+        collectionLastError: row.collection_last_error,
+        collectionUpdatedAt: row.collection_updated_at,
         postCount: Number(row.post_count) || 0,
       });
     }
@@ -83,22 +127,21 @@ export default async function SourcesPage({
     <div className="mx-auto max-w-5xl space-y-4">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Sources
+          Social profiles
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          A channel is one company’s presence on one platform. The dot beside each row is the honest
-          freshness signal: every comparison elsewhere in Data Dumpster is only as current as the feed
-          behind it, and a silently stale channel drags an average down without ever looking wrong.
+          Add and manage the accounts in {landscape.name}. Complete means the profile’s durable
+          collection record covers its entire requested window, not merely that a recent run finished.
         </p>
       </div>
 
-      {rows.error ? (
+      {ctx.error || rows.error ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
-          {'Channels could not be read: ' + rows.error}
+          {'Channels could not be read: ' + (rows.error ?? ctx.error)}
         </p>
       ) : null}
 
-      <SourcesManager companies={[...byCompany.values()]} />
+      <SourcesManager companies={[...byCompany.values()]} landscapeName={landscape.name} />
     </div>
   );
 }

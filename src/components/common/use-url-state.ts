@@ -6,6 +6,22 @@ import * as React from 'react';
 export type ParamPatch = Record<string, string | string[] | null | undefined>;
 
 /**
+ * Scope that means the same thing on every analytics screen.
+ *
+ * Post search, tags, pagination, sort order and screen-specific display controls
+ * deliberately do not cross a route boundary. Carrying them into a screen that
+ * cannot display them creates an invisible filter that is very hard to diagnose.
+ */
+const GLOBAL_NAV_PARAM_KEYS = [
+  'landscape',
+  'range',
+  'start',
+  'end',
+  'companies',
+  'platforms',
+] as const;
+
+/**
  * Filters live in the URL, not in component state.
  *
  * That is a product decision, not a technical one: every view in Data Dumpster is
@@ -62,4 +78,18 @@ export function hrefWithParams(pathname: string, searchParams: URLSearchParams, 
   }
   const qs = next.toString();
   return qs ? pathname + '?' + qs : pathname;
+}
+
+/** Build a cross-screen href with only the shared analytics scope attached. */
+export function hrefWithGlobalParams(
+  pathname: string,
+  searchParams: URLSearchParams,
+  patch?: ParamPatch,
+): string {
+  const scoped = new URLSearchParams();
+  for (const key of GLOBAL_NAV_PARAM_KEYS) {
+    const value = searchParams.get(key);
+    if (value) scoped.set(key, value);
+  }
+  return hrefWithParams(pathname, scoped, patch);
 }

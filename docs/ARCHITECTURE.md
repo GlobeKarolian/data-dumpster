@@ -17,9 +17,9 @@ those absences is a decision and most of them are reversible.
 ## 1. Data flow, end to end
 
                          PLATFORM APIs
-       bluesky   youtube   rss   x   meta   tiktok   linkedin
-          |         |       |    |     |       |        |
-          +---------+-------+----+-----+-------+--------+
+       bluesky   youtube   x   meta   tiktok   linkedin   threads
+          |         |      |     |       |        |         |
+          +---------+------+-----+-------+--------+---------+
                               |
                     +---------v----------+
                     |  lib/adapters/*.ts |   one file per platform
@@ -40,6 +40,7 @@ those absences is a decision and most of them are reversible.
     |  posted_urls, post_tag_assignments                       |
     |  companies, channels, landscapes, landscape_companies    |
     |  briefs, dashboards, alert_rules, alert_events           |
+    |  weekly_reports, report_schedules, report_deliveries     |
     |  platform_credentials, model_connections, ai_usage       |
     +-------------------------+--------------------------------+
                               |
@@ -179,22 +180,56 @@ The practical rule: if a screen renders on first load, it is a Server Component
 reading queries.ts. If a control changes data without navigating, that control
 calls an API route.
 
+### Scheduled report delivery
+
+Weekly report exports render from the stored `ReportDocument`, never from a
+second analytics query. CSV, PowerPoint, the report screen and email therefore
+share the same computed block and the same null baselines. `report_schedules`
+stores the local weekday, hour and IANA time zone. `report_deliveries` is the
+audit and idempotency boundary: one schedule window has one delivery row and a
+frozen snapshot of its landscape, report period, recipients, formats and whether
+Slack was requested. Once a report row is attached, retries load that exact
+report id instead of deriving a week from the current clock or edited schedule.
+Email and Slack carry separate durable states. Each destination is marked `sending`
+before the network call and persisted immediately afterward. A worker that
+stops with a destination in `sending` is recovered as `unknown`, which blocks
+automatic retry because the provider may already have accepted it. Explicit
+provider rejection remains retryable, and a successful destination is never
+sent again when another destination fails. Failed and stale claims are recovered
+with one compare-and-set update that returns the sole winning claim.
+
+The global Slack webhook is usable for reports only when
+`REPORT_SLACK_ORG_ID` matches the schedule's org. Missing or mismatched bindings
+fail before any Slack request, preventing one tenant's report from reaching
+another tenant's channel.
+
+An existing weekly report is delivered from its stored computed snapshot.
+Scheduled delivery never refreshes figures underneath already-written
+narrative. Explicit recompute is the only refresh path and clears narrative
+because that prose was grounded in the previous snapshot.
+
+The dispatcher is an authenticated hourly cron route, but `vercel.json` does not
+declare it while vendor spend is undecided. A run-now action exercises the exact
+same build and delivery path without consuming the scheduled window.
+
 ---
 
 ## 4. Ingestion, scheduling, and rate limits
 
-Three cron jobs, declared in "vercel.json", with reasoning in "docs/CRONS.md".
+Four cron routes are implemented and documented in "docs/CRONS.md". No jobs are
+declared in `vercel.json` while the vendor-spend decision remains open.
 
     /api/cron/ingest    every 3 hours       maxDuration 300s
     /api/cron/alerts    hourly at :20       maxDuration 120s
     /api/cron/brief     Mondays 06:00 UTC   maxDuration 300s
+    /api/cron/reports   hourly at :10       maxDuration 300s
 
 maxDuration is route segment config in each route file rather than a glob in
 "vercel.json", because route segment config is authoritative on Vercel, it lives
 next to the runtime it describes, and a stale glob fails the whole deploy.
 
-All three verify an "Authorization: Bearer $CRON_SECRET" header in constant time
-and fail closed when CRON_SECRET is unset. All three accept GET, which is what
+All four verify an "Authorization: Bearer $CRON_SECRET" header in constant time
+and fail closed when CRON_SECRET is unset. All four accept GET, which is what
 Vercel Cron sends, and POST, which is what a human reaches for.
 
 ### What a run actually does
@@ -228,9 +263,8 @@ data instead of losing it.
 
 **Adapter-level economy.** The X adapter keeps a since_id high-water mark on the
 channel cursor, excludes retweets, and caps pages. Each of those is money. The
-RSS adapter uses conditional GET, so an unchanged feed costs a 304. The YouTube
-adapter batches video ids, which is why a channel refresh costs about three quota
-units per fifty videos against a 10,000 unit daily allowance.
+YouTube adapter batches video ids, which is why a channel refresh costs about
+three quota units per fifty videos against a 10,000 unit daily allowance.
 
 **Honest reporting.** Every run writes an "ingestion_runs" row with posts
 upserted, snapshots upserted, API calls made, status, and error text. That table
@@ -368,6 +402,8 @@ Everything here is a thing that will happen, not a thing that might.
 | Repair turn itself throws | Caught. The first draft is kept with its original verdict. | A failed repair must not lose a usable draft. |
 | Fact sheet has thin or partial data | buildCaveats injects caveats into the sheet, the prompt requires every one to appear in the output, and verify.ts fails the brief if any is missing. | The caveat is the part a model most wants to drop and an editor most needs. |
 | Database unavailable | Route-group error boundaries render an error state instead of a stack trace. /api/health reports it to an uptime probe. | |
+| Report email or Slack delivery is explicitly rejected | That destination is marked failed and may be retried; destinations already marked succeeded are skipped. | A transient rejection must not silently drop the report or double-send the other destination. |
+| Report delivery has an ambiguous network outcome | That destination is marked unknown and automatic retry is blocked. The audit names the destination needing review. | A timeout does not prove the provider rejected the request, so retrying could duplicate it. |
 | Post deleted upstream | The row and its history remain with the last known metrics. Snapshots simply stop. | Deleting our copy would silently rewrite last week's numbers. |
 | Share token leaked | Anyone with the URL reads that dashboard. Mitigation is rotating the token. | Stated plainly because it is a real risk of the feature, not a bug. |
 

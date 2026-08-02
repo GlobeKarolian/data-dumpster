@@ -98,7 +98,7 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
     narrative,
   }), [title, orgName, period, dataNote, computed, manual, narrative]);
 
-  const persist = React.useCallback(async () => {
+  const persist = React.useCallback(async (): Promise<boolean> => {
     setSave({ phase: 'saving', at: null });
     try {
       const res = await fetch('/api/reports/' + reportId, {
@@ -119,12 +119,14 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
         throw new Error(message);
       }
       setSave({ phase: 'clean', at: new Date().toISOString() });
+      return true;
     } catch (err) {
       setSave({
         phase: 'error',
         at: null,
         message: err instanceof Error ? err.message : 'Save failed.',
       });
+      return false;
     }
   }, [reportId, title, dataNote, manual, narrative]);
 
@@ -139,9 +141,16 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
   }, [canEdit, persist]);
 
   const recompute = async () => {
+    if (!window.confirm(
+      'Recompute the figures? Existing narrative will be cleared because it was '
+        + 'verified against the current snapshot.',
+    )) return;
     setRecomputing(true);
     setRecomputeError(null);
     try {
+      // Let any pending human edits settle before the server atomically replaces
+      // the computed snapshot and invalidates its narrative.
+      await persist();
       const res = await fetch('/api/reports/' + reportId + '/recompute', { method: 'POST' });
       const payload: unknown = await res.json().catch(() => null);
       if (!res.ok) {
@@ -154,6 +163,7 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
         ? (payload as { computed: ComputedBlock | null }).computed
         : null;
       setComputed(next);
+      setNarrative({});
     } catch (err) {
       setRecomputeError(err instanceof Error ? err.message : 'Recompute failed.');
     } finally {
@@ -217,7 +227,11 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
             </Badge>
           </div>
         </div>
-        <ExportActions doc={doc} />
+        <ExportActions
+          doc={doc}
+          reportId={reportId}
+          beforeServerExport={canEdit ? persist : undefined}
+        />
       </header>
 
       <section className="rounded-lg border border-amber-300/70 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -244,6 +258,7 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
       <RecomputeBar
         computedAt={computed?.generatedAt ?? null}
         busy={recomputing}
+        disabled={!canEdit}
         onRecompute={() => { void recompute(); }}
         error={recomputeError}
       />

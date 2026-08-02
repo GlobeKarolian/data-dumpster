@@ -6,6 +6,7 @@ import {
   type TooltipContentProps,
 } from 'recharts';
 import type { MetricKey, TimeSeriesPoint } from '@/lib/types';
+import { parseDateValue } from '@/lib/dates';
 import { compactNumber } from '@/lib/utils';
 import { formatMetric } from '@/components/ui/format';
 import { ChartFrame, ChartTooltipCard } from './chart-frame';
@@ -24,7 +25,7 @@ export interface StackedAreaChartProps {
 }
 
 function tickDate(value: string, granularity: 'day' | 'week' | 'month'): string {
-  const d = new Date(value);
+  const d = parseDateValue(value);
   if (Number.isNaN(+d)) return value;
   if (granularity === 'month') return new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(d);
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);

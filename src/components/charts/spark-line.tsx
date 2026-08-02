@@ -6,7 +6,7 @@ import { ACCENT } from './theme';
 
 export interface SparkPoint {
   date: string;
-  value: number;
+  value: number | null;
 }
 
 export interface SparkLineProps {
@@ -32,7 +32,10 @@ export function SparkLine({
   ariaLabel,
 }: SparkLineProps) {
   const id = React.useId().replace(/:/g, '');
-  const usable = data.filter((d) => Number.isFinite(d.value));
+  const usable = data.filter(
+    (d): d is SparkPoint & { value: number } =>
+      typeof d.value === 'number' && Number.isFinite(d.value),
+  );
 
   if (usable.length < 2) {
     return (

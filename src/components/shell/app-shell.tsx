@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import type { LandscapeOption } from './landscape-switcher';
 import type { CompanyOption } from './company-filter';
+import type { Role } from '@/lib/roles';
 
 export interface ShellLandscape extends LandscapeOption {
   focusCompanyId: string | null;
@@ -21,9 +22,11 @@ export interface ShellLandscape extends LandscapeOption {
  */
 export function AppShell({
   landscapes,
+  role,
   children,
 }: {
   landscapes: ShellLandscape[];
+  role: Role;
   children: React.ReactNode;
 }) {
   const searchParams = useSearchParams();
@@ -51,6 +54,7 @@ export function AppShell({
           focusCompanyId={active?.focusCompanyId ?? null}
           landscapeName={active?.name ?? null}
           landscapeId={active?.id ?? null}
+          role={role}
         />
         <main className="min-w-0 flex-1 px-4 py-5 lg:px-6">{children}</main>
       </div>

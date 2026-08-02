@@ -21,6 +21,10 @@ import { toDayString } from '@/lib/dates';
 import { slugify } from '@/lib/utils';
 import { resolveAnalyticsQuery } from '../../_lib/query';
 import { readPostsParams } from '../../_lib/posts-params';
+import {
+  isPostMetricReported,
+  type PostComponentMetric,
+} from '@/components/posts/post-metric-availability';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -65,6 +69,11 @@ function cell(value: string | number | null | undefined): string {
   return '"' + safe.replace(/"/g, '""') + '"';
 }
 
+function reportedPostMetric(p: PostDto, metric: PostComponentMetric): number | null {
+  const value = p[metric];
+  return isPostMetricReported(p.platform, p.type, metric, value) ? value : null;
+}
+
 function row(p: PostDto): string {
   return [
     cell(p.postedAt),
@@ -73,13 +82,15 @@ function row(p: PostDto): string {
     cell(p.type),
     cell(p.permalink),
     cell(p.text),
-    cell(p.applause),
-    cell(p.conversation),
-    cell(p.amplification),
-    cell(p.saves),
-    cell(p.views),
+    cell(reportedPostMetric(p, 'applause')),
+    cell(reportedPostMetric(p, 'conversation')),
+    cell(reportedPostMetric(p, 'amplification')),
+    cell(reportedPostMetric(p, 'saves')),
+    cell(reportedPostMetric(p, 'views')),
     cell(p.engagementTotal),
-    cell(p.engagementRateByFollower),
+    cell(p.followersAtPost !== null && p.followersAtPost > 0
+      ? p.engagementRateByFollower
+      : null),
     cell(p.followersAtPost),
     cell(p.outlierScore),
     cell(p.tags.map((t) => t.name).join('; ')),

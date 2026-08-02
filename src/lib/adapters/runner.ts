@@ -29,14 +29,15 @@
  *    expired. Failures are caught per channel, written to ingestion_runs, and
  *    reported in the summary.
  */
-import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   audienceSnapshots,
   channels,
   companies,
   ingestionRuns,
-  orgs,
+  landscapeCompanies,
+  landscapes,
   postMetricSnapshots,
   postTagAssignments,
   postTags,
@@ -47,6 +48,11 @@ import {
 import type { Platform } from '@/lib/types';
 import { decrypt } from '@/lib/crypto';
 import { getAdapter, hasAdapter } from './registry';
+import {
+  ESTIMATED_CALLS_PER_RUN,
+  MAX_RATE_WAIT_MS,
+  RateGate,
+} from './rate-gate';
 import { matchesRule, type TagRule } from './tagging';
 import { computeEngagementTotal, toDayString } from './util/normalize';
 import { AdapterError, type ChannelAdapter, type FetchResult, type NormalizedPost } from './types';
@@ -63,7 +69,7 @@ const MAX_BIND_PARAMS = 8_000;
 const MAX_CHUNK_ROWS = 500;
 
 /** How far back a channel with no ingest history reaches on its first run. */
-const FIRST_RUN_LOOKBACK_DAYS = 30;
+const FIRST_RUN_LOOKBACK_DAYS = 90;
 /**
  * Overlap re-read on every incremental run.
  *
@@ -77,10 +83,6 @@ const REFRESH_OVERLAP_DAYS = 2;
 
 const DEFAULT_POST_LIMIT = 500;
 const DEFAULT_CONCURRENCY = 4;
-/** Assumed network calls per channel run, used to reserve rate-limit budget. */
-const ESTIMATED_CALLS_PER_RUN = 4;
-/** Longest a worker will wait for rate-limit budget before deferring a channel. */
-const MAX_RATE_WAIT_MS = 60_000;
 
 /* ----------------------------------------------------------------- types */
 
@@ -92,6 +94,8 @@ export interface RunChannelOptions {
   /** Fetch and report, write nothing. */
   dryRun?: boolean;
   signal?: AbortSignal;
+  /** Workspace credentials to use when the pooled channel is run on its behalf. */
+  credentialOrgId?: string;
 }
 
 export type ChannelRunStatus = 'succeeded' | 'partial' | 'failed' | 'skipped';
@@ -111,6 +115,8 @@ export interface ChannelRunResult {
   hasMore: boolean;
   warnings: string[];
   error?: string;
+  /** Whether a scheduler should retry without waiting for a configuration change. */
+  retryable?: boolean;
 }
 
 export interface RunAllOptions extends RunChannelOptions {
@@ -225,6 +231,7 @@ function envCredentials(platform: Platform): Record<string, string> {
       break;
     case 'twitter':
       pick(out, 'bearerToken', process.env.TWITTER_BEARER_TOKEN);
+      pick(out, 'ensembleDataToken', process.env.ENSEMBLEDATA_TOKEN);
       pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
       break;
     case 'tiktok':
@@ -246,6 +253,9 @@ function envCredentials(platform: Platform): Record<string, string> {
       // back to, so these keys are the whole credential set for the platform.
       pick(out, 'ensembleDataToken', process.env.ENSEMBLEDATA_TOKEN);
       pick(out, 'brightDataApiKey', process.env.BRIGHTDATA_API_KEY);
+      break;
+    case 'reddit':
+      pick(out, 'ensembleDataToken', process.env.ENSEMBLEDATA_TOKEN);
       break;
     case 'bluesky':
       pick(out, 'identifier', process.env.BLUESKY_IDENTIFIER);
@@ -297,18 +307,20 @@ function parseCredentialBlob(plaintext: string, adapter: ChannelAdapter): Record
  * env fallback may still be able to run the channel.
  */
 async function loadCredentials(
-  orgId: string,
+  orgId: string | null,
   platform: Platform,
   adapter: ChannelAdapter,
 ): Promise<{ credentials: Record<string, string>; warnings: string[] }> {
   const warnings: string[] = [];
   const merged: Record<string, string> = envCredentials(platform);
 
-  const rows = await db
-    .select({ encrypted: platformCredentials.encrypted, label: platformCredentials.label, createdAt: platformCredentials.createdAt })
-    .from(platformCredentials)
-    .where(and(eq(platformCredentials.orgId, orgId), eq(platformCredentials.platform, platform)))
-    .orderBy(asc(platformCredentials.createdAt));
+  const rows = orgId
+    ? await db
+      .select({ encrypted: platformCredentials.encrypted, label: platformCredentials.label, createdAt: platformCredentials.createdAt })
+      .from(platformCredentials)
+      .where(and(eq(platformCredentials.orgId, orgId), eq(platformCredentials.platform, platform)))
+      .orderBy(asc(platformCredentials.createdAt))
+    : [];
 
   for (const row of rows) {
     let plaintext: string;
@@ -760,7 +772,7 @@ interface ChannelContext {
   companyId: string;
   companyName: string;
   companySlug: string;
-  orgId: string;
+  orgId: string | null;
 }
 
 const CHANNEL_SELECTION = {
@@ -774,7 +786,7 @@ const CHANNEL_SELECTION = {
   companyId: companies.id,
   companyName: companies.name,
   companySlug: companies.slug,
-  orgId: orgs.id,
+  orgId: companies.orgId,
 } as const;
 
 async function loadChannel(channelId: string): Promise<ChannelContext | undefined> {
@@ -782,7 +794,6 @@ async function loadChannel(channelId: string): Promise<ChannelContext | undefine
     .select(CHANNEL_SELECTION)
     .from(channels)
     .innerJoin(companies, eq(channels.companyId, companies.id))
-    .innerJoin(orgs, eq(companies.orgId, orgs.id))
     .where(eq(channels.id, channelId))
     .limit(1);
   return rows[0];
@@ -793,6 +804,7 @@ async function recordRun(
   channel: Pick<ChannelContext, 'channelId' | 'platform'>,
   result: Omit<ChannelRunResult, 'channelId' | 'platform' | 'handle' | 'companyName'>,
   startedAt: Date,
+  window?: { since: Date; until: Date },
 ): Promise<void> {
   const status = result.status === 'skipped'
     ? 'failed'
@@ -813,6 +825,9 @@ async function recordRun(
         durationMs: result.durationMs,
         warnings: result.warnings,
         hasMore: result.hasMore,
+        retryable: result.retryable ?? null,
+        requestedSince: window?.since.toISOString() ?? null,
+        requestedUntil: window?.until.toISOString() ?? null,
         tagsAssigned: result.tagsAssigned,
         urlsRecorded: result.urlsRecorded,
         outcome: result.status,
@@ -866,12 +881,17 @@ export async function runChannelIngest(
 
   let apiCalls = 0;
   const warnings: string[] = [];
-  const fail = async (message: string, status: ChannelRunStatus = 'failed'): Promise<ChannelRunResult> => {
+  const fail = async (
+    message: string,
+    status: ChannelRunStatus = 'failed',
+    retryable = status !== 'skipped',
+  ): Promise<ChannelRunResult> => {
     const partial = {
       status,
       postsUpserted: 0, snapshotsUpserted: 0, tagsAssigned: 0, urlsRecorded: 0,
       apiCalls, durationMs: Date.now() - startedAt.getTime(), hasMore: false,
       warnings, error: message,
+      retryable,
     };
     if (!opts.dryRun) await recordRun(channel, partial, startedAt);
     return { ...base, ...partial };
@@ -884,8 +904,9 @@ export async function runChannelIngest(
     return fail(errorMessage(err));
   }
 
+  const runOrgId = opts.credentialOrgId ?? channel.orgId;
   const { credentials, warnings: credentialWarnings } = await loadCredentials(
-    channel.orgId, channel.platform, adapter,
+    runOrgId, channel.platform, adapter,
   );
   warnings.push(...credentialWarnings);
 
@@ -895,13 +916,29 @@ export async function runChannelIngest(
       'No usable credentials for ' + adapter.displayName + '. Missing: '
       + (missing.length > 0 ? missing.join(', ') : 'all fields') + '.',
       'skipped',
+      false,
     );
   }
 
   // Incremental by default, with deliberate overlap so engagement counts on
   // recent posts keep moving. A caller-supplied window always wins.
-  const until = opts.until ?? new Date();
-  const since = opts.since
+  const cursorWindowSince = typeof channel.cursor.windowSince === 'string'
+    ? new Date(channel.cursor.windowSince)
+    : null;
+  const cursorWindowUntil = typeof channel.cursor.windowUntil === 'string'
+    ? new Date(channel.cursor.windowUntil)
+    : null;
+  const hasPendingCursorWindow = Boolean(
+    channel.cursor.nextCursor
+      && cursorWindowSince && !Number.isNaN(cursorWindowSince.getTime())
+      && cursorWindowUntil && !Number.isNaN(cursorWindowUntil.getTime()),
+  );
+  const until = hasPendingCursorWindow && cursorWindowUntil
+    ? cursorWindowUntil
+    : opts.until ?? new Date();
+  const since = hasPendingCursorWindow && cursorWindowSince
+    ? cursorWindowSince
+    : opts.since
     ?? (channel.lastIngestedAt
       ? daysAgo(REFRESH_OVERLAP_DAYS, channel.lastIngestedAt)
       : daysAgo(FIRST_RUN_LOOKBACK_DAYS, until));
@@ -923,7 +960,11 @@ export async function runChannelIngest(
       signal: opts.signal,
     });
   } catch (err) {
-    return fail(errorMessage(err));
+    return fail(
+      errorMessage(err),
+      'failed',
+      err instanceof AdapterError ? err.opts.retryable !== false : true,
+    );
   }
 
   warnings.push(...(fetched.warnings ?? []));
@@ -971,7 +1012,9 @@ export async function runChannelIngest(
 
       snapshotsUpserted += await insertMetricSnapshots(rows, ids, startedAt);
       urlsRecorded = await replacePostedUrls(fetched.posts, ids, channel.companyId);
-      tagsAssigned = await applyTagRules(channel.orgId, channel.platform, fetched.posts, ids);
+      tagsAssigned = runOrgId
+        ? await applyTagRules(runOrgId, channel.platform, fetched.posts, ids)
+        : 0;
     }
   } catch (err) {
     // Some writes may have landed. The run is marked partial rather than
@@ -985,8 +1028,9 @@ export async function runChannelIngest(
       hasMore: fetched.hasMore ?? false,
       warnings,
       error: message,
+      retryable: true,
     };
-    await recordRun(channel, partial, startedAt);
+    await recordRun(channel, partial, startedAt, { since, until });
     return { ...base, ...partial };
   }
 
@@ -994,9 +1038,11 @@ export async function runChannelIngest(
   try {
     const mergedCursor = stripEphemeralCursorKeys({ ...channel.cursor, ...(fetched.cursor ?? {}) });
     const profile = fetched.profile;
+    const hasMore = fetched.hasMore ?? false;
+    const exhaustive = fetched.exhaustive !== false;
     await db.update(channels).set({
       cursor: mergedCursor,
-      lastIngestedAt: startedAt,
+      ...(!hasMore && exhaustive ? { lastIngestedAt: startedAt } : {}),
       ...(profile?.externalId ? { externalId: profile.externalId } : {}),
       ...(profile?.profileUrl ? { profileUrl: profile.profileUrl } : {}),
       ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
@@ -1006,76 +1052,35 @@ export async function runChannelIngest(
     warnings.push('Data landed but the channel cursor could not be saved: ' + errorMessage(err));
   }
 
+  if (fetched.hasMore) {
+    status = 'partial';
+    warnings.push('More history remains. This profile stays in the collection queue.');
+  }
+
+  if (fetched.exhaustive === false) {
+    status = 'partial';
+    warnings.push(
+      fetched.incompleteReason
+        ?? 'The source returned a capped result without a continuation cursor.',
+    );
+  }
+
   const result = {
     status,
     postsUpserted, snapshotsUpserted, tagsAssigned, urlsRecorded, apiCalls,
     durationMs: Date.now() - startedAt.getTime(),
     hasMore: fetched.hasMore ?? false,
     warnings,
+    ...(fetched.exhaustive === false
+      ? { error: fetched.incompleteReason ?? 'The source could not certify the full window.' }
+      : {}),
+    retryable: status === 'partial' && fetched.exhaustive !== false,
   };
-  await recordRun(channel, result, startedAt);
+  await recordRun(channel, result, startedAt, { since, until });
   return { ...base, ...result };
 }
 
 /* ------------------------------------------------------- batch scheduling */
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (ms <= 0) { resolve(); return; }
-    const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
-    const onAbort = () => { cleanup(); resolve(); };
-    const cleanup = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-/**
- * A token bucket per platform, sized from the adapter's declared rateLimit.
- *
- * Why this rather than a fixed delay: the quotas differ by four orders of
- * magnitude. Bluesky allows 3,000 calls per 5 minutes and should never wait;
- * X on the Basic tier allows 5 calls per 15 minutes and must. One mechanism
- * parameterised by the adapter's own declaration handles both, and an adapter
- * author only has to state the truth about their platform.
- *
- * Channels whose budget will not arrive within MAX_RATE_WAIT_MS are deferred
- * rather than queued: a nightly batch that blocks for 40 minutes on one
- * platform is worse than one that skips four X channels and picks them up on
- * the next pass, because the staleness ordering will put them first.
- */
-class RateGate {
-  private tokens: number;
-  private readonly capacity: number;
-  private readonly refillPerMs: number;
-  private lastRefill = Date.now();
-
-  constructor(callsPerWindow: number, windowSeconds: number) {
-    this.capacity = Math.max(1, callsPerWindow);
-    this.tokens = this.capacity;
-    this.refillPerMs = this.capacity / Math.max(1, windowSeconds * 1000);
-  }
-
-  private refill(): void {
-    const now = Date.now();
-    this.tokens = Math.min(this.capacity, this.tokens + (now - this.lastRefill) * this.refillPerMs);
-    this.lastRefill = now;
-  }
-
-  /** Milliseconds until `cost` tokens exist. 0 when they already do. */
-  waitFor(cost: number): number {
-    this.refill();
-    const need = Math.min(cost, this.capacity) - this.tokens;
-    return need <= 0 ? 0 : Math.ceil(need / this.refillPerMs);
-  }
-
-  take(cost: number): void {
-    this.refill();
-    this.tokens = Math.max(0, this.tokens - cost);
-  }
-}
 
 interface DueChannel {
   channelId: string;
@@ -1097,7 +1102,22 @@ async function selectDueChannels(opts: RunAllOptions): Promise<DueChannel[]> {
   if (opts.platforms && opts.platforms.length > 0) filters.push(inArray(channels.platform, opts.platforms));
   if (opts.channelIds && opts.channelIds.length > 0) filters.push(inArray(channels.id, opts.channelIds));
   if (opts.companySlug) filters.push(eq(companies.slug, opts.companySlug));
-  if (opts.orgId) filters.push(eq(orgs.id, opts.orgId));
+  if (opts.orgId) {
+    const visibleToOrg = or(
+      eq(companies.orgId, opts.orgId),
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(landscapeCompanies)
+          .innerJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
+          .where(and(
+            eq(landscapeCompanies.companyId, companies.id),
+            eq(landscapes.orgId, opts.orgId),
+          )),
+      ),
+    );
+    if (visibleToOrg) filters.push(visibleToOrg);
+  }
 
   const rows = await db
     .select({
@@ -1108,7 +1128,6 @@ async function selectDueChannels(opts: RunAllOptions): Promise<DueChannel[]> {
     })
     .from(channels)
     .innerJoin(companies, eq(channels.companyId, companies.id))
-    .innerJoin(orgs, eq(companies.orgId, orgs.id))
     .where(and(...filters))
     .orderBy(sql`${channels.lastIngestedAt} asc nulls first`, asc(channels.id))
     .limit(opts.maxChannels ?? 1_000);
@@ -1126,7 +1145,7 @@ function skippedResult(channel: DueChannel, reason: string): ChannelRunResult {
     status: 'skipped',
     postsUpserted: 0, snapshotsUpserted: 0, tagsAssigned: 0, urlsRecorded: 0,
     apiCalls: 0, durationMs: 0, hasMore: false,
-    warnings: [], error: reason,
+    warnings: [], error: reason, retryable: false,
   };
 }
 
@@ -1175,12 +1194,13 @@ export async function runAllDue(opts: RunAllOptions = {}): Promise<RunAllSummary
     const context = await loadChannel(channel.channelId);
     if (!context) return 'Channel disappeared before it could run.';
 
-    const cacheKey = context.orgId + ':' + channel.platform;
+    const credentialOrgId = opts.orgId ?? context.orgId;
+    const cacheKey = (credentialOrgId ?? 'global') + ':' + channel.platform;
     const cached = credentialCache.get(cacheKey);
     if (cached === false) return 'No credentials configured for ' + adapter.displayName + '.';
     if (cached === true) return undefined;
 
-    const { credentials } = await loadCredentials(context.orgId, channel.platform, adapter);
+    const { credentials } = await loadCredentials(credentialOrgId, channel.platform, adapter);
     const ok = hasRequiredCredentials(adapter, credentials);
     credentialCache.set(cacheKey, ok);
     return ok ? undefined : 'No credentials configured for ' + adapter.displayName + '.';
@@ -1203,27 +1223,32 @@ export async function runAllDue(opts: RunAllOptions = {}): Promise<RunAllSummary
       }
 
       const gate = gates.get(channel.platform);
+      let reservation = 0;
       if (gate) {
-        const wait = gate.waitFor(ESTIMATED_CALLS_PER_RUN);
-        if (wait > MAX_RATE_WAIT_MS) {
+        const acquired = await gate.acquire(
+          ESTIMATED_CALLS_PER_RUN,
+          MAX_RATE_WAIT_MS,
+          opts.signal,
+        );
+        if (!acquired.acquired) {
+          if (opts.signal?.aborted) return;
           results.push(skippedResult(
             channel,
             'Deferred: ' + channel.platform + ' rate budget is exhausted for roughly '
-            + String(Math.ceil(wait / 1000)) + 's. It will lead the next run.',
+            + String(Math.ceil(acquired.retryAfterMs / 1000)) + 's. It will lead the next run.',
           ));
           continue;
         }
-        if (wait > 0) await sleep(wait, opts.signal);
-        gate.take(ESTIMATED_CALLS_PER_RUN);
+        reservation = acquired.reserved;
       }
 
       try {
         const result = await runChannelIngest(channel.channelId, {
           since: opts.since, until: opts.until, limit: opts.limit,
           dryRun: opts.dryRun, signal: opts.signal,
+          credentialOrgId: opts.orgId,
         });
-        // Charge the gate for what the run actually cost, not the estimate.
-        gate?.take(Math.max(0, result.apiCalls - ESTIMATED_CALLS_PER_RUN));
+        gate?.reconcile(reservation, result.apiCalls);
         results.push(result);
       } catch (err) {
         // runChannelIngest is written not to throw, so this is the belt to its
@@ -1234,6 +1259,7 @@ export async function runAllDue(opts: RunAllOptions = {}): Promise<RunAllSummary
           postsUpserted: 0, snapshotsUpserted: 0, tagsAssigned: 0, urlsRecorded: 0,
           apiCalls: 0, durationMs: 0, hasMore: false,
           warnings: [], error: errorMessage(err),
+          retryable: true,
         });
       }
     }

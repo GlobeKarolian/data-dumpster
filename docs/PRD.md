@@ -234,8 +234,9 @@ token and model key, constant-time bearer comparison on the cron routes.
 1. **Per-platform refresh windows.** The engagement refresh overlap is a two-day
    constant in "runner.ts". On metered X it is the single biggest cost lever in
    the system. It should be a per-platform setting with the cost shown next to it.
-2. **Reddit adapter.** The public JSON endpoints make it the next viable open
-   platform, and it matters for news distribution.
+2. **Reddit rollout.** The EnsembleData adapter is implemented. Confirm the
+   commercial-use terms are covered, attach the first user accounts and
+   communities, and measure vendor cost and coverage before broad rollout.
 3. **Owned-channel depth.** Meta and LinkedIn owned tokens unlock impressions,
    reach, clicks and saves for our own accounts. Different question from the
    competitive one, same pipes, high value to the social team.

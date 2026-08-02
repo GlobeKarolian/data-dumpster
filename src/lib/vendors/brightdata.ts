@@ -204,7 +204,11 @@ export async function scrapeSync<T = Record<string, unknown>>(
      * difference between twelve posts and a real window of history, so it is a
      * first-class option rather than something callers hand-assemble.
      */
-    discoverBy?: 'url' | 'profile_url' | 'user_name' | 'keyword';
+    discoverBy?:
+      | 'url'
+      | 'profile_url'
+      | 'user_name'
+      | 'keyword';
   },
 ): Promise<T[]> {
   if (input.length === 0) return [];

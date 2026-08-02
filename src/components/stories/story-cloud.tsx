@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { PLATFORMS, PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
+import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
+import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import { packCircles, type PackInput } from '@/lib/stories/layout';
 import { cn, compactNumber } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -135,7 +136,11 @@ function CloudControls({
     startTransition(() => setParams({ threshold: value.toFixed(2) }, { replace: true }));
   };
 
-  const options = (availablePlatforms.length > 0 ? availablePlatforms : [...PLATFORMS]).map((p) => ({
+  const options = (
+    availablePlatforms.length > 0
+      ? availablePlatforms
+      : [...ADAPTER_SUPPORTED_PLATFORMS]
+  ).map((p) => ({
     value: p,
     label: PLATFORM_LABELS[p],
     color: PLATFORM_COLORS[p],

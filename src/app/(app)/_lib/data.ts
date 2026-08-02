@@ -2,6 +2,10 @@ import type { AnalyticsQuery, MetricKey } from '@/lib/types';
 import type {
   FactSheet, MetricsApi, PostsQuery, SummaryResult,
 } from '@/lib/metrics/contract';
+import type {
+  IngestionCoverage,
+  IngestionCoverageQuery,
+} from '@/lib/metrics/ingestion-coverage';
 
 export type SearchParamsInput = Record<string, string | string[] | undefined>;
 
@@ -51,6 +55,15 @@ export async function loadLeaderboard(q: ScopedQuery & { metric: MetricKey }) {
     const api = await metricsApi();
     return api.getLeaderboard(q);
   }, []);
+}
+
+export async function loadIngestionCoverage(
+  q: IngestionCoverageQuery,
+): Promise<Loaded<IngestionCoverage | null>> {
+  return tryQuery<IngestionCoverage | null>(async () => {
+    const { getIngestionCoverage } = await import('@/lib/metrics/ingestion-coverage');
+    return getIngestionCoverage(q);
+  }, null);
 }
 
 export async function loadTimeSeries(q: ScopedQuery & { metric: MetricKey }) {

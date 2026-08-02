@@ -9,7 +9,16 @@ import { METRIC_KEYS, PLATFORMS, type MetricKey, type Platform } from '@/lib/typ
  * signed-in dashboard and a public share link with no branching.
  */
 export const WIDGET_TYPES = [
-  'stat', 'leaderboard', 'timeseries', 'platformMix', 'topPosts', 'cadence', 'note',
+  'stat',
+  'focusSummary',
+  'leaderboard',
+  'table',
+  'scatter',
+  'timeseries',
+  'platformMix',
+  'topPosts',
+  'cadence',
+  'note',
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -18,6 +27,8 @@ export interface WidgetDef {
   type: WidgetType;
   title?: string;
   metric?: MetricKey;
+  /** Horizontal-axis metric for a company comparison scatter plot. */
+  xMetric?: MetricKey;
   platform?: Platform;
   /** Columns spanned in the twelve-column grid. */
   span?: 4 | 6 | 8 | 12;
@@ -27,7 +38,10 @@ export interface WidgetDef {
 
 export const WIDGET_CATALOG: { type: WidgetType; label: string; description: string; defaultSpan: 4 | 6 | 8 | 12 }[] = [
   { type: 'stat', label: 'Stat tile', description: 'One headline number with its delta and sparkline.', defaultSpan: 4 },
+  { type: 'focusSummary', label: 'At a glance', description: 'The focus company’s four headline metrics in one compact panel.', defaultSpan: 12 },
   { type: 'leaderboard', label: 'Leaderboard', description: 'Every company ranked on one metric, with the competitive average.', defaultSpan: 6 },
+  { type: 'table', label: 'Metrics table', description: 'Every company’s value, prior-period delta, and channel breakdown.', defaultSpan: 12 },
+  { type: 'scatter', label: 'Metric comparison', description: 'Plot every company on two defined metrics to expose scale and efficiency.', defaultSpan: 8 },
   { type: 'timeseries', label: 'Trend', description: 'One metric over time, one line per company.', defaultSpan: 8 },
   { type: 'platformMix', label: 'Platform mix', description: 'Where the focus company’s weight sits, by channel.', defaultSpan: 4 },
   { type: 'topPosts', label: 'Top posts', description: 'The best post on each channel in the window.', defaultSpan: 12 },
@@ -59,6 +73,10 @@ export function parseWidgets(raw: unknown): WidgetDef[] {
       title: typeof item.title === 'string' ? item.title : undefined,
       metric:
         typeof item.metric === 'string' && METRIC_SET.has(item.metric) ? (item.metric as MetricKey) : undefined,
+      xMetric:
+        typeof item.xMetric === 'string' && METRIC_SET.has(item.xMetric)
+          ? (item.xMetric as MetricKey)
+          : undefined,
       platform:
         typeof item.platform === 'string' && PLATFORM_SET.has(item.platform)
           ? (item.platform as Platform)

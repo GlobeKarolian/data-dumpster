@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, Loader2, Plus, Trash2 } from 'lucide-react';
-import { METRIC_KEYS, PLATFORM_LABELS, PLATFORMS, type Platform } from '@/lib/types';
+import { METRIC_KEYS, PLATFORM_LABELS, type Platform } from '@/lib/types';
+import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import { METRIC_DEFS } from '@/lib/metrics/definitions';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -294,7 +295,10 @@ function AlertRuleForm({
         <Field label="Platforms" hint="Leave empty to watch every channel.">
           <MultiSelect
             label="Platforms"
-            options={PLATFORMS.map((p: Platform) => ({ value: p, label: PLATFORM_LABELS[p] }))}
+            options={ADAPTER_SUPPORTED_PLATFORMS.map((p: Platform) => ({
+              value: p,
+              label: PLATFORM_LABELS[p],
+            }))}
             value={platforms}
             onChange={setPlatforms}
           />

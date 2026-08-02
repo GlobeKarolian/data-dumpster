@@ -1,4 +1,5 @@
 import { METRIC_DEFS } from '@/lib/metrics/definitions';
+import { parseDateValue } from '@/lib/dates';
 import type { MetricKey } from '@/lib/types';
 import { compactNumber } from '@/lib/utils';
 
@@ -64,26 +65,26 @@ const FULL_FMT = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'sho
 
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '—';
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDateValue(value);
   return Number.isNaN(+d) ? '—' : DATE_FMT.format(d);
 }
 
 export function formatDateTime(value: string | Date | null | undefined): string {
   if (!value) return '—';
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDateValue(value);
   return Number.isNaN(+d) ? '—' : DATE_TIME_FMT.format(d);
 }
 
 export function formatFullDate(value: string | Date | null | undefined): string {
   if (!value) return '—';
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDateValue(value);
   return Number.isNaN(+d) ? '—' : FULL_FMT.format(d);
 }
 
 /** "3 hours ago" style, capped at a week before falling back to a date. */
 export function formatRelative(value: string | Date | null | undefined): string {
   if (!value) return 'never';
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseDateValue(value);
   if (Number.isNaN(+d)) return 'never';
   const secs = Math.round((Date.now() - d.getTime()) / 1000);
   if (secs < 60) return 'just now';

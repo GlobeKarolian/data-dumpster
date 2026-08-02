@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { ReportBuilder } from '@/components/reports/report-builder';
+import { sanitizeReportNarrative } from '@/lib/reports/narrative-verification';
 import { readComputed, readManual, readNarrative } from '@/lib/reports/types';
 import { query } from '../../_lib/data';
 
@@ -51,6 +52,18 @@ export default async function WeeklyReportPage({ params }: { params: Promise<{ i
 
   const report = result.data[0];
   if (!report) notFound();
+  const computed = readComputed(report.computed);
+  const manual = readManual(report.manual);
+  const storedNarrative = readNarrative(report.narrative);
+  const { narrative } = sanitizeReportNarrative({
+    title: report.title,
+    orgName: report.org_name,
+    period: { start: report.period_start, end: report.period_end },
+    dataNote: report.data_note,
+    computed,
+    manual,
+    narrative: storedNarrative,
+  });
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -74,9 +87,9 @@ export default async function WeeklyReportPage({ params }: { params: Promise<{ i
             status: report.status,
             periodStart: report.period_start,
             periodEnd: report.period_end,
-            computed: readComputed(report.computed),
-            manual: readManual(report.manual),
-            narrative: readNarrative(report.narrative),
+            computed,
+            manual,
+            narrative,
           }}
         />
       </div>

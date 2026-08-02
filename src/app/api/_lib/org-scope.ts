@@ -7,9 +7,9 @@
  * splice another org's company into their own landscape and start reading its
  * numbers through a perfectly legitimate analytics call.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import { db } from '@/db';
-import { companies } from '@/db/schema';
+import { companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { HttpError } from '@/lib/session';
 
 /**
@@ -41,8 +41,70 @@ export async function assertCompaniesInOrg(
   return unique;
 }
 
+/**
+ * Landscape membership is an org-private reference to a public pooled company.
+ * A company already visible through one of the org's landscapes may therefore
+ * be reused in another landscape without granting mutation rights over it.
+ */
+export async function assertCompaniesVisibleToOrg(
+  ids: readonly string[],
+  orgId: string,
+): Promise<string[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+
+  const rows = await db
+    .selectDistinct({ id: companies.id })
+    .from(companies)
+    .leftJoin(landscapeCompanies, eq(landscapeCompanies.companyId, companies.id))
+    .leftJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
+    .where(and(
+      inArray(companies.id, unique),
+      or(eq(companies.orgId, orgId), eq(landscapes.orgId, orgId)),
+    ));
+
+  const found = new Set(rows.map((row) => row.id));
+  const missing = unique.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new HttpError(
+      422,
+      missing.length + ' of the companies you referenced are not available to this workspace.',
+      'unknown_company',
+    );
+  }
+  return unique;
+}
+
 /** Single-company variant, used by the channel endpoints. */
 export async function assertCompanyInOrg(id: string, orgId: string): Promise<string> {
   const [only] = await assertCompaniesInOrg([id], orgId);
   return only;
+}
+
+/**
+ * Global company and channel mutations affect every workspace that tracks the
+ * pooled entity. Until those controls become org-private subscriptions, fail
+ * closed once another org has placed the company in a landscape.
+ */
+export async function assertCompanyNotSharedWithOtherOrgs(
+  companyId: string,
+  orgId: string,
+): Promise<void> {
+  const [foreignUse] = await db
+    .select({ id: landscapes.id })
+    .from(landscapeCompanies)
+    .innerJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
+    .where(and(
+      eq(landscapeCompanies.companyId, companyId),
+      ne(landscapes.orgId, orgId),
+    ))
+    .limit(1);
+
+  if (foreignUse) {
+    throw new HttpError(
+      409,
+      'This pooled company is used by another workspace, so its shared data cannot be changed or deleted here.',
+      'pooled_company_in_use',
+    );
+  }
 }

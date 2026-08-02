@@ -44,11 +44,16 @@ Do not assert that something is impossible without checking. That assertion has 
 
 ## Open work
 
-Priority order is at the end of `HANDOFF.md`. The largest gap versus Rival IQ is **scheduled exports**: PPT and CSV generated on a cron and emailed. Also outstanding:
+Priority order is at the end of `HANDOFF.md`. Scheduled PowerPoint/CSV delivery
+is implemented, including email, Slack links, run-now and the delivery audit.
+Before using it, apply the schema change and configure the delivery variables in
+`.env.example`. Also outstanding:
 
-- Twitter ingestion — 22 channels configured, never run. `/twitter/user/info` and `/twitter/user/tweets` on EnsembleData.
+- Twitter ingestion is implemented against the live EnsembleData response, but
+  the 22 active channels have never run. `/twitter/user/tweets` returned a
+  Twitter-selected highlights feed rather than a chronological timeline, so
+  every run carries a coverage warning.
 - Crons are off (`vercel.json` has an empty `crons` array) pending a decision on vendor spend.
-- No tests exist. The first ones should cover `changePct` null behaviour, `safeDiv`, and the audience-is-a-stock rule.
 - Audience history is one day deep, so all net-change reads render blank. Not a bug.
 - `GBH News` has 380 posts belonging to no landscape. Needs a product decision, not a code fix.
-- `src/lib/adapters/util/http.ts` is half dead code duplicated in `request.ts`. Fold them together.
+- The requested post-library rebuild is still separate from Content Analysis.

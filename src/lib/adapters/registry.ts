@@ -23,8 +23,13 @@ import { twitterAdapter } from './twitter';
 import { threadsAdapter } from './threads';
 import { tiktokAdapter } from './tiktok';
 import { linkedinAdapter } from './linkedin';
+import { redditAdapter } from './reddit';
+import {
+  ADAPTER_SUPPORTED_PLATFORMS,
+  type AdapterSupportedPlatform,
+} from './supported-platforms';
 
-export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
+const IMPLEMENTED_ADAPTERS = {
   facebook: facebookAdapter,
   instagram: instagramAdapter,
   twitter: twitterAdapter,
@@ -33,19 +38,24 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
   tiktok: tiktokAdapter,
   linkedin: linkedinAdapter,
   bluesky: blueskyAdapter,
-};
+  reddit: redditAdapter,
+} satisfies Record<AdapterSupportedPlatform, ChannelAdapter>;
+
+export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = IMPLEMENTED_ADAPTERS;
 
 /**
  * IMPORTANT: an adapter existing does not mean competitor data exists.
  *
- * Five of the eight adapters above are owned-channel integrations wearing the
+ * Several adapters above are owned-channel integrations wearing the
  * same interface as the open ones, and conflating the two is how a competitive
  * tool ends up quietly comparing a full picture of ourselves against an empty
  * one of everyone else. The honest split, as of 2026:
  *
  *  - **Comparable across competitors**: `bluesky` (open AT Protocol appview, no
- *    key at all), `youtube` (public Data API key), `rss` (open by definition),
- *    `twitter` (paid, but a Bearer token reads any public account).
+ *    key at all), `youtube` (public Data API key), `twitter` (EnsembleData is
+ *    the primary public source, with an X API v2 Bearer token available for a
+ *    sanctioned owned-account incremental timeline), and `reddit` (purchased
+ *    EnsembleData user and subreddit feeds; commercial terms still require review).
  *  - **Owned only, with a thin competitor exception**: `instagram`, via the
  *    Graph Business Discovery edge — followers, media, likes and comments for
  *    public Business/Creator accounts, and nothing else.
@@ -63,7 +73,6 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = {
  * the costs, the approval burden and the recommended acquisition strategy.
  */
 export const UNIMPLEMENTED_REASONS: Partial<Record<Platform, string>> = {
-  reddit: 'Not built yet — Reddit\'s public JSON endpoints make this the next viable adapter.',
   // Deliberately retired, not missing. A feed carries no engagement and no
   // audience, so every RSS post entered the averages as a genuine zero and
   // dragged engagement-per-post down for the handful of companies that had a
@@ -151,7 +160,9 @@ export function hasAdapter(platform: Platform): boolean {
  * settings page does not reshuffle itself between renders.
  */
 export function listAdapters(): ChannelAdapter[] {
-  return PLATFORMS.map((p) => ADAPTERS[p]).filter((a): a is ChannelAdapter => a !== undefined);
+  return ADAPTER_SUPPORTED_PLATFORMS
+    .map((platform) => ADAPTERS[platform])
+    .filter((adapter): adapter is ChannelAdapter => adapter !== undefined);
 }
 
 /** Adapters an org can use without configuring anything. Surfaced first in the

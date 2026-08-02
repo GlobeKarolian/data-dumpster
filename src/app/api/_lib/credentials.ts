@@ -26,7 +26,11 @@ const ENV_FALLBACKS: Partial<Record<Platform, Record<string, string | undefined>
     identifier: process.env.BLUESKY_IDENTIFIER,
     appPassword: process.env.BLUESKY_APP_PASSWORD,
   },
-  twitter: { bearerToken: process.env.TWITTER_BEARER_TOKEN },
+  twitter: {
+    bearerToken: process.env.TWITTER_BEARER_TOKEN,
+    ensembleDataToken: process.env.ENSEMBLEDATA_TOKEN,
+    brightDataApiKey: process.env.BRIGHTDATA_API_KEY,
+  },
   facebook: { accessToken: process.env.META_ACCESS_TOKEN },
   instagram: { accessToken: process.env.META_ACCESS_TOKEN },
   threads: { accessToken: process.env.META_ACCESS_TOKEN },
@@ -34,6 +38,9 @@ const ENV_FALLBACKS: Partial<Record<Platform, Record<string, string | undefined>
   tiktok: {
     clientKey: process.env.TIKTOK_CLIENT_KEY,
     clientSecret: process.env.TIKTOK_CLIENT_SECRET,
+  },
+  reddit: {
+    ensembleDataToken: process.env.ENSEMBLEDATA_TOKEN,
   },
 };
 

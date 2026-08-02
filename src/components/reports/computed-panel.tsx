@@ -36,27 +36,40 @@ function against(movement: Movement, previousLabel: string): string {
 export function RecomputeBar({
   computedAt,
   busy,
+  disabled = false,
   onRecompute,
   error,
 }: {
   computedAt: string | null;
   busy: boolean;
+  disabled?: boolean;
   onRecompute: () => void;
   error: string | null;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <span className="pb-num text-[11px] text-zinc-500 dark:text-zinc-400">
-        {computedAt
-          ? 'Computed ' + formatRelative(computedAt) + ' (' + formatDateTime(computedAt) + ')'
-          : 'Never computed'}
-      </span>
-      <Button size="sm" variant="secondary" onClick={onRecompute} disabled={busy}>
-        {busy
-          ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          : <RefreshCw className="h-3 w-3" aria-hidden />}
-        {busy ? 'Recomputing' : 'Recompute'}
-      </Button>
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <p className="max-w-2xl text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+        Recomputing replaces the numeric snapshot and clears narrative grounded
+        in the previous figures.
+      </p>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span className="pb-num text-[11px] text-zinc-500 dark:text-zinc-400">
+          {computedAt
+            ? 'Computed ' + formatRelative(computedAt) + ' (' + formatDateTime(computedAt) + ')'
+            : 'Never computed'}
+        </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onRecompute}
+          disabled={busy || disabled}
+        >
+          {busy
+            ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            : <RefreshCw className="h-3 w-3" aria-hidden />}
+          {busy ? 'Recomputing' : 'Recompute'}
+        </Button>
+      </div>
       {error ? (
         <span className="w-full text-right text-[11px] text-red-600 dark:text-red-400">{error}</span>
       ) : null}
@@ -85,7 +98,11 @@ export function PerformanceSection({ computed }: { computed: ComputedBlock }) {
             + 'not the total audience.'
           }
           value={formatSignedCount(f.netFollowers)}
-          tone={f.netFollowers > 0 ? 'up' : f.netFollowers < 0 ? 'down' : 'neutral'}
+          tone={
+            f.netFollowers === null
+              ? 'neutral'
+              : f.netFollowers > 0 ? 'up' : f.netFollowers < 0 ? 'down' : 'neutral'
+          }
           sub={f.previousNetFollowers === null
             ? 'no comparable prior week'
             : formatSignedCount(f.previousNetFollowers) + ' the week before'}
@@ -162,13 +179,17 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
             {computed.brands.map((b) => (
               <tr key={b.companyId}>
-                <td className="pb-num px-3 py-2 text-right text-xs text-zinc-400">{b.rank}</td>
+                <td className="pb-num px-3 py-2 text-right text-xs text-zinc-400">
+                  {b.rank ?? '—'}
+                </td>
                 <td className={TD + ' font-medium whitespace-nowrap'}>{b.name}</td>
                 <td className={TDR}>{formatCount(b.totalFollowers)}</td>
                 <td
-                  className={TDR + (b.netChange > 0
+                  className={TDR + (b.netChange !== null && b.netChange > 0
                     ? ' text-emerald-700 dark:text-emerald-400'
-                    : b.netChange < 0 ? ' text-red-700 dark:text-red-400' : '')}
+                    : b.netChange !== null && b.netChange < 0
+                      ? ' text-red-700 dark:text-red-400'
+                      : '')}
                 >
                   {formatSignedCount(b.netChange)}
                 </td>

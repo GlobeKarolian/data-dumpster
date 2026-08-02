@@ -7,6 +7,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { formatFullDate, formatRelative } from '@/components/ui/format';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { NewReportButton } from '@/components/reports/new-report-button';
+import { ScheduleManager } from '@/components/reports/schedule-manager';
+import { roleAtLeast } from '@/lib/roles';
 import { MANUAL_SECTIONS } from '@/lib/reports/types';
 import { resolveContext } from '../_lib/context';
 import { query, type SearchParamsInput } from '../_lib/data';
@@ -61,14 +63,22 @@ export default async function ReportsPage({
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
             The Platforms Dashboard and Digest, built rather than retyped. Follower totals,
-            engagement and the competitive ranking are computed from ingested data and regenerated
-            on demand, so a stale figure cannot survive a refresh. Search Console, referral traffic,
+            engagement and the competitive ranking are computed from ingested data and stored as a
+            dated snapshot; an editor can deliberately recompute that snapshot when the source data
+            changes. Search Console, referral traffic,
             paid promotion and Apple News live in systems this app does not read, so they get paste
             boxes and are labelled by hand. Every section carries its own narrative.
           </p>
         </div>
-        <NewReportButton landscapeId={ctx.landscape.id} />
+        {roleAtLeast(ctx.role, 'editor') ? (
+          <NewReportButton landscapeId={ctx.landscape.id} />
+        ) : null}
       </div>
+
+      <ScheduleManager
+        landscapeId={ctx.landscape.id}
+        canEdit={ctx.role === 'admin' || ctx.role === 'owner'}
+      />
 
       {reports.error ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">

@@ -14,11 +14,22 @@
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { apiHandler, requireOrg, requireRole, AuthError } from '@/lib/session';
+import { apiHandler, requireOrg, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
 import { weeklyReports } from '@/db/schema';
+import {
+  narrativeVerificationMessage,
+  verifyReportNarrative,
+} from '@/lib/reports/narrative-verification';
 import { readJson } from '../../_lib/query';
-import { loadReport, manualSchema, narrativeSchema, reportIdSchema, serializeReport } from '../_lib';
+import {
+  loadReport,
+  manualSchema,
+  narrativeSchema,
+  reportIdSchema,
+  serializeReport,
+  toReportDocument,
+} from '../_lib';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,7 +56,22 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
 
   // Prove ownership before writing, so a failed update cannot double as an
   // existence oracle for another org's report id.
-  await loadReport(id, orgId);
+  const existing = await loadReport(id, orgId);
+  if (body.manual !== undefined || body.narrative !== undefined) {
+    const current = toReportDocument(existing, '');
+    const verification = verifyReportNarrative({
+      ...current,
+      manual: body.manual ?? current.manual,
+      narrative: body.narrative ?? current.narrative,
+    });
+    if (!verification.ok) {
+      throw new HttpError(
+        422,
+        narrativeVerificationMessage(verification),
+        'unverified_narrative',
+      );
+    }
+  }
 
   const [row] = await db
     .update(weeklyReports)

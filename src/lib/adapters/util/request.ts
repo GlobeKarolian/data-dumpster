@@ -1,20 +1,61 @@
 /**
  * The request function the adapters call.
  *
- * WHY THIS FILE EXISTS: `util/http.ts` defines the entire transport *policy* —
- * retryable-status table, error-envelope parsing, `Retry-After` handling,
- * jittered backoff, and an exported `RawResponse` type — but stops before the
- * function that actually issues a request, and that file is owned elsewhere.
- * Rather than hand-roll a fetch in each of the YouTube / Bluesky / RSS
- * adapters (which is exactly the "seven subtly different retry bugs" outcome
- * http.ts's own header warns about), the policy is imported from there and
- * applied in one place here.
- *
- * If `fetchJson` later lands in `http.ts`, this file should be deleted and its
- * three importers repointed; the signatures are intentionally identical.
+ * This is the one transport implementation adapters call. `util/http.ts` is a
+ * compatibility barrel for older imports; it contains no second policy.
  */
+import type { Platform } from '@/lib/types';
 import { AdapterError } from '../types';
-import { buildUrl, parseRetryAfter, type HttpInit, type RawResponse } from './http';
+
+export type QueryValue = string | number | boolean | undefined | null;
+
+export interface HttpInit {
+  platform: Platform;
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  query?: Record<string, QueryValue>;
+  headers?: Record<string, string>;
+  body?: unknown;
+  form?: Record<string, string>;
+  timeoutMs?: number;
+  retries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  signal?: AbortSignal;
+  onApiCall?: () => void;
+  classifyRetryable?: (ctx: {
+    status: number;
+    body: string;
+    parsed: unknown;
+  }) => boolean | undefined;
+  extractMessage?: (parsed: unknown, body: string) => string | undefined;
+  retryAfterFromHeaders?: (headers: Headers) => number | undefined;
+}
+
+export interface RawResponse {
+  status: number;
+  headers: Headers;
+  text: string;
+}
+
+export function buildUrl(base: string, query?: Record<string, QueryValue>): string {
+  if (!query) return base;
+  const url = new URL(base);
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
+/** `Retry-After` can be delta-seconds or an HTTP date. */
+export function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const when = Date.parse(value);
+  if (Number.isFinite(when)) return Math.max(0, Math.round((when - Date.now()) / 1000));
+  return undefined;
+}
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_RETRIES = 3;

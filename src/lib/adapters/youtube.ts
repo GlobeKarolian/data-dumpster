@@ -231,11 +231,14 @@ async function collectUploads(
   uploadsPlaylistId: string,
   apiKey: string,
   ctx: FetchContext,
-): Promise<{ refs: UploadRef[]; hasMore: boolean }> {
+  initialPageToken?: string,
+): Promise<{ refs: UploadRef[]; hasMore: boolean; nextPageToken?: string }> {
   const refs: UploadRef[] = [];
-  let pageToken: string | undefined;
+  let pageToken = initialPageToken;
   let pages = 0;
-  let hasMore = false;
+  let nextPageToken: string | undefined;
+
+  if (ctx.limit <= 0) return { refs, hasMore: false };
 
   while (pages < MAX_PLAYLIST_PAGES) {
     pages++;
@@ -244,7 +247,10 @@ async function collectUploads(
       query: {
         part: 'contentDetails',
         playlistId: uploadsPlaylistId,
-        maxResults: MAX_PLAYLIST_PAGE,
+        // Never fetch more rows than this run can accept. Besides saving quota,
+        // this keeps the returned nextPageToken immediately after the final
+        // accepted row instead of skipping the remainder of a fetched page.
+        maxResults: Math.min(MAX_PLAYLIST_PAGE, ctx.limit - refs.length),
         pageToken,
       },
       ctx,
@@ -252,6 +258,7 @@ async function collectUploads(
 
     const root = asRecord(body);
     const items = asArray(root?.items);
+    nextPageToken = asString(root?.nextPageToken);
     let newestOnPage: Date | undefined;
 
     for (const raw of items) {
@@ -267,18 +274,42 @@ async function collectUploads(
 
     if (refs.length >= ctx.limit) {
       refs.length = ctx.limit;
-      hasMore = true;
-      break;
+      return {
+        refs,
+        hasMore: Boolean(nextPageToken),
+        nextPageToken,
+      };
     }
 
-    pageToken = asString(root?.nextPageToken);
-    if (!pageToken) break;
+    if (!nextPageToken) return { refs, hasMore: false };
     // Every item on this page predates the window: nothing older can qualify.
-    if (newestOnPage && newestOnPage < ctx.since) break;
-    if (pages >= MAX_PLAYLIST_PAGES) hasMore = true;
+    if (newestOnPage && newestOnPage < ctx.since) return { refs, hasMore: false };
+    pageToken = nextPageToken;
   }
 
-  return { refs, hasMore };
+  return {
+    refs,
+    hasMore: Boolean(nextPageToken),
+    nextPageToken,
+  };
+}
+
+function resumablePageToken(
+  ctx: FetchContext,
+  uploadsPlaylistId: string,
+): string | undefined {
+  const token = asString(ctx.cursor.nextPageToken);
+  if (!token) return undefined;
+
+  const cursorPlaylist = asString(ctx.cursor.uploadsPlaylistId);
+  if (cursorPlaylist && cursorPlaylist !== uploadsPlaylistId) return undefined;
+
+  const windowSince = asString(ctx.cursor.windowSince);
+  const windowUntil = asString(ctx.cursor.windowUntil);
+  if (!windowSince && !windowUntil) return token;
+  return windowSince === ctx.since.toISOString() && windowUntil === ctx.until.toISOString()
+    ? token
+    : undefined;
 }
 
 function toPost(item: Record<string, unknown>): NormalizedPost | undefined {
@@ -450,7 +481,12 @@ export const youtubeAdapter: ChannelAdapter = {
       warnings.push('This channel hides its subscriber count, so audience metrics will read 0.');
     }
 
-    const { refs, hasMore } = await collectUploads(resolved.uploadsPlaylistId, apiKey, ctx);
+    const { refs, hasMore, nextPageToken } = await collectUploads(
+      resolved.uploadsPlaylistId,
+      apiKey,
+      ctx,
+      resumablePageToken(ctx, resolved.uploadsPlaylistId),
+    );
     const posts = refs.length > 0
       ? await fetchVideoStats(refs.map((r) => r.videoId), apiKey, ctx)
       : [];
@@ -468,6 +504,14 @@ export const youtubeAdapter: ChannelAdapter = {
       cursor: {
         uploadsPlaylistId: resolved.uploadsPlaylistId,
         channelId: resolved.channelId,
+        windowSince: ctx.since.toISOString(),
+        windowUntil: ctx.until.toISOString(),
+        // Null is intentional: the runner merges cursors, so omitting this key
+        // after completion would leave the previous continuation token alive.
+        nextPageToken: hasMore ? nextPageToken ?? null : null,
+        // The runner uses this generic alias to preserve the requested window
+        // when a partial channel is resumed outside the collection queue.
+        nextCursor: hasMore ? nextPageToken ?? null : null,
         lastRunAt: new Date().toISOString(),
         newestPostedAt: posts.reduce<string | null>(
           (acc, p) => (!acc || p.postedAt.toISOString() > acc ? p.postedAt.toISOString() : acc), null,

@@ -6,6 +6,7 @@ import { TagPerformanceTable } from '@/components/tags/tag-performance-table';
 import { TagManager, type TagRecord } from '@/components/tags/tag-manager';
 import { analyticsQuery, resolveContext } from '../_lib/context';
 import { loadTagPerformance, query, type SearchParamsInput } from '../_lib/data';
+import { CrossChannelTabs } from '@/components/content/cross-channel-tabs';
 
 export const metadata: Metadata = { title: 'Post Tags' };
 
@@ -37,6 +38,7 @@ export default async function PostTagsPage({
 
   return (
     <div className="space-y-6">
+      <CrossChannelTabs />
       <PageSection
         title="Tag performance"
         description="What each tag earned in this window, and whether posts carrying it beat the same brand’s own average. Lift is the column that matters: a tag can carry a lot of engagement simply because it is applied to a lot of posts."

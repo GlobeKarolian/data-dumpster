@@ -62,6 +62,7 @@ export default async function SharedDashboardPage({
      LIMIT 1
   `);
 
+  if (result.error) throw new Error('Shared dashboard could not load: ' + result.error);
   const dashboard = result.data[0];
   if (!dashboard || !dashboard.landscape_id) notFound();
 
@@ -73,6 +74,7 @@ export default async function SharedDashboardPage({
      WHERE lc.landscape_id = ${landscapeId}::uuid
      ORDER BY lc.sort_order ASC, c.name ASC
   `);
+  if (members.error) throw new Error('Shared dashboard companies could not load: ' + members.error);
 
   const companies: CompanyRef[] = members.data.map((c) => ({
     id: c.id,

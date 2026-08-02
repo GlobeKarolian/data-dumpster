@@ -15,6 +15,7 @@ export interface LeaderboardPanelProps {
   maxRows?: number;
   className?: string;
   showCompetitorAverage?: boolean;
+  showPlatformBreakdown?: boolean;
 }
 
 /**
@@ -32,6 +33,7 @@ export function LeaderboardPanel({
   maxRows,
   className,
   showCompetitorAverage = true,
+  showPlatformBreakdown = false,
 }: LeaderboardPanelProps) {
   const def = METRIC_DEFS[metric];
   return (
@@ -49,6 +51,7 @@ export function LeaderboardPanel({
         color={color}
         maxRows={maxRows}
         showCompetitorAverage={showCompetitorAverage}
+        showPlatformBreakdown={showPlatformBreakdown}
       />
     </Panel>
   );

@@ -16,9 +16,11 @@ import { MetricLabel } from '@/components/ui/metric-label';
 export function PlatformMixPanel({
   summary,
   error,
+  title,
 }: {
   summary: SummaryResult | null;
   error?: string | null;
+  title?: string;
 }) {
   const mix = summary?.platformMix ?? [];
   const metric = mix[0]?.metric ?? 'engagementTotal';
@@ -26,7 +28,7 @@ export function PlatformMixPanel({
 
   return (
     <Panel
-      title="Platform mix"
+      title={title ?? 'Platform mix'}
       description={
         <span>
           {'Split of the focus company’s ' + METRIC_DEFS[metric].label.toLowerCase() + ' across channels.'}

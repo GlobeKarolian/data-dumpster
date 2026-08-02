@@ -2,10 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Download, FileDown, Link2, Sparkles } from 'lucide-react';
 import { Popover, PopoverTriggerSurface } from '@/components/ui/popover';
-import { useUrlState } from '@/components/common/use-url-state';
+import { hrefWithGlobalParams, useUrlState } from '@/components/common/use-url-state';
 import { apiUrl } from '@/components/common/api-params';
+import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
+import type { Platform } from '@/lib/types';
+
+const PLATFORM_PATHS = new Set<string>(ADAPTER_SUPPORTED_PLATFORMS);
 
 export interface ExportTarget {
   label: string;
@@ -27,10 +32,24 @@ export function ExportMenu({
   landscapeId: string | null;
 }) {
   const { searchParams } = useUrlState();
+  const pathname = usePathname();
   const [copied, setCopied] = React.useState(false);
 
   const withParams = (href: string) =>
     landscapeId ? apiUrl(href, searchParams, landscapeId) : href;
+  const firstPathSegment = pathname.split('/').filter(Boolean)[0];
+  const fixedPlatform =
+    firstPathSegment && PLATFORM_PATHS.has(firstPathSegment)
+      ? firstPathSegment as Platform
+      : null;
+  const briefHref = hrefWithGlobalParams(
+    '/briefs',
+    searchParams,
+    {
+      ...(landscapeId ? { landscape: landscapeId } : {}),
+      ...(fixedPlatform ? { platforms: [fixedPlatform] } : {}),
+    },
+  );
 
   const copyLink = async () => {
     try {
@@ -93,7 +112,7 @@ export function ExportMenu({
             </span>
           </button>
           <Link
-            href="/briefs"
+            href={briefHref}
             onClick={close}
             className="flex items-start gap-2 rounded px-2 py-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >

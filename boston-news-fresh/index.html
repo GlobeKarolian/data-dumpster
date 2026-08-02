@@ -1,0 +1,2205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Boston News brings Boston.com, Boston Magazine, and the B-Side into one personalized iOS news app.">
+  <title>Boston News | Three titles. One app.</title>
+  <script>document.documentElement.classList.add('js');</script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600;6..72,800&display=swap');
+
+    :root {
+      --paper: #FBFAF7;
+      --ink: #1F1D1A;
+      --red: #C8102E;
+      --teal: #0E7C7B;
+      --soft: #55514A;
+      --white: #FFFFFF;
+      --hairline: rgba(31, 29, 26, 0.24);
+      --serif: "Newsreader", Georgia, "Times New Roman", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--paper);
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p,
+    figure {
+      margin: 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      font-family: var(--serif);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+
+    .page {
+      width: min(960px, calc(100% - 48px));
+      margin-inline: auto;
+    }
+
+    .double-rule {
+      height: 7px;
+      border-top: 4px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .eyebrow,
+    .slug,
+    .rail-time,
+    .folio,
+    .device-name {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.17em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .body-copy {
+      color: var(--soft);
+      font-size: 16px;
+      line-height: 24px;
+    }
+
+    .cta-line {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 24px;
+      border: 2px solid var(--red);
+      border-radius: 999px;
+      background: var(--red);
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-decoration: none;
+      transition: background-color 160ms ease, border-color 160ms ease;
+    }
+
+    .cta:hover,
+    .cta:focus-visible {
+      border-color: var(--ink);
+      background: var(--ink);
+    }
+
+    .cta:focus-visible {
+      outline: 2px solid var(--red);
+      outline-offset: 4px;
+    }
+
+    .cta-note {
+      color: var(--soft);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 16px;
+      white-space: nowrap;
+    }
+
+    .hero {
+      padding-top: 24px;
+      text-align: center;
+    }
+
+    .hero .eyebrow {
+      margin-top: 24px;
+    }
+
+    .hero-copy {
+      padding: 48px 0 40px;
+    }
+
+    .hero-time {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: var(--red);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .hero-time::before,
+    .hero-time::after {
+      width: 32px;
+      height: 1px;
+      background: var(--red);
+      content: "";
+    }
+
+    .hero h1 {
+      font-size: clamp(56px, 7vw, 80px);
+      line-height: 0.9;
+    }
+
+    .hero-lede {
+      max-width: 46ch;
+      margin: 24px auto 0;
+      color: var(--soft);
+      font-family: var(--serif);
+      font-size: clamp(20px, 2.4vw, 26px);
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .edition-board {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 304px 1fr;
+      align-items: center;
+      min-height: 632px;
+      overflow: hidden;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .edition-board::before {
+      position: absolute;
+      top: 52%;
+      right: 0;
+      left: 0;
+      height: 8px;
+      background: var(--red);
+      content: "";
+    }
+
+    .edition-rail {
+      position: relative;
+      z-index: 1;
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 32px;
+      text-align: left;
+    }
+
+    .edition-rail.left {
+      border-right: 1px solid var(--hairline);
+    }
+
+    .edition-rail.right {
+      border-left: 1px solid var(--hairline);
+    }
+
+    .edition-cell {
+      padding: 16px 0;
+      border-top: 1px solid var(--ink);
+    }
+
+    .edition-cell:last-child {
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .edition-cell span,
+    .edition-cell small {
+      display: block;
+      color: var(--soft);
+      font-size: 9px;
+      font-style: normal;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .edition-cell strong {
+      display: block;
+      margin-top: 4px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 22px;
+    }
+
+    .edition-cell.red strong {
+      color: var(--red);
+    }
+
+    .hero-phone-wrap {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      justify-items: center;
+      padding-top: 32px;
+    }
+
+    .phone {
+      position: relative;
+      width: 288px;
+      padding: 10px;
+      border: 3px solid var(--ink);
+      border-radius: 48px;
+      background: var(--ink);
+    }
+
+    .phone::before {
+      position: absolute;
+      z-index: 2;
+      top: 18px;
+      left: 50%;
+      width: 92px;
+      height: 24px;
+      border-radius: 16px;
+      background: var(--ink);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .phone-screen {
+      overflow: hidden;
+      border-radius: 36px;
+      background: var(--white);
+    }
+
+    .phone-screen img {
+      width: 100%;
+      height: auto;
+    }
+
+    .hero-phone-caption {
+      margin-top: 16px;
+      padding: 4px 8px;
+      background: var(--paper);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .photo-band {
+      display: grid;
+      grid-template-columns: 5fr 3fr 2fr;
+      width: min(960px, calc(100% - 48px));
+      height: 280px;
+      margin-inline: auto;
+      border-right: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+      border-left: 1px solid var(--ink);
+    }
+
+    .photo-story {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--paper);
+      color: var(--white);
+    }
+
+    .photo-story:last-child {
+      border-right: 0;
+    }
+
+    .photo-story img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .photo-story:nth-child(1) img {
+      object-position: center 62%;
+    }
+
+    .photo-story:nth-child(2) img {
+      object-position: 58% center;
+    }
+
+    .photo-story:nth-child(3) img {
+      object-position: 48% center;
+    }
+
+    .photo-caption {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      padding: 80px 16px 16px;
+      background: linear-gradient(to bottom, rgba(31, 29, 26, 0), rgba(31, 29, 26, 0.94));
+    }
+
+    .photo-kicker {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .photo-caption h2 {
+      font-size: 28px;
+      line-height: 0.98;
+    }
+
+    .photo-story:not(:first-child) .photo-caption h2 {
+      font-size: 21px;
+    }
+
+    .daily-run {
+      width: min(960px, calc(100% - 48px));
+      margin-inline: auto;
+    }
+
+    .day-section {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+    }
+
+    .day-rail {
+      position: relative;
+      min-height: 100%;
+      border-right: 1px solid var(--red);
+    }
+
+    .day-rail::before {
+      position: absolute;
+      top: 0;
+      right: -1px;
+      bottom: 0;
+      width: 2px;
+      background: var(--red);
+      content: "";
+    }
+
+    .rail-time {
+      position: sticky;
+      top: 24px;
+      display: inline-block;
+      margin-top: 96px;
+      color: var(--red);
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+    }
+
+    .rail-time::before {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-bottom: 8px;
+      background: var(--red);
+      content: "";
+    }
+
+    .day-content {
+      min-width: 0;
+      margin-left: 40px;
+      padding: 96px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .section-label {
+      margin-bottom: 16px;
+      color: var(--red);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.17em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .feature-copy h2,
+    .section-heading {
+      font-size: clamp(48px, 6vw, 72px);
+      line-height: 0.94;
+    }
+
+    .feature-copy .body-copy,
+    .section-copy {
+      margin-top: 24px;
+    }
+
+    .today-layout {
+      display: grid;
+      grid-template-columns: 5fr 7fr;
+      gap: 40px;
+      align-items: start;
+    }
+
+    .today-proof {
+      padding-top: 8px;
+    }
+
+    .personal-rule {
+      margin-top: 32px;
+      padding: 16px 0;
+      border-top: 4px solid var(--red);
+      border-bottom: 1px solid var(--ink);
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 24px;
+    }
+
+    .edition-assembly {
+      display: grid;
+      grid-template-columns: 224px 1fr;
+      min-height: 568px;
+      overflow: hidden;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .assembly-phone {
+      align-self: end;
+      width: 216px;
+      margin-bottom: -88px;
+      padding: 8px;
+      border: 3px solid var(--ink);
+      border-radius: 40px 40px 0 0;
+      background: var(--ink);
+    }
+
+    .assembly-phone img {
+      width: 100%;
+      border-radius: 30px 30px 0 0;
+    }
+
+    .assembly-ledger {
+      align-self: center;
+      border-left: 1px solid var(--ink);
+    }
+
+    .ledger-item {
+      padding: 16px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .ledger-item:last-child {
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .ledger-item span {
+      display: block;
+      color: var(--red);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .ledger-item strong {
+      display: block;
+      margin-top: 4px;
+      font-family: var(--serif);
+      font-size: 18px;
+      line-height: 20px;
+    }
+
+    .ledger-item small {
+      display: block;
+      margin-top: 4px;
+      color: var(--soft);
+      font-size: 10px;
+      line-height: 16px;
+    }
+
+    .proof-section .day-content {
+      padding: 0;
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .proof-head {
+      display: grid;
+      grid-template-columns: 7fr 5fr;
+      gap: 40px;
+      padding: 48px 40px 40px;
+    }
+
+    .proof-head h2 {
+      font-size: clamp(48px, 5.5vw, 68px);
+      line-height: 0.94;
+    }
+
+    .proof-head p {
+      align-self: end;
+      color: rgba(251, 250, 247, 0.72);
+      font-size: 14px;
+      line-height: 22px;
+    }
+
+    .proof-note {
+      padding: 12px 40px;
+      border-top: 1px solid rgba(251, 250, 247, 0.28);
+      border-bottom: 1px solid rgba(251, 250, 247, 0.28);
+      color: var(--paper);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .proof-note b {
+      color: var(--red);
+    }
+
+    .receipt-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      align-items: center;
+      min-height: 344px;
+      padding: 40px 32px 56px;
+    }
+
+    .receipt-card {
+      min-height: 224px;
+      padding: 20px;
+      border: 1px solid var(--ink);
+      background: var(--white);
+      color: var(--ink);
+    }
+
+    .receipt-card:nth-child(1) {
+      transform: rotate(-2deg);
+    }
+
+    .receipt-card:nth-child(2) {
+      transform: rotate(1.5deg) translateY(12px);
+    }
+
+    .receipt-card:nth-child(3) {
+      transform: rotate(-1deg) translateY(-8px);
+    }
+
+    .reason {
+      display: block;
+      margin: -20px -20px 16px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--ink);
+      color: var(--red);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      line-height: 14px;
+      text-transform: uppercase;
+    }
+
+    .receipt-card h3 {
+      font-size: 25px;
+      line-height: 0.98;
+    }
+
+    .receipt-meta {
+      margin-top: 24px;
+      padding-top: 8px;
+      border-top: 1px solid var(--ink);
+      color: var(--soft);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .events-head {
+      display: grid;
+      grid-template-columns: 7fr 5fr;
+      gap: 40px;
+      align-items: end;
+      margin-bottom: 48px;
+    }
+
+    .events-head .body-copy {
+      padding-top: 16px;
+      border-top: 4px solid var(--red);
+    }
+
+    .day-ledger {
+      display: grid;
+      grid-template-columns: 5fr 7fr;
+      gap: 32px;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .wire {
+      padding: 24px 24px 24px 0;
+      border-right: 1px solid var(--ink);
+    }
+
+    .wire-head,
+    .events-titlebar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .wire-head h3,
+    .events-titlebar h3 {
+      font-size: 30px;
+      line-height: 32px;
+    }
+
+    .wire-head span,
+    .events-titlebar span {
+      color: var(--red);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .section-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .section-chip {
+      min-height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .section-chip.active {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .wire-item {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 12px;
+      padding: 16px 0;
+      border-top: 1px solid var(--hairline);
+    }
+
+    .wire-item time {
+      color: var(--red);
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 16px;
+    }
+
+    .wire-item strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 18px;
+      line-height: 19px;
+    }
+
+    .wire-item span {
+      display: block;
+      margin-top: 4px;
+      color: var(--soft);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      line-height: 14px;
+      text-transform: uppercase;
+    }
+
+    .events-list {
+      padding: 24px 0;
+    }
+
+    .event-card {
+      margin-bottom: 16px;
+      padding: 20px;
+      border-top: 4px solid var(--red);
+      border-right: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+      border-left: 1px solid var(--ink);
+      background: var(--white);
+    }
+
+    .event-topline {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .event-topline span {
+      color: var(--soft);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.11em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .event-card h4 {
+      font-size: 28px;
+      line-height: 28px;
+    }
+
+    .music-label {
+      margin-top: 16px;
+      color: var(--soft);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .music-line {
+      margin-top: 4px;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 18px;
+    }
+
+    .music-line strong {
+      color: var(--red);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .event-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      border: 1px solid var(--ink);
+      background: var(--ink);
+    }
+
+    .event-mini {
+      padding: 16px;
+      background: var(--paper);
+    }
+
+    .event-mini span {
+      color: var(--red);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .event-mini h4 {
+      margin-top: 4px;
+      font-size: 20px;
+      line-height: 20px;
+    }
+
+    .event-mini p {
+      margin-top: 8px;
+      color: var(--soft);
+      font-size: 10px;
+      line-height: 16px;
+    }
+
+    .share-layout {
+      display: grid;
+      grid-template-columns: 7fr 5fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .share-visual {
+      position: relative;
+      padding: 40px 0;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .raw-link {
+      margin-bottom: 24px;
+      padding: 8px 12px;
+      border-left: 4px solid var(--red);
+      color: var(--soft);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      line-height: 16px;
+    }
+
+    .share-visual img {
+      width: 86%;
+      margin-inline: auto;
+      border: 1px solid var(--ink);
+    }
+
+    .annotation {
+      position: absolute;
+      color: var(--red);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      line-height: 12px;
+      text-transform: uppercase;
+    }
+
+    .annotation::after {
+      display: block;
+      width: 40px;
+      height: 1px;
+      margin-top: 4px;
+      background: var(--red);
+      content: "";
+    }
+
+    .annotation.masthead {
+      top: 112px;
+      left: 0;
+    }
+
+    .annotation.photo {
+      top: 48%;
+      right: 0;
+      text-align: right;
+    }
+
+    .annotation.photo::after {
+      margin-left: auto;
+    }
+
+    .annotation.source {
+      right: 0;
+      bottom: 64px;
+      text-align: right;
+    }
+
+    .annotation.source::after {
+      margin-left: auto;
+    }
+
+    .share-copy h2 {
+      font-size: clamp(52px, 6.4vw, 76px);
+      line-height: 0.92;
+    }
+
+    .share-copy .body-copy {
+      margin-top: 24px;
+    }
+
+    .share-proof {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 4px solid var(--red);
+      font-family: var(--serif);
+      font-size: 19px;
+      font-weight: 800;
+      line-height: 22px;
+    }
+
+    .circle-section .day-rail {
+      border-right-color: var(--teal);
+    }
+
+    .circle-section .day-rail::before,
+    .circle-section .rail-time::before {
+      background: var(--teal);
+    }
+
+    .circle-section .rail-time {
+      color: var(--teal);
+    }
+
+    .circle-section .day-content {
+      padding: 56px 40px;
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .circle-layout {
+      display: grid;
+      grid-template-columns: 5fr 7fr;
+      gap: 40px;
+      align-items: center;
+    }
+
+    .circle-copy .section-label {
+      color: var(--paper);
+    }
+
+    .circle-copy h2 {
+      font-size: clamp(52px, 6vw, 72px);
+      line-height: 0.92;
+    }
+
+    .circle-copy > p:not(.section-label):not(.privacy-line) {
+      margin-top: 24px;
+      color: rgba(251, 250, 247, 0.74);
+      font-size: 14px;
+      line-height: 22px;
+    }
+
+    .circle-steps {
+      margin-top: 32px;
+      border-top: 1px solid rgba(251, 250, 247, 0.28);
+    }
+
+    .circle-step {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 12px;
+      padding: 16px 0;
+      border-bottom: 1px solid rgba(251, 250, 247, 0.28);
+    }
+
+    .circle-step b {
+      color: var(--teal);
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 24px;
+    }
+
+    .circle-step strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 18px;
+      line-height: 20px;
+    }
+
+    .circle-step span {
+      display: block;
+      margin-top: 4px;
+      color: rgba(251, 250, 247, 0.64);
+      font-size: 10px;
+      line-height: 16px;
+    }
+
+    .privacy-line {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 4px solid var(--teal);
+      color: var(--teal);
+      font-family: var(--serif);
+      font-size: 19px;
+      font-weight: 800;
+      line-height: 22px;
+    }
+
+    .circle-visual {
+      display: grid;
+      place-items: center;
+    }
+
+    .circle-phone {
+      width: 272px;
+      min-height: 536px;
+      padding: 10px;
+      border: 3px solid var(--paper);
+      border-radius: 44px;
+      background: var(--ink);
+    }
+
+    .circle-screen {
+      position: relative;
+      min-height: 510px;
+      overflow: hidden;
+      border-radius: 32px;
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    .circle-front {
+      padding: 40px 20px 160px;
+    }
+
+    .circle-front .slug {
+      color: var(--teal);
+    }
+
+    .circle-front h3 {
+      margin-top: 8px;
+      font-size: 30px;
+      line-height: 30px;
+    }
+
+    .circle-shelf {
+      margin-top: 24px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .shelf-story {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .shelf-initial {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border: 1px solid var(--teal);
+      border-radius: 50%;
+      color: var(--teal);
+      font-family: var(--serif);
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .shelf-story strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 14px;
+      line-height: 15px;
+    }
+
+    .shelf-story span {
+      display: block;
+      margin-top: 4px;
+      color: var(--soft);
+      font-size: 9px;
+      line-height: 14px;
+    }
+
+    .circle-sheet {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      padding: 16px 16px 20px;
+      border-top: 4px solid var(--teal);
+      background: var(--white);
+    }
+
+    .sheet-handle {
+      width: 32px;
+      height: 3px;
+      margin: 0 auto 12px;
+      background: rgba(31, 29, 26, 0.24);
+    }
+
+    .circle-sheet h4 {
+      font-size: 22px;
+      line-height: 24px;
+    }
+
+    .circle-stat {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--hairline);
+      font-size: 10px;
+      line-height: 14px;
+    }
+
+    .circle-stat strong {
+      color: var(--teal);
+      white-space: nowrap;
+    }
+
+    .circle-boundary {
+      margin-top: 16px;
+      color: rgba(251, 250, 247, 0.64);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .devices-head {
+      display: grid;
+      grid-template-columns: 7fr 5fr;
+      gap: 40px;
+      align-items: end;
+      margin-bottom: 48px;
+    }
+
+    .devices-head .body-copy {
+      padding-top: 16px;
+      border-top: 4px solid var(--red);
+    }
+
+    .device-stage {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 16px;
+      min-height: 456px;
+      padding: 56px 16px 72px;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .device-stage::after {
+      position: absolute;
+      right: 16px;
+      bottom: 64px;
+      left: 16px;
+      height: 8px;
+      background: var(--red);
+      content: "";
+    }
+
+    .device-unit {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      justify-items: center;
+      flex: 0 1 auto;
+    }
+
+    .device-name {
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .device-time {
+      margin-top: 16px;
+      padding: 2px 6px;
+      background: var(--paper);
+      color: var(--soft);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      line-height: 16px;
+      text-transform: uppercase;
+    }
+
+    .tv-device {
+      width: 216px;
+    }
+
+    .tv-shell {
+      padding: 8px;
+      border: 3px solid var(--ink);
+      background: var(--paper);
+    }
+
+    .tv-screen {
+      min-height: 120px;
+      padding: 16px;
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .tv-screen span {
+      color: var(--red);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .tv-screen strong {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 21px;
+    }
+
+    .tv-stand {
+      width: 72px;
+      height: 18px;
+      margin: 0 auto;
+      border-right: 2px solid var(--ink);
+      border-bottom: 2px solid var(--ink);
+      border-left: 2px solid var(--ink);
+    }
+
+    .ipad-device {
+      width: 160px;
+    }
+
+    .ipad-shell {
+      padding: 8px;
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: var(--paper);
+    }
+
+    .ipad-screen {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      min-height: 180px;
+      padding: 12px;
+      border: 1px solid var(--ink);
+    }
+
+    .ipad-lead {
+      border-right: 1px solid var(--ink);
+      font-family: var(--serif);
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 15px;
+    }
+
+    .ipad-list span {
+      display: block;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--hairline);
+      font-size: 8px;
+      font-weight: 800;
+      line-height: 10px;
+    }
+
+    .mini-phone-device {
+      width: 84px;
+    }
+
+    .mini-phone {
+      min-height: 176px;
+      padding: 16px 8px;
+      border: 3px solid var(--ink);
+      border-radius: 22px;
+      background: var(--paper);
+    }
+
+    .mini-phone span {
+      color: var(--red);
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mini-phone strong {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 16px;
+      line-height: 15px;
+    }
+
+    .watch-device {
+      width: 72px;
+    }
+
+    .watch-band {
+      width: 36px;
+      height: 32px;
+      margin: 0 auto;
+      border-right: 2px solid var(--ink);
+      border-left: 2px solid var(--ink);
+    }
+
+    .watch-face {
+      display: grid;
+      width: 72px;
+      height: 84px;
+      place-items: center;
+      border: 3px solid var(--ink);
+      border-radius: 24px;
+      background: var(--ink);
+      color: var(--paper);
+      text-align: center;
+    }
+
+    .watch-face strong {
+      font-family: var(--serif);
+      font-size: 28px;
+      line-height: 24px;
+    }
+
+    .watch-face span {
+      display: block;
+      margin-top: 4px;
+      color: var(--paper);
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      line-height: 9px;
+      text-transform: uppercase;
+    }
+
+    .car-device {
+      width: 168px;
+    }
+
+    .car-shell {
+      min-height: 112px;
+      padding: 12px;
+      border: 3px solid var(--ink);
+      border-radius: 14px;
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .car-shell span {
+      color: var(--red);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .car-shell strong {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 18px;
+      line-height: 18px;
+    }
+
+    .car-controls {
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(251, 250, 247, 0.36);
+      font-size: 10px;
+      letter-spacing: 0.35em;
+      text-align: center;
+    }
+
+    .closing {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+    }
+
+    .closing .day-rail {
+      min-height: 100%;
+    }
+
+    .closing .rail-time {
+      margin-top: 96px;
+    }
+
+    .closing-content {
+      margin-left: 40px;
+      padding: 104px 0 48px;
+    }
+
+    .closing h2 {
+      max-width: 760px;
+      font-size: clamp(88px, 12vw, 144px);
+      line-height: 0.82;
+    }
+
+    .red-period {
+      color: var(--red);
+    }
+
+    .closing .cta-line {
+      justify-content: flex-start;
+      margin-top: 40px;
+    }
+
+    .baseline {
+      width: 112px;
+      height: 8px;
+      margin-top: 40px;
+      background: var(--red);
+    }
+
+    .footer {
+      width: min(960px, calc(100% - 48px));
+      margin-inline: auto;
+      padding: 24px 0 32px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .folio {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--soft);
+    }
+
+    .folio strong {
+      color: var(--ink);
+    }
+
+    .js .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+
+    .js .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 820px) {
+      .edition-board {
+        grid-template-columns: 1fr 280px 1fr;
+      }
+
+      .edition-rail {
+        padding: 24px 16px;
+      }
+
+      .edition-cell strong {
+        font-size: 18px;
+        line-height: 19px;
+      }
+
+      .today-layout,
+      .share-layout,
+      .circle-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .edition-assembly {
+        margin-top: 40px;
+      }
+
+      .proof-head,
+      .events-head,
+      .devices-head {
+        grid-template-columns: 1fr;
+      }
+
+      .receipt-cards {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
+      .receipt-card {
+        min-height: 0;
+      }
+
+      .day-ledger {
+        grid-template-columns: 1fr;
+      }
+
+      .wire {
+        padding-right: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--ink);
+      }
+
+      .share-copy {
+        order: -1;
+      }
+
+      .circle-visual {
+        margin-top: 40px;
+      }
+
+      .device-stage {
+        flex-wrap: wrap;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .page,
+      .daily-run,
+      .footer {
+        width: calc(100% - 32px);
+      }
+
+      .hero {
+        padding-top: 16px;
+      }
+
+      .hero .eyebrow {
+        margin-top: 16px;
+        font-size: 9px;
+        letter-spacing: 0.12em;
+      }
+
+      .hero-copy {
+        padding: 40px 0 32px;
+      }
+
+      .hero h1 {
+        max-width: 350px;
+        margin-inline: auto;
+        font-size: clamp(56px, 16vw, 68px);
+      }
+
+      .hero-lede {
+        margin-top: 16px;
+        font-size: 18px;
+        line-height: 23px;
+      }
+
+      .cta-line {
+        gap: 8px;
+      }
+
+      .cta {
+        min-height: 44px;
+        padding-inline: 18px;
+        font-size: 13px;
+      }
+
+      .cta-note {
+        font-size: 9px;
+        letter-spacing: -0.01em;
+      }
+
+      .edition-board {
+        grid-template-columns: 1fr 1fr;
+        min-height: 760px;
+      }
+
+      .edition-board::before {
+        top: 42%;
+      }
+
+      .edition-rail {
+        align-self: start;
+        min-height: 224px;
+        padding: 16px;
+      }
+
+      .edition-rail.left {
+        grid-row: 1;
+        grid-column: 1;
+        border-right: 1px solid var(--hairline);
+      }
+
+      .edition-rail.right {
+        grid-row: 1;
+        grid-column: 2;
+        border-left: 0;
+      }
+
+      .edition-cell {
+        padding: 12px 0;
+      }
+
+      .edition-cell strong {
+        font-size: 16px;
+        line-height: 17px;
+      }
+
+      .hero-phone-wrap {
+        grid-row: 2;
+        grid-column: 1 / -1;
+        align-self: end;
+        padding-top: 16px;
+      }
+
+      .phone {
+        width: 264px;
+      }
+
+      .photo-band {
+        grid-template-columns: 1fr 1fr;
+        width: calc(100% - 32px);
+        height: auto;
+      }
+
+      .photo-story {
+        min-height: 176px;
+      }
+
+      .photo-story:first-child {
+        grid-column: 1 / -1;
+        min-height: 224px;
+        border-right: 0;
+        border-bottom: 1px solid var(--paper);
+      }
+
+      .photo-caption {
+        padding: 64px 12px 12px;
+      }
+
+      .photo-caption h2,
+      .photo-story:not(:first-child) .photo-caption h2 {
+        font-size: 21px;
+      }
+
+      .day-section,
+      .closing {
+        grid-template-columns: 24px minmax(0, 1fr);
+      }
+
+      .rail-time {
+        top: 16px;
+        margin-top: 64px;
+        font-size: 8px;
+        letter-spacing: 0.12em;
+      }
+
+      .day-content,
+      .closing-content {
+        margin-left: 16px;
+        padding: 72px 0;
+      }
+
+      .feature-copy h2,
+      .section-heading,
+      .proof-head h2,
+      .share-copy h2,
+      .circle-copy h2 {
+        font-size: 48px;
+      }
+
+      .today-layout {
+        gap: 0;
+      }
+
+      .edition-assembly {
+        grid-template-columns: 144px 1fr;
+        min-height: 504px;
+      }
+
+      .assembly-phone {
+        width: 140px;
+        margin-bottom: -48px;
+        padding: 5px;
+        border-width: 2px;
+        border-radius: 28px 28px 0 0;
+      }
+
+      .assembly-phone img {
+        border-radius: 20px 20px 0 0;
+      }
+
+      .ledger-item {
+        padding: 12px;
+      }
+
+      .ledger-item strong {
+        font-size: 15px;
+        line-height: 16px;
+      }
+
+      .proof-head {
+        gap: 24px;
+        padding: 40px 20px 32px;
+      }
+
+      .proof-note {
+        padding-inline: 20px;
+      }
+
+      .receipt-cards {
+        padding: 40px 24px 48px;
+      }
+
+      .receipt-card:nth-child(1),
+      .receipt-card:nth-child(2),
+      .receipt-card:nth-child(3) {
+        transform: rotate(-1deg);
+      }
+
+      .receipt-card:nth-child(2) {
+        transform: rotate(1deg);
+      }
+
+      .events-head,
+      .devices-head {
+        gap: 24px;
+        margin-bottom: 40px;
+      }
+
+      .event-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .share-layout {
+        gap: 40px;
+      }
+
+      .share-visual img {
+        width: 94%;
+      }
+
+      .annotation {
+        display: none;
+      }
+
+      .circle-section .day-content {
+        margin-left: 0;
+        padding: 48px 24px;
+      }
+
+      .circle-phone {
+        width: 248px;
+      }
+
+      .device-stage {
+        gap: 24px 12px;
+        padding-inline: 0;
+      }
+
+      .tv-device {
+        width: 200px;
+      }
+
+      .ipad-device {
+        width: 144px;
+      }
+
+      .car-device {
+        width: 152px;
+      }
+
+      .closing-content {
+        padding-top: 88px;
+      }
+
+      .closing h2 {
+        font-size: 72px;
+      }
+
+      .closing .cta-line {
+        gap: 8px;
+      }
+
+      .folio {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+      }
+
+      .js .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero page" aria-labelledby="hero-title">
+    <div class="double-rule" aria-hidden="true"></div>
+    <p class="eyebrow">BOSTON.COM · BOSTON MAGAZINE · B-SIDE</p>
+    <div class="hero-copy">
+      <p class="hero-time">The morning edition · 6:14 AM</p>
+      <h1 id="hero-title">Three titles. One app.</h1>
+      <p class="hero-lede">The biggest Boston stories, the news you follow, and tonight’s best plans, together on one front page built for your day.</p>
+      <div class="cta-line">
+        <a class="cta" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get the beta</a>
+        <span class="cta-note">Free during the preview · iPhone &amp; iPad</span>
+      </div>
+    </div>
+
+    <div class="edition-board" aria-label="Boston News morning edition assembled around the personalized front page">
+      <aside class="edition-rail left">
+        <div class="edition-cell">
+          <span>6:14 AM · Boston</span>
+          <strong>71° and rain by four</strong>
+          <small>Commute watch · Green Line clear</small>
+        </div>
+        <div class="edition-cell">
+          <span>Always leads</span>
+          <strong>The biggest local story</strong>
+          <small>Edited for every reader</small>
+        </div>
+      </aside>
+
+      <div class="hero-phone-wrap">
+        <div class="phone">
+          <div class="phone-screen">
+            <img src="landing-assets/front.png" alt="Boston News Your Today front page on iPhone">
+          </div>
+        </div>
+        <span class="hero-phone-caption">Your Today · edited now</span>
+      </div>
+
+      <aside class="edition-rail right">
+        <div class="edition-cell">
+          <span>Your edition</span>
+          <strong>Red Sox · Cambridge · Live music</strong>
+          <small>Chosen by you</small>
+        </div>
+        <div class="edition-cell red">
+          <span>Since 6:00 AM</span>
+          <strong>11 stories moved closer</strong>
+          <small>Nothing important moved down</small>
+        </div>
+      </aside>
+    </div>
+  </header>
+
+  <main>
+    <section class="photo-band reveal" aria-label="Morning rundown from Boston News">
+      <figure class="photo-story">
+        <img src="landing-assets/weather.jpg" alt="Pedestrians crossing a rain-soaked Boston street">
+        <figcaption class="photo-caption">
+          <span class="photo-kicker">01 · Local · Storm watch</span>
+          <h2>Flash flooding puts the evening commute on alert</h2>
+        </figcaption>
+      </figure>
+      <figure class="photo-story">
+        <img src="landing-assets/sox.jpg" alt="A Boston Red Sox player on the field">
+        <figcaption class="photo-caption">
+          <span class="photo-kicker">02 · Red Sox</span>
+          <h2>The move that changes the stretch run</h2>
+        </figcaption>
+      </figure>
+      <figure class="photo-story">
+        <img src="landing-assets/local.jpg" alt="A lighthouse on the Massachusetts coast">
+        <figcaption class="photo-caption">
+          <span class="photo-kicker">03 · To do</span>
+          <h2>A perfect day on the Cape</h2>
+        </figcaption>
+      </figure>
+    </section>
+
+    <div class="daily-run">
+      <section class="day-section reveal" aria-labelledby="today-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">7:24 AM · Your edition</span></aside>
+        <div class="day-content">
+          <div class="today-layout">
+            <div class="feature-copy">
+              <p class="section-label">Introducing Your Today</p>
+              <h2 id="today-title">Boston News, made for your day.</h2>
+              <p class="body-copy">Pick the interests and neighborhoods you care about. Your Today brings them forward while the biggest local stories still lead for everyone.</p>
+              <p class="personal-rule">Personalization boosts. It never buries.</p>
+            </div>
+            <div class="today-proof">
+              <div class="edition-assembly" aria-label="How a personalized edition is assembled">
+                <div class="assembly-phone">
+                  <img src="landing-assets/onboarding.png" alt="Boston News onboarding for interests and neighborhoods">
+                </div>
+                <div class="assembly-ledger">
+                  <div class="ledger-item">
+                    <span>Leads for everyone</span>
+                    <strong>The morning’s biggest local story</strong>
+                    <small>Fixed at the top</small>
+                  </div>
+                  <div class="ledger-item">
+                    <span>Boosted</span>
+                    <strong>Red Sox</strong>
+                    <small>Because you follow them</small>
+                  </div>
+                  <div class="ledger-item">
+                    <span>Near you</span>
+                    <strong>Cambridge &amp; Somerville</strong>
+                    <small>Your neighborhoods</small>
+                  </div>
+                  <div class="ledger-item">
+                    <span>For tonight</span>
+                    <strong>Free events nearby</strong>
+                    <small>Plans within reach</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="day-section proof-section reveal" aria-labelledby="receipts-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">8:03 AM · Proof desk</span></aside>
+        <div class="day-content">
+          <div class="proof-head">
+            <div>
+              <p class="section-label">The edit, explained</p>
+              <h2 id="receipts-title">Every boosted story shows its receipt.</h2>
+            </div>
+            <p>Every story moved closer by personalization carries a visible reason. You never have to guess why it appeared.</p>
+          </div>
+          <p class="proof-note"><b>Desk note</b> · The lead story stays the lead</p>
+          <div class="receipt-cards" aria-label="Three example personalization receipts">
+            <article class="receipt-card">
+              <span class="reason">Because you follow Red Sox</span>
+              <h3>Three questions the Sox have to answer now</h3>
+              <p class="receipt-meta">Boston.com · Sports · 6 min read</p>
+            </article>
+            <article class="receipt-card">
+              <span class="reason">Near you · Cambridge &amp; Somerville</span>
+              <h3>The Green Line’s newest late-night food crawl</h3>
+              <p class="receipt-meta">Boston Magazine · 8 stops</p>
+            </article>
+            <article class="receipt-card">
+              <span class="reason">Because you read Food &amp; Drink</span>
+              <h3>The bakeries worth waking up early for</h3>
+              <p class="receipt-meta">Boston Magazine · Dining</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="day-section reveal" aria-labelledby="events-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">12:04 PM · Live wire</span></aside>
+        <div class="day-content">
+          <div class="events-head">
+            <div>
+              <p class="section-label">News at noon · Plans by night</p>
+              <h2 class="section-heading" id="events-title">All the news, and everything to do.</h2>
+            </div>
+            <p class="body-copy">News is the raw wire, newest first. Explore turns concerts, Sox games, theater, comedy, and free city events into a plan, with 30-second previews, door-to-door times, Best of Boston picks, and ticket purchase in the app.</p>
+          </div>
+
+          <div class="day-ledger">
+            <div class="wire" aria-label="Newest-first News tab preview">
+              <div class="wire-head">
+                <h3>News</h3>
+                <span>Newest first</span>
+              </div>
+              <div class="section-chips" aria-label="News sections">
+                <button class="section-chip active" type="button">Latest</button>
+                <button class="section-chip" type="button">Local</button>
+                <button class="section-chip" type="button">Sports</button>
+                <button class="section-chip" type="button">Politics</button>
+                <button class="section-chip" type="button">B-Side</button>
+              </div>
+              <article class="wire-item">
+                <time datetime="12:04">12:04</time>
+                <div><strong>MBTA adds service before tonight’s storm</strong><span>Local · Boston.com</span></div>
+              </article>
+              <article class="wire-item">
+                <time datetime="11:52">11:52</time>
+                <div><strong>Sox set the rotation for a crucial homestand</strong><span>Sports · Boston.com</span></div>
+              </article>
+              <article class="wire-item">
+                <time datetime="11:37">11:37</time>
+                <div><strong>The lunch counter worth crossing town for</strong><span>Food · Boston Magazine</span></div>
+              </article>
+              <article class="wire-item">
+                <time datetime="11:18">11:18</time>
+                <div><strong>Three free shows were just announced</strong><span>B-Side · Music</span></div>
+              </article>
+              <article class="wire-item">
+                <time datetime="10:59">10:59</time>
+                <div><strong>City Council advances the housing vote</strong><span>Politics · Boston.com</span></div>
+              </article>
+            </div>
+
+            <div class="events-list" aria-label="Explore tab event previews">
+              <div class="events-titlebar">
+                <h3>Tonight in Boston</h3>
+                <span>6:45 PM</span>
+              </div>
+              <article class="event-card">
+                <div class="event-topline">
+                  <span>Live music · Roadrunner</span>
+                  <span>Doors 7:00</span>
+                </div>
+                <h4>Tame Impala</h4>
+                <p class="music-label">30-second Apple Music previews</p>
+                <p class="music-line">▶ Let It Happen · ▶ Borderline | Walk 19 · T 9 · Drive 13 | <strong>Get tickets</strong></p>
+              </article>
+              <div class="event-grid">
+                <article class="event-mini">
+                  <span>Best of Boston winner</span>
+                  <h4>Drinks before the show</h4>
+                  <p>The Tip Tap Room · Walk 6 · T 4</p>
+                </article>
+                <article class="event-mini">
+                  <span>Free · City Hall Plaza</span>
+                  <h4>Summer Arts Market</h4>
+                  <p>42 local makers · 11:00–6:00</p>
+                </article>
+                <article class="event-mini">
+                  <span>Baseball · Fenway Park</span>
+                  <h4>Red Sox vs. Baltimore</h4>
+                  <p>First pitch 7:10 · Seats from $38</p>
+                </article>
+                <article class="event-mini">
+                  <span>Comedy · Davis Square</span>
+                  <h4>Late set at the Square</h4>
+                  <p>9:00 PM · T 14 · Drive 18</p>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="day-section reveal" aria-labelledby="share-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">8:16 PM · Shared edition</span></aside>
+        <div class="day-content">
+          <div class="share-layout">
+            <figure class="share-visual">
+              <p class="raw-link">Before: boston.news/s/sox-deadline-move</p>
+              <img src="landing-assets/sharecard.png" alt="Designed Boston News broadsheet clipping with masthead, headline, photo, and source">
+              <span class="annotation masthead">Masthead</span>
+              <span class="annotation photo">Photo</span>
+              <span class="annotation source">Source</span>
+            </figure>
+            <div class="share-copy">
+              <p class="section-label">Designed to travel</p>
+              <h2 id="share-title">Send the front page, not a link.</h2>
+              <p class="body-copy">Sharing composes a broadsheet clipping with the masthead, headline, photo, and source already set. It arrives looking like the story was worth stopping for.</p>
+              <p class="share-proof">One tap turns a bare URL into a piece of the edition.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="day-section circle-section reveal" aria-labelledby="circle-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">8:22 PM · Reading Circle</span></aside>
+        <div class="day-content">
+          <div class="circle-layout">
+            <div class="circle-copy">
+              <p class="section-label">The Reading Circle</p>
+              <h2 id="circle-title">Built for the group chat.</h2>
+              <p>Sign shares with your first name, send them through the apps you already use, and find friends’ stories waiting on your front page. See how your own shares did without turning news into a social network.</p>
+              <div class="circle-steps">
+                <div class="circle-step"><b>1</b><div><strong>Sign your shares</strong><span>Add your first name before the clipping goes out.</span></div></div>
+                <div class="circle-step"><b>2</b><div><strong>Send it like you already do</strong><span>Messages, Mail, or the group chat you check all day.</span></div></div>
+                <div class="circle-step"><b>3</b><div><strong>Their stories find you</strong><span>Open a share and it joins the shelf in Your Today.</span></div></div>
+              </div>
+              <p class="privacy-line">Names travel inside your messages, never to our servers.</p>
+              <p class="circle-boundary">No follower graphs. No comments. No strangers.</p>
+            </div>
+
+            <div class="circle-visual" aria-label="Reading Circle phone showing incoming stories and share performance">
+              <div class="circle-phone">
+                <div class="circle-screen">
+                  <div class="circle-front">
+                    <span class="slug">Your Today · Reading Circle</span>
+                    <h3>From people you know.</h3>
+                    <div class="circle-shelf">
+                      <div class="shelf-story"><span class="shelf-initial">M</span><div><strong>The route Mom takes when Storrow floods</strong><span>Sent by Mom · 12 min ago</span></div></div>
+                      <div class="shelf-story"><span class="shelf-initial">J</span><div><strong>Jamie found tonight’s free show</strong><span>Sent by Jamie · 31 min ago</span></div></div>
+                    </div>
+                  </div>
+                  <div class="circle-sheet">
+                    <div class="sheet-handle"></div>
+                    <h4>Your circle</h4>
+                    <div class="circle-stat"><span>Mom sent you 3 this week</span><strong>2 read</strong></div>
+                    <div class="circle-stat"><span>Jamie sent you 2 today</span><strong>1 new</strong></div>
+                    <div class="circle-stat"><span>Your shares</span><strong>4 opened</strong></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="day-section reveal" aria-labelledby="devices-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">Across the day · One edition</span></aside>
+        <div class="day-content">
+          <div class="devices-head">
+            <div>
+              <p class="section-label">One city · Every screen</p>
+              <h2 class="section-heading" id="devices-title">Every screen in your life.</h2>
+            </div>
+            <p class="body-copy">The same front page meets you at the depth the moment allows, from a morning glance to the living-room edition.</p>
+          </div>
+
+          <div class="device-stage" aria-label="Boston News on Apple TV, iPad, iPhone, Apple Watch, and CarPlay">
+            <div class="device-unit tv-device">
+              <span class="device-name">Apple TV</span>
+              <div class="tv-shell"><div class="tv-screen"><span>Evening edition</span><strong>Five Boston stories to know now</strong></div></div>
+              <div class="tv-stand"></div>
+              <span class="device-time">9:02 PM · Living room</span>
+            </div>
+            <div class="device-unit ipad-device">
+              <span class="device-name">iPad · Two-column front</span>
+              <div class="ipad-shell"><div class="ipad-screen"><div class="ipad-lead">Storms arrive before the evening commute</div><div class="ipad-list"><span>City Hall votes today</span><span>Eat after Fenway</span><span>B-Side calendar</span></div></div></div>
+              <span class="device-time">7:48 PM · Full read</span>
+            </div>
+            <div class="device-unit mini-phone-device">
+              <span class="device-name">iPhone</span>
+              <div class="mini-phone"><span>Your Today</span><strong>The three stories moving Boston now</strong></div>
+              <span class="device-time">12:04 PM</span>
+            </div>
+            <div class="device-unit watch-device">
+              <span class="device-name">Apple Watch</span>
+              <div class="watch-band"></div><div class="watch-face"><div><strong>72°</strong><span>Flood watch</span></div></div><div class="watch-band"></div>
+              <span class="device-time">7:12 AM · Complication</span>
+            </div>
+            <div class="device-unit car-device">
+              <span class="device-name">CarPlay</span>
+              <div class="car-shell"><span>Now previewing · B-Side</span><strong>Let It Happen</strong><div class="car-controls">◀ ‖ ▶</div></div>
+              <span class="device-time">5:42 PM · Drive</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing reveal" aria-labelledby="closing-title">
+        <aside class="day-rail" aria-hidden="true"><span class="rail-time">Next edition</span></aside>
+        <div class="closing-content">
+          <p class="section-label">Boston, every day</p>
+          <h2 id="closing-title">Know your city<span class="red-period">.</span></h2>
+          <div class="cta-line">
+            <a class="cta" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get the beta</a>
+            <span class="cta-note">Free during the preview · iPhone &amp; iPad</span>
+          </div>
+          <div class="baseline" aria-hidden="true"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="folio">
+      <strong>Boston News</strong>
+      <span>One city · Three titles · Late edition</span>
+      <span>Page 09</span>
+    </div>
+  </footer>
+
+  <script>
+    const revealItems = document.querySelectorAll('.reveal');
+
+    if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      revealItems.forEach((item) => revealObserver.observe(item));
+    } else {
+      revealItems.forEach((item) => item.classList.add('is-visible'));
+    }
+  </script>
+</body>
+</html>

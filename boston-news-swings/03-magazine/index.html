@@ -1,0 +1,1846 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Boston News brings Boston.com, Boston Magazine, and the B-Side together in one personalized iOS app.">
+  <title>Boston News | Three titles. One app.</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,700;6..72,800&display=swap');
+
+    :root {
+      --paper: #FBFAF7;
+      --ink: #1F1D1A;
+      --red: #C8102E;
+      --teal: #0E7C7B;
+      --soft: #55514A;
+      --line: rgba(31, 29, 26, 0.24);
+      --wash: rgba(31, 29, 26, 0.05);
+      --white: #FFFFFF;
+      --serif: "Newsreader", Georgia, "Times New Roman", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .page {
+      width: calc(100% - 48px);
+      max-width: 960px;
+      margin-inline: auto;
+    }
+
+    .double-rule {
+      height: 8px;
+      border-top: 4px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .hairline {
+      border-top: 1px solid var(--line);
+    }
+
+    .eyebrow,
+    .section-no,
+    .folio-label,
+    .photo-kicker,
+    .reason,
+    .event-kicker,
+    .device-label {
+      margin: 0;
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 750;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: var(--serif);
+      font-weight: 800;
+      letter-spacing: -0.045em;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 880px;
+      margin: 16px auto 24px;
+      font-size: clamp(64px, 10vw, 112px);
+      line-height: 0.86;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(46px, 7vw, 72px);
+      line-height: 0.94;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .lede,
+    .section-copy {
+      color: var(--soft);
+      font-size: 18px;
+      line-height: 1.55;
+    }
+
+    .section-copy {
+      max-width: 38ch;
+      margin-bottom: 0;
+    }
+
+    .section-no {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      color: var(--red);
+    }
+
+    .section-no::after {
+      content: "";
+      width: 48px;
+      border-top: 1px solid currentColor;
+    }
+
+    .hero {
+      padding: 32px 0 0;
+      text-align: center;
+    }
+
+    .hero .double-rule {
+      margin-bottom: 48px;
+    }
+
+    .hero .eyebrow {
+      color: var(--soft);
+    }
+
+    .hero .lede {
+      max-width: 46ch;
+      margin: 0 auto 24px;
+    }
+
+    .cta-line {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 16px;
+      margin: 0 auto 48px;
+      white-space: nowrap;
+    }
+
+    .cta {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 24px;
+      border: 1px solid var(--red);
+      border-radius: 999px;
+      background: var(--red);
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 760;
+      line-height: 1;
+      text-decoration: none;
+      transition: background-color 180ms ease, color 180ms ease;
+    }
+
+    .cta:hover,
+    .cta:focus-visible {
+      background: var(--paper);
+      color: var(--red);
+    }
+
+    .cta:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 3px;
+    }
+
+    .cta-note {
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 16px;
+    }
+
+    .hero-stage {
+      position: relative;
+      display: grid;
+      min-height: 680px;
+      place-items: end center;
+      overflow: hidden;
+      border-top: 1px solid var(--line);
+      background: var(--wash);
+    }
+
+    .hero-stage::before,
+    .hero-stage::after {
+      position: absolute;
+      bottom: 40px;
+      width: 208px;
+      color: var(--soft);
+      font-family: var(--serif);
+      font-size: 18px;
+      font-style: italic;
+      line-height: 1.25;
+    }
+
+    .hero-stage::before {
+      content: "A front page that knows your Boston.";
+      left: 32px;
+      text-align: left;
+    }
+
+    .hero-stage::after {
+      content: "Big local stories still lead for everyone.";
+      right: 32px;
+      text-align: right;
+    }
+
+    .phone {
+      position: relative;
+      z-index: 1;
+      width: 284px;
+      padding: 9px;
+      border: 2px solid var(--ink);
+      border-radius: 48px 48px 0 0;
+      background: var(--ink);
+      box-shadow: 0 20px 48px rgba(31, 29, 26, 0.16);
+    }
+
+    .phone.full {
+      border-radius: 48px;
+      padding-bottom: 9px;
+    }
+
+    .phone::before {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      top: 17px;
+      left: 50%;
+      width: 88px;
+      height: 24px;
+      border-radius: 16px;
+      background: var(--ink);
+      transform: translateX(-50%);
+    }
+
+    .phone-screen {
+      overflow: hidden;
+      border-radius: 38px 38px 0 0;
+      background: var(--white);
+    }
+
+    .phone.full .phone-screen {
+      border-radius: 38px;
+    }
+
+    .phone-screen img {
+      width: 100%;
+      height: auto;
+    }
+
+    .stage-caption {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      font-size: 10px;
+      font-weight: 740;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+    }
+
+    .photo-band {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr 1fr;
+      width: min(100%, 960px);
+      min-height: 352px;
+      margin-inline: auto;
+      border-right: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+      border-left: 1px solid var(--ink);
+    }
+
+    .photo-story {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--paper);
+      color: var(--white);
+    }
+
+    .photo-story:last-child {
+      border-right: 0;
+    }
+
+    .photo-story img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .photo-story::after {
+      content: "";
+      position: absolute;
+      inset: 30% 0 0;
+      background: linear-gradient(to bottom, rgba(31, 29, 26, 0), rgba(31, 29, 26, 0.88));
+    }
+
+    .photo-caption {
+      position: absolute;
+      z-index: 1;
+      right: 24px;
+      bottom: 24px;
+      left: 24px;
+    }
+
+    .photo-kicker {
+      margin-bottom: 8px;
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    .photo-caption h3 {
+      margin: 0;
+      font-size: clamp(24px, 3.5vw, 38px);
+      line-height: 0.98;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.32);
+    }
+
+    .feature {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 72px;
+      align-items: center;
+      padding: 120px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .feature.reverse .feature-visual {
+      order: -1;
+    }
+
+    .feature-visual {
+      min-width: 0;
+    }
+
+    .personal-stage {
+      position: relative;
+      display: grid;
+      min-height: 592px;
+      place-items: center;
+      background: var(--wash);
+    }
+
+    .personal-stage::before {
+      content: "EDIT YOUR EDITION";
+      position: absolute;
+      top: 32px;
+      right: 16px;
+      color: rgba(31, 29, 26, 0.4);
+      font-size: 10px;
+      font-weight: 780;
+      letter-spacing: 0.18em;
+      writing-mode: vertical-rl;
+    }
+
+    .personal-stage .phone {
+      width: 240px;
+    }
+
+    .editor-note {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 4px solid var(--ink);
+      color: var(--soft);
+      font-family: var(--serif);
+      font-size: 16px;
+      font-style: italic;
+      line-height: 1.35;
+    }
+
+    .receipts {
+      position: relative;
+      min-height: 520px;
+      padding: 64px 24px;
+      background: var(--wash);
+    }
+
+    .story-card {
+      position: absolute;
+      width: min(88%, 352px);
+      padding: 24px;
+      border: 1px solid rgba(31, 29, 26, 0.2);
+      background: var(--white);
+      box-shadow: 0 12px 28px rgba(31, 29, 26, 0.1);
+    }
+
+    .story-card:nth-child(1) {
+      top: 48px;
+      left: 18px;
+      z-index: 1;
+      transform: rotate(-2.5deg);
+    }
+
+    .story-card:nth-child(2) {
+      top: 190px;
+      right: 12px;
+      z-index: 3;
+      transform: rotate(2.2deg);
+    }
+
+    .story-card:nth-child(3) {
+      bottom: 38px;
+      left: 40px;
+      z-index: 2;
+      transform: rotate(-1deg);
+    }
+
+    .reason {
+      display: inline-block;
+      margin-bottom: 16px;
+      padding-bottom: 5px;
+      border-bottom: 2px solid var(--red);
+      color: var(--red);
+      font-size: 9px;
+    }
+
+    .story-card h3 {
+      margin: 0 0 16px;
+      font-size: 27px;
+      line-height: 1.02;
+    }
+
+    .story-meta {
+      margin: 0;
+      color: var(--soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .event-stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .wire-strip {
+      padding: 16px;
+      border: 1px solid var(--ink);
+      background: var(--paper);
+    }
+
+    .wire-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .wire-heading strong {
+      font: 800 20px/20px var(--serif);
+      letter-spacing: -0.03em;
+    }
+
+    .wire-heading span {
+      color: var(--soft);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .section-chips {
+      display: flex;
+      gap: 6px;
+      overflow: hidden;
+    }
+
+    .section-chip {
+      flex: 0 0 auto;
+      padding: 5px 9px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      font-size: 9px;
+      font-weight: 750;
+      line-height: 14px;
+    }
+
+    .section-chip.active {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .event-card {
+      padding: 24px;
+      border: 1px solid var(--ink);
+      background: var(--white);
+    }
+
+    .event-card.featured {
+      border-top: 8px solid var(--red);
+    }
+
+    .event-topline {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .event-kicker {
+      color: var(--red);
+    }
+
+    .event-date {
+      color: var(--soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .event-card h3 {
+      margin-bottom: 12px;
+      font-size: 34px;
+    }
+
+    .music-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0;
+    }
+
+    .track {
+      padding: 7px 10px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      font: 700 11px/16px var(--sans);
+    }
+
+    .travel {
+      margin: 0 0 16px;
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .event-action {
+      display: inline-block;
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-underline-offset: 4px;
+      text-transform: none;
+    }
+
+    .event-mini {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 16px;
+      align-items: center;
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .calendar-box {
+      padding: 8px;
+      border: 1px solid var(--ink);
+      text-align: center;
+    }
+
+    .calendar-box span {
+      display: block;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .calendar-box strong {
+      display: block;
+      font: 800 28px/28px var(--serif);
+    }
+
+    .event-mini h3 {
+      margin: 0 0 4px;
+      font-size: 22px;
+    }
+
+    .event-mini p {
+      margin: 0;
+      color: var(--soft);
+      font-size: 12px;
+    }
+
+    .share-stage {
+      position: relative;
+      padding: 32px 32px 0;
+      background: var(--wash);
+    }
+
+    .share-stage::after {
+      content: "SHARE PROOF · 01";
+      position: absolute;
+      right: 10px;
+      bottom: 16px;
+      color: rgba(31, 29, 26, 0.48);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      writing-mode: vertical-rl;
+    }
+
+    .share-card-image {
+      width: min(100%, 352px);
+      margin: 0 auto;
+      box-shadow: 0 16px 32px rgba(31, 29, 26, 0.14);
+    }
+
+    .caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 16px 0 0;
+      padding-top: 8px;
+      border-top: 1px solid var(--ink);
+      color: var(--soft);
+      font-size: 10px;
+      line-height: 16px;
+    }
+
+    .caption span:last-child {
+      text-align: right;
+    }
+
+    .circle-section {
+      padding: 120px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .circle-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr);
+      gap: 72px;
+      align-items: center;
+    }
+
+    .circle-section .section-no,
+    .circle-section .circle-accent {
+      color: var(--teal);
+    }
+
+    .circle-section .section-no::after {
+      border-color: var(--teal);
+    }
+
+    .circle-phone-wrap {
+      display: grid;
+      min-height: 560px;
+      place-items: center;
+      background: rgba(14, 124, 123, 0.08);
+    }
+
+    .circle-phone {
+      position: relative;
+      width: 264px;
+      height: 512px;
+      overflow: hidden;
+      border: 2px solid var(--ink);
+      border-radius: 42px;
+      background: var(--ink);
+      box-shadow: 0 16px 32px rgba(31, 29, 26, 0.14);
+    }
+
+    .circle-phone::before {
+      content: "";
+      position: absolute;
+      z-index: 3;
+      top: 13px;
+      left: 50%;
+      width: 78px;
+      height: 23px;
+      border-radius: 14px;
+      background: var(--ink);
+      transform: translateX(-50%);
+    }
+
+    .circle-feed {
+      height: 100%;
+      padding: 48px 18px 18px;
+      background: var(--paper);
+    }
+
+    .circle-feed .eyebrow {
+      margin-bottom: 12px;
+      color: var(--soft);
+      font-size: 8px;
+    }
+
+    .circle-feed h3 {
+      margin-bottom: 12px;
+      font-size: 30px;
+    }
+
+    .feed-lines {
+      display: grid;
+      gap: 6px;
+    }
+
+    .feed-line {
+      height: 6px;
+      background: rgba(31, 29, 26, 0.18);
+    }
+
+    .feed-line.short {
+      width: 68%;
+    }
+
+    .circle-sheet {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      left: 8px;
+      z-index: 2;
+      padding: 16px;
+      border-radius: 24px 24px 34px 34px;
+      background: var(--white);
+      box-shadow: 0 -12px 32px rgba(31, 29, 26, 0.18);
+    }
+
+    .sheet-handle {
+      width: 36px;
+      height: 3px;
+      margin: 0 auto 16px;
+      border-radius: 2px;
+      background: rgba(31, 29, 26, 0.24);
+    }
+
+    .sheet-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .sheet-title strong {
+      font: 800 24px/24px var(--serif);
+      letter-spacing: -0.03em;
+    }
+
+    .sheet-title span {
+      color: var(--teal);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .circle-row {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .avatar {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--teal);
+      color: var(--white);
+      font: 800 16px/1 var(--serif);
+    }
+
+    .circle-row p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 16px;
+    }
+
+    .circle-row strong {
+      display: block;
+      color: var(--ink);
+    }
+
+    .circle-row span {
+      color: var(--soft);
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-top: 72px;
+      padding-top: 32px;
+      border-top: 4px solid var(--teal);
+    }
+
+    .step-number {
+      display: block;
+      margin-bottom: 24px;
+      color: var(--teal);
+      font: 800 52px/40px var(--serif);
+      letter-spacing: -0.05em;
+    }
+
+    .step h3 {
+      font-size: 24px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--soft);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .privacy-line {
+      margin: 40px 0 0;
+      color: var(--teal);
+      font-family: var(--serif);
+      font-size: 20px;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .screens-section {
+      padding: 120px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .screens-intro {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 72px;
+      align-items: end;
+      margin-bottom: 64px;
+    }
+
+    .screens-intro h2,
+    .screens-intro .section-copy {
+      margin-bottom: 0;
+    }
+
+    .device-gallery {
+      position: relative;
+      min-height: 680px;
+      border: 1px solid var(--ink);
+      background: var(--wash);
+    }
+
+    .device-gallery::before {
+      content: "THE BOSTON NEWS FAMILY";
+      position: absolute;
+      top: 16px;
+      right: 24px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+    }
+
+    .device-label {
+      position: absolute;
+      color: var(--soft);
+      font-size: 8px;
+    }
+
+    .tv {
+      position: absolute;
+      top: 64px;
+      left: 48px;
+      width: 54%;
+      aspect-ratio: 16 / 9;
+      padding: 10px;
+      border: 3px solid var(--ink);
+      border-radius: 8px;
+      background: var(--ink);
+      transform: rotate(-0.6deg);
+    }
+
+    .tv::before {
+      content: "";
+      position: absolute;
+      bottom: -24px;
+      left: 50%;
+      width: 80px;
+      height: 22px;
+      border-bottom: 4px solid var(--ink);
+      transform: translateX(-50%);
+    }
+
+    .tv .device-label {
+      bottom: -42px;
+      left: 0;
+    }
+
+    .tv-screen {
+      display: grid;
+      height: 100%;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 1px;
+      background: var(--white);
+    }
+
+    .tv-lead {
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      padding: 16px;
+      background: var(--red);
+      color: var(--white);
+    }
+
+    .tv-lead span,
+    .tiny-kicker {
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .tv-lead strong {
+      max-width: 10ch;
+      font: 800 24px/0.9 var(--serif);
+      letter-spacing: -0.04em;
+    }
+
+    .tv-list {
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      padding: 8px 12px;
+    }
+
+    .tv-item {
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      font: 800 11px/1 var(--serif);
+    }
+
+    .tv-item:last-child {
+      border: 0;
+    }
+
+    .ipad {
+      position: absolute;
+      top: 312px;
+      left: 80px;
+      width: 43%;
+      aspect-ratio: 4 / 3;
+      padding: 9px;
+      border: 2px solid var(--ink);
+      border-radius: 18px;
+      background: var(--ink);
+      transform: rotate(1.2deg);
+    }
+
+    .ipad .device-label {
+      bottom: -28px;
+      left: 0;
+    }
+
+    .tablet-screen {
+      display: grid;
+      height: 100%;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 8px;
+      padding: 12px;
+      background: var(--paper);
+    }
+
+    .tablet-main {
+      border-right: 1px solid var(--ink);
+      padding-right: 8px;
+    }
+
+    .tablet-photo {
+      height: 50%;
+      margin: 6px 0;
+      background: var(--soft);
+    }
+
+    .tablet-headline {
+      font: 800 19px/0.95 var(--serif);
+      letter-spacing: -0.03em;
+    }
+
+    .tablet-side {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+
+    .tablet-story {
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font: 800 10px/1.1 var(--serif);
+    }
+
+    .mini-phone {
+      position: absolute;
+      z-index: 2;
+      top: 152px;
+      right: 176px;
+      width: 112px;
+      height: 232px;
+      padding: 6px;
+      border: 2px solid var(--ink);
+      border-radius: 24px;
+      background: var(--ink);
+      transform: rotate(2.8deg);
+    }
+
+    .mini-phone .device-label {
+      top: -24px;
+      right: 0;
+    }
+
+    .mini-screen {
+      height: 100%;
+      padding: 24px 8px 8px;
+      border-radius: 17px;
+      background: var(--paper);
+    }
+
+    .mini-screen::before {
+      content: "";
+      position: absolute;
+      top: 11px;
+      left: 50%;
+      width: 36px;
+      height: 9px;
+      border-radius: 5px;
+      background: var(--ink);
+      transform: translateX(-50%);
+    }
+
+    .mini-story {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      font: 800 9px/1.05 var(--serif);
+    }
+
+    .watch {
+      position: absolute;
+      top: 440px;
+      right: 224px;
+      width: 104px;
+      height: 126px;
+      border: 14px solid var(--ink);
+      border-radius: 38px;
+      background: var(--ink);
+      transform: rotate(-4deg);
+    }
+
+    .watch::before,
+    .watch::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      width: 52px;
+      height: 50px;
+      border-right: 2px solid var(--ink);
+      border-left: 2px solid var(--ink);
+      transform: translateX(-50%);
+    }
+
+    .watch::before {
+      top: -62px;
+    }
+
+    .watch::after {
+      bottom: -62px;
+    }
+
+    .watch-face {
+      display: grid;
+      height: 100%;
+      place-content: center;
+      border-radius: 22px;
+      background: var(--paper);
+      text-align: center;
+    }
+
+    .watch-face strong {
+      display: block;
+      color: var(--red);
+      font: 800 30px/28px var(--serif);
+    }
+
+    .watch-face span {
+      display: block;
+      max-width: 8ch;
+      font-size: 7px;
+      font-weight: 800;
+      line-height: 8px;
+      text-transform: uppercase;
+    }
+
+    .watch .device-label {
+      bottom: -86px;
+      left: -8px;
+      width: 120px;
+    }
+
+    .carplay {
+      position: absolute;
+      right: 48px;
+      bottom: 64px;
+      width: 260px;
+      aspect-ratio: 16 / 8.5;
+      padding: 8px;
+      border: 3px solid var(--ink);
+      border-radius: 12px 18px 10px 15px;
+      background: var(--ink);
+      transform: rotate(-1.5deg);
+    }
+
+    .carplay .device-label {
+      right: 0;
+      bottom: -28px;
+    }
+
+    .car-screen {
+      display: grid;
+      height: 100%;
+      grid-template-columns: 68px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 6px;
+      background: var(--paper);
+    }
+
+    .car-art {
+      display: grid;
+      aspect-ratio: 1;
+      place-items: center;
+      background: var(--red);
+      color: var(--white);
+      font: 800 27px/1 var(--serif);
+    }
+
+    .car-copy span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--soft);
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .car-copy strong {
+      display: block;
+      font: 800 17px/1 var(--serif);
+    }
+
+    .car-copy small {
+      display: block;
+      margin-top: 7px;
+      color: var(--soft);
+      font-size: 8px;
+    }
+
+    .closing {
+      padding: 136px 0 72px;
+      text-align: center;
+    }
+
+    .closing .eyebrow {
+      margin-bottom: 24px;
+      color: var(--soft);
+    }
+
+    .closing h2 {
+      max-width: 900px;
+      margin: 0 auto 32px;
+      font-size: clamp(72px, 12vw, 136px);
+      line-height: 0.82;
+    }
+
+    .red-period {
+      color: var(--red);
+    }
+
+    .closing .cta-line {
+      margin-bottom: 64px;
+    }
+
+    .baseline {
+      width: 128px;
+      height: 8px;
+      margin: 0 auto;
+      background: var(--red);
+    }
+
+    .site-footer {
+      padding: 24px 0 32px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .footer-folio {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: baseline;
+      font-size: 10px;
+      font-weight: 750;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .footer-folio span:nth-child(2) {
+      color: var(--red);
+    }
+
+    .footer-folio span:last-child {
+      text-align: right;
+    }
+
+    .js .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+
+    .js .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 780px) {
+      .page {
+        width: calc(100% - 32px);
+      }
+
+      .hero {
+        padding-top: 16px;
+      }
+
+      .hero .double-rule {
+        margin-bottom: 40px;
+      }
+
+      h1 {
+        margin-bottom: 24px;
+        font-size: clamp(58px, 19vw, 80px);
+        line-height: 0.86;
+      }
+
+      h2 {
+        font-size: clamp(43px, 13vw, 60px);
+      }
+
+      .hero-stage {
+        min-height: 600px;
+      }
+
+      .hero-stage::before,
+      .hero-stage::after {
+        display: none;
+      }
+
+      .stage-caption {
+        display: none;
+      }
+
+      .photo-band {
+        grid-template-columns: 1fr;
+      }
+
+      .photo-story {
+        min-height: 304px;
+        border-right: 0;
+        border-bottom: 1px solid var(--paper);
+      }
+
+      .photo-story:last-child {
+        border-bottom: 0;
+      }
+
+      .photo-caption h3 {
+        font-size: 34px;
+      }
+
+      .feature,
+      .feature.reverse {
+        grid-template-columns: 1fr;
+        gap: 48px;
+        padding: 88px 0;
+      }
+
+      .feature.reverse .feature-visual {
+        order: 0;
+      }
+
+      .feature-text {
+        order: -1;
+      }
+
+      .section-copy {
+        max-width: 46ch;
+      }
+
+      .circle-section,
+      .screens-section {
+        padding: 88px 0;
+      }
+
+      .circle-head,
+      .screens-intro {
+        grid-template-columns: 1fr;
+        gap: 48px;
+      }
+
+      .steps {
+        grid-template-columns: 1fr;
+        gap: 32px;
+        margin-top: 48px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 48px 1fr;
+        column-gap: 16px;
+      }
+
+      .step-number {
+        grid-row: span 2;
+        margin: 0;
+        font-size: 44px;
+      }
+
+      .step h3 {
+        margin-bottom: 8px;
+      }
+
+      .privacy-line {
+        text-align: left;
+      }
+
+      .screens-intro {
+        margin-bottom: 48px;
+      }
+
+      .device-gallery {
+        min-height: 936px;
+      }
+
+      .tv {
+        top: 64px;
+        left: 24px;
+        width: calc(100% - 48px);
+      }
+
+      .ipad {
+        top: 328px;
+        left: 24px;
+        width: 68%;
+      }
+
+      .mini-phone {
+        top: 320px;
+        right: 20px;
+      }
+
+      .watch {
+        top: 598px;
+        right: 52px;
+      }
+
+      .carplay {
+        right: auto;
+        bottom: 72px;
+        left: 24px;
+        width: calc(100% - 48px);
+      }
+
+      .closing {
+        padding: 104px 0 64px;
+      }
+
+      .footer-folio {
+        grid-template-columns: 1fr auto;
+      }
+
+      .footer-folio span:last-child {
+        display: none;
+      }
+    }
+
+    @media (max-width: 430px) {
+      .eyebrow {
+        font-size: 9px;
+        letter-spacing: 0.13em;
+      }
+
+      .hero .eyebrow {
+        white-space: nowrap;
+      }
+
+      .hero .lede {
+        font-size: 17px;
+      }
+
+      .cta-line {
+        gap: 10px;
+      }
+
+      .cta {
+        min-height: 40px;
+        padding-inline: 18px;
+        font-size: 13px;
+      }
+
+      .cta-note {
+        font-size: 10px;
+      }
+
+      .hero-stage {
+        min-height: 568px;
+      }
+
+      .hero-stage .phone {
+        width: 248px;
+      }
+
+      .personal-stage {
+        min-height: 552px;
+      }
+
+      .receipts {
+        min-height: 536px;
+        padding-inline: 8px;
+      }
+
+      .story-card {
+        padding: 20px;
+      }
+
+      .story-card:nth-child(1) {
+        left: 8px;
+      }
+
+      .story-card:nth-child(2) {
+        right: 7px;
+      }
+
+      .story-card:nth-child(3) {
+        left: 18px;
+      }
+
+      .story-card h3 {
+        font-size: 24px;
+      }
+
+      .share-stage {
+        padding: 24px 24px 0;
+      }
+
+      .circle-phone-wrap {
+        min-height: 536px;
+      }
+
+      .circle-phone {
+        width: 248px;
+        height: 488px;
+      }
+
+      .device-gallery {
+        min-height: 824px;
+      }
+
+      .tv {
+        top: 56px;
+      }
+
+      .tv-lead strong {
+        font-size: 17px;
+      }
+
+      .tv-item {
+        font-size: 8px;
+      }
+
+      .ipad {
+        top: 280px;
+        left: 16px;
+        width: 68%;
+      }
+
+      .tablet-headline {
+        font-size: 14px;
+      }
+
+      .mini-phone {
+        top: 268px;
+        right: 12px;
+        width: 98px;
+        height: 210px;
+      }
+
+      .watch {
+        top: 532px;
+        right: 38px;
+        width: 92px;
+        height: 112px;
+      }
+
+      .carplay {
+        bottom: 60px;
+        left: 16px;
+        width: calc(100% - 32px);
+      }
+
+      .closing h2 {
+        font-size: clamp(68px, 23vw, 96px);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+
+      .js .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero page" aria-labelledby="hero-title">
+      <div class="double-rule" aria-hidden="true"></div>
+      <p class="eyebrow">BOSTON.COM · BOSTON MAGAZINE · B-SIDE</p>
+      <h1 id="hero-title">Three titles. One app.</h1>
+      <p class="lede">Boston's essential news, culture, and things to do, gathered into one front page that can feel more like yours.</p>
+      <div class="cta-line">
+        <a class="cta" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get the beta</a>
+        <span class="cta-note">Free during the preview · iPhone &amp; iPad</span>
+      </div>
+      <div class="hero-stage">
+        <span class="stage-caption">Prototype edition · Summer 2026</span>
+        <div class="phone" aria-label="Boston News personalized front page shown on iPhone">
+          <div class="phone-screen">
+            <img src="../shared-assets/front.png" alt="Boston News app showing the Your Today front page">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="photo-band reveal" aria-label="Featured Boston stories">
+      <article class="photo-story">
+        <img src="../shared-assets/local.jpg" alt="Boston neighborhood street scene">
+        <div class="photo-caption">
+          <p class="photo-kicker">City Hall</p>
+          <h3>The decisions remaking your block</h3>
+        </div>
+      </article>
+      <article class="photo-story">
+        <img src="../shared-assets/sox.jpg" alt="Boston Red Sox baseball action">
+        <div class="photo-caption">
+          <p class="photo-kicker">Red Sox</p>
+          <h3>A summer made for Fenway</h3>
+        </div>
+      </article>
+      <article class="photo-story">
+        <img src="../shared-assets/weather.jpg" alt="Boston weather over the city">
+        <div class="photo-caption">
+          <p class="photo-kicker">The forecast</p>
+          <h3>What the weekend has in store</h3>
+        </div>
+      </article>
+    </section>
+
+    <div class="page">
+      <section class="feature reveal" aria-labelledby="today-title">
+        <div class="feature-text">
+          <p class="section-no">01 · Introducing Your Today</p>
+          <h2 id="today-title">Boston News, made for your day.</h2>
+          <p class="section-copy">Pick the teams, neighborhoods, and subjects you care about. Your Today brings more of them forward while the biggest local stories still lead for everyone. Personalization boosts. It never buries.</p>
+          <p class="editor-note">The front page is edited for Boston first, then tuned for you.</p>
+        </div>
+        <div class="feature-visual personal-stage">
+          <div class="phone full" aria-label="Boston News onboarding shown on iPhone">
+            <div class="phone-screen">
+              <img src="../shared-assets/onboarding.png" alt="Boston News onboarding screen for choosing interests and neighborhoods">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature reverse reveal" aria-labelledby="receipt-title">
+        <div class="feature-text">
+          <p class="section-no">02 · Clear by design</p>
+          <h2 id="receipt-title">Every boosted story shows its receipt.</h2>
+          <p class="section-copy">A plain-language label tells you why a story moved up. You never have to guess what the app thinks you care about.</p>
+        </div>
+        <div class="feature-visual receipts" aria-label="Three example personalized story cards">
+          <article class="story-card">
+            <p class="reason">Because you follow Red Sox</p>
+            <h3>The rotation is taking shape at exactly the right time</h3>
+            <p class="story-meta">Boston.com · 8 min ago</p>
+          </article>
+          <article class="story-card">
+            <p class="reason">Near you · Cambridge &amp; Somerville</p>
+            <h3>Five new places worth crossing the river for</h3>
+            <p class="story-meta">Boston Magazine · 24 min ago</p>
+          </article>
+          <article class="story-card">
+            <p class="reason">Because you follow live music</p>
+            <h3>The clubs keeping Boston out past midnight</h3>
+            <p class="story-meta">The B-Side · Today</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="feature reveal" aria-labelledby="explore-title">
+        <div class="feature-text">
+          <p class="section-no">03 · News / Explore</p>
+          <h2 id="explore-title">All the news, and everything to do.</h2>
+          <p class="section-copy">News is the raw wire, newest first, with one-tap section chips including the B-Side. Explore puts concerts, Sox games, theater, comedy, and free city events on the same map as your night.</p>
+          <p class="editor-note">Best of Boston winners, door-to-door times, music previews, and tickets all stay in the app.</p>
+        </div>
+        <div class="feature-visual event-stack">
+          <div class="wire-strip" aria-label="News tab section shortcuts">
+            <div class="wire-heading"><strong>News</strong><span>Newest first</span></div>
+            <div class="section-chips"><span class="section-chip active">All</span><span class="section-chip">Local</span><span class="section-chip">Sports</span><span class="section-chip">B-Side</span><span class="section-chip">Food</span></div>
+          </div>
+          <article class="event-card featured">
+            <div class="event-topline">
+              <p class="event-kicker">Live music · MGM Music Hall</p>
+              <span class="event-date">Fri · 8:00 PM</span>
+            </div>
+            <h3>Tame Impala</h3>
+            <p class="travel" aria-label="Thirty-second Apple Music previews, travel times, and tickets">▶ Let It Happen · ▶ Borderline | Walk 19 · T 9 · Drive 13 | <a class="event-action" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get tickets</a></p>
+          </article>
+          <article class="event-card">
+            <p class="event-kicker">Best of Boston winner</p>
+            <div class="event-mini">
+              <div class="calendar-box"><span>Sat</span><strong>12</strong></div>
+              <div><h3>Comedy at the Square</h3><p>Davis Square · 9:00 PM · T 14</p></div>
+            </div>
+            <div class="event-mini">
+              <div class="calendar-box"><span>Sun</span><strong>13</strong></div>
+              <div><h3>Open Newbury Street</h3><p>Back Bay · Free · Walk 11</p></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="feature reverse reveal" aria-labelledby="share-title">
+        <div class="feature-text">
+          <p class="section-no">04 · Designed to travel</p>
+          <h2 id="share-title">Send the front page, not a link.</h2>
+          <p class="section-copy">Sharing composes a broadsheet clipping with its own masthead, headline, photograph, and source. It looks considered in the group chat before anyone taps.</p>
+        </div>
+        <div class="feature-visual">
+          <div class="share-stage">
+            <img class="share-card-image" src="../shared-assets/sharecard.png" alt="A designed Boston News broadsheet clipping share card">
+          </div>
+          <p class="caption"><span>Fig. 04 · A share with a front page</span><span>Masthead / headline / photo / source</span></p>
+        </div>
+      </section>
+
+      <section class="circle-section reveal" aria-labelledby="circle-title">
+        <div class="circle-head">
+          <div>
+            <p class="section-no">05 · The Reading Circle</p>
+            <h2 id="circle-title">Built for the group chat.</h2>
+            <p class="section-copy">Sign a share with your first name. Stories your friends send come home to a shelf on your front page, and you can see which of your own shares got read. No follower graphs, no comments, no strangers.</p>
+          </div>
+          <div class="circle-phone-wrap">
+            <div class="circle-phone" aria-label="The Reading Circle Your circle sheet shown on iPhone">
+              <div class="circle-feed">
+                <p class="eyebrow">Your Today</p>
+                <h3>From people you know</h3>
+                <div class="feed-lines" aria-hidden="true">
+                  <span class="feed-line"></span><span class="feed-line short"></span>
+                </div>
+              </div>
+              <div class="circle-sheet">
+                <div class="sheet-handle" aria-hidden="true"></div>
+                <div class="sheet-title"><strong>Your circle</strong><span>3 waiting</span></div>
+                <div class="circle-row">
+                  <span class="avatar">M</span>
+                  <p><strong>Mom</strong><span>sent you 3 this week · 2 read</span></p>
+                </div>
+                <div class="circle-row">
+                  <span class="avatar">J</span>
+                  <p><strong>Jon</strong><span>sent you 1 today · unread</span></p>
+                </div>
+                <div class="circle-row">
+                  <span class="avatar">A</span>
+                  <p><strong>Ana</strong><span>read your Fenway story</span></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <span class="step-number">1</span>
+            <h3>Sign your shares</h3>
+            <p>Add your first name so friends know who thought of them.</p>
+          </article>
+          <article class="step">
+            <span class="step-number">2</span>
+            <h3>Send it like you already do</h3>
+            <p>Use Messages, WhatsApp, or the group chat you already have.</p>
+          </article>
+          <article class="step">
+            <span class="step-number">3</span>
+            <h3>Their stories find you</h3>
+            <p>Open a share and it joins your Reading Circle shelf automatically.</p>
+          </article>
+        </div>
+        <p class="privacy-line">Names travel inside your messages, never to our servers.</p>
+      </section>
+
+      <section class="screens-section reveal" aria-labelledby="screens-title">
+        <div class="screens-intro">
+          <div>
+            <p class="section-no">06 · One continuous edition</p>
+            <h2 id="screens-title">Every screen in your life.</h2>
+          </div>
+          <p class="section-copy">Catch the headlines on the television, read the full edition on iPad or iPhone, glance at the weather on your wrist, and hear the B-Side on the drive.</p>
+        </div>
+        <div class="device-gallery" aria-label="Boston News shown on Apple TV, iPad, iPhone, Apple Watch, and CarPlay">
+          <div class="tv">
+            <div class="tv-screen">
+              <div class="tv-lead"><span>Live now</span><strong>Boston at this hour</strong></div>
+              <div class="tv-list"><div class="tv-item">City budget heads to a vote</div><div class="tv-item">Sox open a series at home</div><div class="tv-item">Tonight's B-Side calendar</div></div>
+            </div>
+            <span class="device-label">Apple TV · Headlines</span>
+          </div>
+          <div class="ipad">
+            <div class="tablet-screen">
+              <div class="tablet-main"><span class="tiny-kicker">Your Today</span><div class="tablet-photo"></div><div class="tablet-headline">The city story everyone is talking about</div></div>
+              <div class="tablet-side"><div class="tablet-story">The morning commute, block by block</div><div class="tablet-story">Where Boston is eating now</div><div class="tablet-story">Five things to do tonight</div></div>
+            </div>
+            <span class="device-label">iPad · Two-column front</span>
+          </div>
+          <div class="mini-phone">
+            <div class="mini-screen"><span class="tiny-kicker">Latest</span><div class="mini-story">Breaking news from Beacon Hill</div><div class="mini-story">A guide to the weekend</div><div class="mini-story">The Sox notebook</div></div>
+            <span class="device-label">iPhone</span>
+          </div>
+          <div class="watch">
+            <div class="watch-face"><strong>72°</strong><span>Boston · Rain at 4</span></div>
+            <span class="device-label">Apple Watch · Complication</span>
+          </div>
+          <div class="carplay">
+            <div class="car-screen"><div class="car-art">B</div><div class="car-copy"><span>The B-Side</span><strong>Tonight in Boston</strong><small>Now playing · 04:18</small></div></div>
+            <span class="device-label">CarPlay · Now playing</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing reveal" aria-labelledby="closing-title">
+        <p class="eyebrow">Boston.com · Boston Magazine · B-Side</p>
+        <h2 id="closing-title">Know your city<span class="red-period">.</span></h2>
+        <div class="cta-line">
+          <a class="cta" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get the beta</a>
+          <span class="cta-note">Free during the preview · iPhone &amp; iPad</span>
+        </div>
+        <div class="baseline" aria-hidden="true"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer page">
+    <div class="footer-folio">
+      <span>Boston Globe Media</span>
+      <span>Boston News · Preview edition</span>
+      <span>Boston, Massachusetts</span>
+    </div>
+  </footer>
+
+  <script>
+    document.documentElement.classList.add('js');
+
+    const revealItems = document.querySelectorAll('.reveal');
+    if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12 });
+
+      revealItems.forEach((item) => revealObserver.observe(item));
+    } else {
+      revealItems.forEach((item) => item.classList.add('is-visible'));
+    }
+  </script>
+</body>
+</html>

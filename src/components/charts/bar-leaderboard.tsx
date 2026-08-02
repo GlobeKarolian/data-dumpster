@@ -2,14 +2,17 @@
 
 import * as React from 'react';
 import {
-  Bar, BarChart, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, Cell, LabelList, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
   type TooltipContentProps,
 } from 'recharts';
-import type { MetricKey, MetricRow } from '@/lib/types';
-import { compactNumber } from '@/lib/utils';
+import {
+  PLATFORMS, PLATFORM_LABELS, type MetricKey, type MetricRow, type Platform,
+} from '@/lib/types';
+import { compactNumber, formatChange } from '@/lib/utils';
+import { measuredCompetitorAverage } from '@/lib/metrics/availability';
 import { formatMetric } from '@/components/ui/format';
 import { ChartFrame, ChartTooltipCard } from './chart-frame';
-import { ACCENT, companyColor } from './theme';
+import { ACCENT, companyColor, platformColor } from './theme';
 
 export interface BarLeaderboardProps {
   rows: MetricRow[];
@@ -22,6 +25,8 @@ export interface BarLeaderboardProps {
   emptyHint?: string;
   /** Force a color for every bar, e.g. a platform brand color. */
   color?: string;
+  /** Use the per-platform values already carried by MetricRow. */
+  showPlatformBreakdown?: boolean;
 }
 
 interface Datum {
@@ -30,8 +35,30 @@ interface Datum {
   value: number;
   previousValue: number | null;
   changePct: number | null;
+  available: boolean;
+  valueLabel: string;
+  breakdown: Partial<Record<Platform, number>>;
   isFocus: boolean;
   fill: string;
+}
+
+const ADDITIVE_BREAKDOWN_METRICS = new Set<MetricKey>([
+  'audience',
+  'audienceNetChange',
+  'posts',
+  'postsPerDay',
+  'postsPerWeek',
+  'engagementTotal',
+  'applause',
+  'conversation',
+  'amplification',
+  'saves',
+  'views',
+]);
+
+function valueLabel(value: number, metric: MetricKey, changePct: number | null): string {
+  const change = changePct === null ? '' : '  ' + formatChange(changePct).label;
+  return formatMetric(value, metric) + change;
 }
 
 /**
@@ -50,48 +77,109 @@ export function BarLeaderboard({
   maxRows = 12,
   emptyHint,
   color,
+  showPlatformBreakdown = false,
 }: BarLeaderboardProps) {
+  const [expanded, setExpanded] = React.useState(false);
+  const measuredRows = React.useMemo(
+    () => rows.filter((row) => row.available),
+    [rows],
+  );
+  const visibleRowLimit = expanded ? measuredRows.length : maxRows;
   const data: Datum[] = React.useMemo(
     () =>
-      rows.slice(0, maxRows).map((r, i) => {
+      measuredRows.slice(0, visibleRowLimit).map((r, i) => {
         const isFocus = Boolean(focusCompanyId && r.company.id === focusCompanyId);
+        const availableBreakdown = Object.fromEntries(
+          Object.entries(r.breakdown ?? {}).filter(([platform]) =>
+            r.breakdownAvailability?.[platform as Platform] !== false),
+        ) as Partial<Record<Platform, number>>;
         return {
           id: r.company.id,
           name: r.company.name,
           value: Number.isFinite(r.value) ? r.value : 0,
+          available: r.available,
           previousValue: r.previousValue ?? null,
           changePct: r.changePct ?? null,
+          valueLabel: r.available
+            ? valueLabel(
+                Number.isFinite(r.value) ? r.value : 0,
+                metric,
+                r.changePct ?? null,
+              )
+            : '—',
+          breakdown: availableBreakdown,
           isFocus,
           fill: isFocus ? ACCENT : (color ?? companyColor(r.company, i, focusCompanyId)),
         };
       }),
-    [rows, maxRows, focusCompanyId, color],
+    [measuredRows, visibleRowLimit, focusCompanyId, color, metric],
   );
 
-  const competitors = data.filter((d) => !d.isFocus);
-  const average =
-    showCompetitorAverage && competitors.length > 0
-      ? competitors.reduce((sum, d) => sum + d.value, 0) / competitors.length
-      : null;
+  const average = showCompetitorAverage
+    ? measuredCompetitorAverage(rows, focusCompanyId)
+    : null;
 
-  const hasSignal = data.some((d) => d.value !== 0);
-  const height = Math.max(120, data.length * 26 + 28);
+  const breakdownPlatforms = React.useMemo(
+    () => PLATFORMS.filter((platform) =>
+      data.some((d) => {
+        const value = d.breakdown[platform];
+        return value !== undefined && Number.isFinite(value) && value !== 0;
+      })),
+    [data],
+  );
+  const useStackedBreakdown =
+    showPlatformBreakdown
+    && ADDITIVE_BREAKDOWN_METRICS.has(metric)
+    && breakdownPlatforms.length > 0;
+
+  const hasMeasuredValue = measuredRows.length > 0;
+  const hasSignal = measuredRows.some((row) => row.value !== 0);
+  const needsAudienceHistory =
+    metric === 'audienceNetChange' || metric === 'audienceGrowthRate';
+  const isEmpty = rows.length === 0 || !hasMeasuredValue || !hasSignal;
+  const height = isEmpty
+    ? 120
+    : Math.max(120, data.length * 26 + (useStackedBreakdown ? 52 : 28));
+  const hasMore = measuredRows.length > maxRows;
 
   return (
-    <ChartFrame
-      height={height}
-      isEmpty={data.length === 0 || !hasSignal}
-      emptyLabel={data.length === 0 ? 'No companies in this landscape' : 'Every company measured zero here'}
-      emptyHint={
-        emptyHint ??
-        (data.length === 0
-          ? 'Add companies and channels, then run an ingest to populate this leaderboard.'
-          : 'Nothing was published or measured in this window. Widen the date range to check.')
-      }
-    >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ top: 0, right: 56, bottom: 0, left: 0 }}>
-          <XAxis type="number" hide domain={[0, 'dataMax']} />
+    <div>
+      <ChartFrame
+        height={height}
+        isEmpty={isEmpty}
+        emptyLabel={
+          rows.length === 0
+            ? 'No companies in this landscape'
+            : !hasMeasuredValue
+              ? 'Not enough observations to compute this metric'
+              : 'Every measured company is zero here'
+        }
+        emptyHint={
+          emptyHint ??
+          (rows.length === 0
+            ? 'Add companies and channels, then run an ingest to populate this leaderboard.'
+            : !hasMeasuredValue
+              ? needsAudienceHistory
+                ? 'Audience change needs at least two snapshots. Missing history stays blank.'
+                : 'This metric is not available from the selected channels in this window.'
+            : 'Nothing was published or measured in this window. Widen the date range to check.')
+        }
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            stackOffset="sign"
+            margin={{ top: useStackedBreakdown ? 8 : 0, right: 104, bottom: 0, left: 0 }}
+          >
+          <XAxis
+            type="number"
+            hide
+            domain={[
+              (minimum: number) => Math.min(0, minimum),
+              (maximum: number) => Math.max(0, maximum),
+            ]}
+          />
           <YAxis
             type="category"
             dataKey="name"
@@ -107,7 +195,11 @@ export function BarLeaderboard({
               if (!props.active || !props.payload?.length) return null;
               const d = props.payload[0].payload as Datum;
               const rowsOut = [
-                { label: 'This window', value: formatMetric(d.value, metric, 'full'), color: d.fill },
+                {
+                  label: 'This window',
+                  value: d.available ? formatMetric(d.value, metric, 'full') : 'Not available',
+                  color: d.fill,
+                },
               ];
               if (d.previousValue !== null) {
                 rowsOut.push({
@@ -115,6 +207,25 @@ export function BarLeaderboard({
                   value: formatMetric(d.previousValue, metric, 'full'),
                   color: 'var(--pb-muted-series)',
                 });
+              }
+              rowsOut.push({
+                label: 'Change',
+                value: formatChange(d.changePct).label,
+                color:
+                  d.changePct === null || d.changePct === 0
+                    ? 'var(--pb-muted-series)'
+                    : d.changePct > 0 ? '#15803D' : '#B91C1C',
+              });
+              if (showPlatformBreakdown) {
+                for (const platform of breakdownPlatforms) {
+                  const value = d.breakdown[platform];
+                  if (value === undefined) continue;
+                  rowsOut.push({
+                    label: PLATFORM_LABELS[platform],
+                    value: formatMetric(value, metric, 'full'),
+                    color: platformColor(platform),
+                  });
+                }
               }
               if (average !== null) {
                 rowsOut.push({
@@ -140,19 +251,76 @@ export function BarLeaderboard({
               }}
             />
           ) : null}
-          <Bar dataKey="value" radius={[0, 2, 2, 0]} barSize={14} isAnimationActive={false}>
-            {data.map((d) => (
-              <Cell key={d.id} fill={d.fill} fillOpacity={d.isFocus ? 1 : 0.75} />
-            ))}
-            <LabelList
-              dataKey="value"
-              position="right"
-              formatter={(v) => formatMetric(typeof v === 'number' ? v : null, metric)}
-              style={{ fill: 'var(--pb-label)', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}
-            />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </ChartFrame>
+          {useStackedBreakdown ? (
+            <>
+              <Legend
+                verticalAlign="top"
+                align="right"
+                iconType="square"
+                iconSize={7}
+                wrapperStyle={{ color: 'var(--pb-label)', fontSize: 10 }}
+              />
+              {breakdownPlatforms.map((platform, platformIndex) => (
+                <Bar
+                  key={platform}
+                  dataKey={(d: Datum) => d.breakdown[platform] ?? 0}
+                  name={PLATFORM_LABELS[platform]}
+                  stackId="platform"
+                  fill={platformColor(platform)}
+                  barSize={14}
+                  isAnimationActive={false}
+                >
+                  {data.map((d) => (
+                    <Cell
+                      key={d.id}
+                      fill={platformColor(platform)}
+                      fillOpacity={d.isFocus ? 1 : 0.72}
+                    />
+                  ))}
+                  {platformIndex === breakdownPlatforms.length - 1 ? (
+                    <LabelList
+                      dataKey="valueLabel"
+                      position="right"
+                      style={{
+                        fill: 'var(--pb-label)',
+                        fontSize: 10,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    />
+                  ) : null}
+                </Bar>
+              ))}
+            </>
+          ) : (
+            <Bar dataKey="value" radius={[0, 2, 2, 0]} barSize={14} isAnimationActive={false}>
+              {data.map((d) => (
+                <Cell key={d.id} fill={d.fill} fillOpacity={d.isFocus ? 1 : 0.75} />
+              ))}
+              <LabelList
+                dataKey="valueLabel"
+                position="right"
+                style={{
+                  fill: 'var(--pb-label)',
+                  fontSize: 10,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              />
+            </Bar>
+          )}
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartFrame>
+      {hasMore && !isEmpty ? (
+        <div className="mt-2 flex justify-end border-t border-zinc-100 pt-2 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="rounded px-2 py-1 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          >
+            {expanded ? 'Show top ' + maxRows : 'View all ' + measuredRows.length}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }

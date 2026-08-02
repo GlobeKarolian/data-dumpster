@@ -1,0 +1,1594 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Boston News brings Boston.com, Boston Magazine, and the B-Side into one personalized iOS news app.">
+  <title>Boston News | Three titles. One app.</title>
+  <script>document.documentElement.classList.add('js');</script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600;6..72,800&display=swap');
+
+    :root {
+      --paper: #FBFAF7;
+      --ink: #1F1D1A;
+      --red: #C8102E;
+      --teal: #0E7C7B;
+      --soft: #55514A;
+      --line: rgba(31, 29, 26, 0.22);
+      --serif: "Newsreader", Georgia, "Times New Roman", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      --page: min(960px, calc(100% - 48px));
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: var(--serif);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+    }
+
+    .page {
+      width: var(--page);
+      margin-inline: auto;
+    }
+
+    .eyebrow,
+    .section-label,
+    .source,
+    .device-label,
+    .reason,
+    .event-kicker,
+    .photo-kicker {
+      font-size: 0.69rem;
+      font-weight: 800;
+      line-height: 1.2;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      color: var(--soft);
+    }
+
+    .double-rule {
+      height: 7px;
+      border-top: 3px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .section-rule {
+      height: 8px;
+      border-top: 1px solid var(--line);
+    }
+
+    .section-rule::before {
+      display: block;
+      width: 96px;
+      height: 7px;
+      margin-top: -1px;
+      background: var(--red);
+      content: "";
+    }
+
+    .hero {
+      padding: 24px 0 80px;
+      text-align: center;
+    }
+
+    .hero .double-rule {
+      margin-bottom: 48px;
+    }
+
+    .hero-copy {
+      max-width: 800px;
+      margin-inline: auto;
+    }
+
+    .hero h1 {
+      max-width: 760px;
+      margin: 16px auto 16px;
+      font-size: clamp(4rem, 9vw, 7.4rem);
+      line-height: 0.84;
+    }
+
+    .hero-lede {
+      max-width: 46ch;
+      margin: 0 auto;
+      color: var(--soft);
+      font-family: var(--serif);
+      font-size: clamp(1.25rem, 2.2vw, 1.65rem);
+      font-weight: 600;
+      line-height: 1.28;
+    }
+
+    .cta-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 24px;
+      border: 2px solid var(--red);
+      border-radius: 999px;
+      background: var(--red);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 800;
+      letter-spacing: 0.035em;
+      text-decoration: none;
+      transition: background 160ms ease, color 160ms ease;
+    }
+
+    .cta:hover,
+    .cta:focus-visible {
+      background: var(--paper);
+      color: var(--red);
+    }
+
+    .cta:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 4px;
+    }
+
+    .cta-caption {
+      color: var(--soft);
+      font-size: 0.76rem;
+      line-height: 1.4;
+    }
+
+    .hero-stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      isolation: isolate;
+      min-height: 720px;
+      margin-top: 48px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-stage::before,
+    .hero-stage::after {
+      position: absolute;
+      z-index: -1;
+      background: var(--ink);
+      content: "";
+    }
+
+    .hero-stage::before {
+      top: 64px;
+      bottom: 64px;
+      left: calc(50% - 2px);
+      width: 4px;
+    }
+
+    .hero-stage::after {
+      top: calc(50% - 2px);
+      right: 24px;
+      left: 24px;
+      height: 4px;
+    }
+
+    .phone {
+      position: relative;
+      width: 310px;
+      padding: 10px;
+      border: 3px solid var(--ink);
+      border-radius: 48px;
+      background: var(--ink);
+      box-shadow: 12px 14px 0 rgba(31, 29, 26, 0.12);
+    }
+
+    .phone::before {
+      position: absolute;
+      z-index: 2;
+      top: 17px;
+      left: 50%;
+      width: 92px;
+      height: 24px;
+      border-radius: 20px;
+      background: var(--ink);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .phone img {
+      width: 100%;
+      border-radius: 37px;
+    }
+
+    .edition-note {
+      position: absolute;
+      top: 40px;
+      left: 0;
+      max-width: 168px;
+      padding-top: 8px;
+      border-top: 4px solid var(--red);
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 700;
+      line-height: 1.45;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .edition-note.right {
+      top: auto;
+      right: 0;
+      bottom: 40px;
+      left: auto;
+      text-align: right;
+    }
+
+    .photo-band {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin: 0 auto 112px;
+      border-top: 7px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .photo-story {
+      position: relative;
+      min-height: 312px;
+      overflow: hidden;
+      border-right: 1px solid var(--paper);
+      color: #fff;
+    }
+
+    .photo-story:last-child {
+      border-right: 0;
+    }
+
+    .photo-story img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 400ms ease;
+    }
+
+    .photo-story:hover img {
+      transform: scale(1.025);
+    }
+
+    .photo-caption {
+      position: absolute;
+      inset: auto 0 0;
+      padding: 80px 20px 20px;
+      background: linear-gradient(to bottom, rgba(31, 29, 26, 0), rgba(31, 29, 26, 0.94));
+    }
+
+    .photo-kicker {
+      display: block;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .photo-caption h2 {
+      margin: 0;
+      font-size: clamp(1.35rem, 2.5vw, 2rem);
+      line-height: 1;
+    }
+
+    .feature {
+      padding: 0 0 112px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.78fr);
+      gap: 72px;
+      align-items: center;
+      padding-top: 48px;
+    }
+
+    .feature-grid.reverse {
+      grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1fr);
+    }
+
+    .feature h2,
+    .section-heading {
+      margin: 12px 0 16px;
+      font-size: clamp(3rem, 6.3vw, 5.35rem);
+      line-height: 0.9;
+    }
+
+    .feature-copy > p,
+    .section-intro {
+      max-width: 48ch;
+      color: var(--soft);
+      font-size: 1rem;
+      line-height: 1.65;
+    }
+
+    .editor-note {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 32px;
+      padding: 16px 0;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .editor-note strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--red);
+      font-size: 0.67rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .editor-note span {
+      display: block;
+      color: var(--soft);
+      font-family: var(--serif);
+      font-size: 1rem;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .phone-wrap {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 632px;
+      border: 1px solid var(--ink);
+      background: rgba(31, 29, 26, 0.05);
+    }
+
+    .phone-wrap::before,
+    .phone-wrap::after {
+      position: absolute;
+      background: var(--line);
+      content: "";
+    }
+
+    .phone-wrap::before {
+      top: 32px;
+      right: 0;
+      left: 0;
+      height: 1px;
+    }
+
+    .phone-wrap::after {
+      top: 0;
+      bottom: 0;
+      left: 32px;
+      width: 1px;
+    }
+
+    .phone.compact {
+      width: 266px;
+      box-shadow: 9px 11px 0 var(--red);
+    }
+
+    .receipt-section {
+      padding-bottom: 112px;
+    }
+
+    .receipt-field {
+      margin-top: 48px;
+      padding: 56px 40px 64px;
+      overflow: hidden;
+      background: var(--ink);
+    }
+
+    .receipts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      align-items: center;
+    }
+
+    .story-card {
+      min-height: 272px;
+      padding: 24px;
+      background: #fff;
+      box-shadow: 0 8px 0 rgba(0, 0, 0, 0.28);
+    }
+
+    .story-card:nth-child(1) {
+      transform: rotate(-2.2deg);
+    }
+
+    .story-card:nth-child(2) {
+      transform: translateY(16px) rotate(1.5deg);
+    }
+
+    .story-card:nth-child(3) {
+      transform: rotate(-1deg);
+    }
+
+    .reason {
+      display: inline-block;
+      margin-bottom: 24px;
+      padding: 5px 7px 4px;
+      background: var(--red);
+      color: #fff;
+      font-size: 0.6rem;
+    }
+
+    .story-card h3 {
+      margin-bottom: 24px;
+      font-size: clamp(1.5rem, 2.8vw, 2.05rem);
+      line-height: 1.02;
+    }
+
+    .source {
+      padding-top: 12px;
+      border-top: 1px solid var(--ink);
+      color: var(--soft);
+    }
+
+    .events {
+      padding-bottom: 112px;
+    }
+
+    .events-layout {
+      display: grid;
+      grid-template-columns: 0.72fr 1.28fr;
+      gap: 64px;
+      align-items: start;
+      padding-top: 48px;
+    }
+
+    .event-list {
+      border-top: 7px solid var(--red);
+    }
+
+    .event-card {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      gap: 24px;
+      padding: 24px 0;
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .event-date {
+      padding-right: 16px;
+      border-right: 1px solid var(--line);
+      font-family: var(--serif);
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 0.95;
+    }
+
+    .event-date span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--red);
+      font-family: var(--sans);
+      font-size: 0.65rem;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .event-card h3 {
+      margin: 6px 0 12px;
+      font-size: 1.8rem;
+      line-height: 1;
+    }
+
+    .event-meta,
+    .event-player {
+      font-size: 0.77rem;
+      font-weight: 700;
+      line-height: 1.6;
+    }
+
+    .event-meta {
+      color: var(--soft);
+    }
+
+    .event-player {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--ink);
+    }
+
+    .event-player a {
+      color: var(--red);
+      font-weight: 800;
+    }
+
+    .event-aside {
+      padding: 24px;
+      border: 1px solid var(--ink);
+    }
+
+    .event-aside strong {
+      display: block;
+      margin-bottom: 12px;
+      font-family: var(--serif);
+      font-size: 1.45rem;
+      line-height: 1;
+    }
+
+    .event-aside p {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    .share-section {
+      padding-bottom: 112px;
+    }
+
+    .share-frame {
+      position: relative;
+      padding: 32px;
+      border: 1px solid var(--ink);
+      background: rgba(31, 29, 26, 0.05);
+    }
+
+    .share-frame::before {
+      position: absolute;
+      top: -8px;
+      right: 48px;
+      width: 72px;
+      height: 16px;
+      background: var(--red);
+      content: "";
+      transform: rotate(2deg);
+    }
+
+    .share-frame img {
+      width: 100%;
+      box-shadow: 8px 8px 0 rgba(31, 29, 26, 0.16);
+    }
+
+    .share-proof {
+      margin-top: 32px;
+      padding: 16px 0;
+      border-top: 1px solid var(--ink);
+      border-bottom: 1px solid var(--ink);
+      color: var(--soft);
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1.5;
+      text-transform: uppercase;
+    }
+
+    .circle-section {
+      padding-bottom: 112px;
+    }
+
+    .circle-section .section-rule::before {
+      background: var(--teal);
+    }
+
+    .circle-grid {
+      display: grid;
+      grid-template-columns: 1fr 0.82fr;
+      gap: 72px;
+      align-items: center;
+      padding-top: 48px;
+    }
+
+    .circle-section .section-label,
+    .circle-section .privacy {
+      color: var(--teal);
+    }
+
+    .circle-phone-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 584px;
+      padding: 40px;
+      background: var(--teal);
+    }
+
+    .circle-phone {
+      width: 276px;
+      min-height: 508px;
+      padding: 12px;
+      border: 3px solid var(--ink);
+      border-radius: 44px;
+      background: var(--ink);
+      box-shadow: 10px 12px 0 rgba(31, 29, 26, 0.35);
+      transform: rotate(1.5deg);
+    }
+
+    .circle-screen {
+      display: flex;
+      flex-direction: column;
+      height: 484px;
+      overflow: hidden;
+      border-radius: 33px;
+      background: var(--paper);
+    }
+
+    .circle-top {
+      flex: 1;
+      padding: 48px 20px 16px;
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .circle-top span {
+      display: block;
+      margin-bottom: 12px;
+      color: rgba(251, 250, 247, 0.72);
+      font-size: 0.6rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .circle-top strong {
+      display: block;
+      max-width: 14ch;
+      font-family: var(--serif);
+      font-size: 1.65rem;
+      line-height: 1.02;
+    }
+
+    .circle-sheet {
+      margin: -24px 10px 10px;
+      padding: 24px 18px 20px;
+      border: 1px solid var(--ink);
+      border-radius: 22px;
+      background: #fff;
+    }
+
+    .circle-sheet h3 {
+      margin: 0 0 16px;
+      font-size: 1.55rem;
+    }
+
+    .circle-person {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+      font-size: 0.74rem;
+      line-height: 1.35;
+    }
+
+    .circle-avatar {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--teal);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .circle-person b {
+      display: block;
+    }
+
+    .circle-person em {
+      color: var(--soft);
+      font-size: 0.65rem;
+      font-style: normal;
+    }
+
+    .circle-count {
+      font-family: var(--serif);
+      font-size: 1.4rem;
+      font-weight: 800;
+    }
+
+    .steps {
+      margin-top: 32px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 16px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .step-number {
+      color: var(--teal);
+      font-family: var(--serif);
+      font-size: 1.6rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 4px;
+      font-family: var(--serif);
+      font-size: 1.15rem;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .privacy {
+      margin: 24px 0 0;
+      padding-left: 16px;
+      border-left: 4px solid var(--teal);
+      font-size: 0.78rem;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    .devices-section {
+      padding-bottom: 112px;
+    }
+
+    .device-stage {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+      align-items: end;
+      margin-top: 48px;
+      padding: 40px;
+      border: 1px solid var(--ink);
+      background: rgba(31, 29, 26, 0.05);
+    }
+
+    .device-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--soft);
+      font-size: 0.58rem;
+    }
+
+    .tv-comp {
+      grid-column: 1 / span 7;
+      align-self: start;
+    }
+
+    .tv-screen {
+      position: relative;
+      min-height: 248px;
+      padding: 24px;
+      border: 8px solid var(--ink);
+      background: var(--red);
+      color: #fff;
+    }
+
+    .tv-screen::after {
+      position: absolute;
+      right: 24px;
+      bottom: -32px;
+      left: 24px;
+      height: 24px;
+      border-top: 4px solid var(--ink);
+      content: "";
+    }
+
+    .tv-screen small,
+    .mini-front small {
+      font-size: 0.58rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .tv-screen h3 {
+      max-width: 8ch;
+      margin: 32px 0 0;
+      font-size: 3.4rem;
+      line-height: 0.86;
+    }
+
+    .tablet-comp {
+      grid-column: 8 / span 5;
+    }
+
+    .tablet-shell {
+      padding: 12px;
+      border: 3px solid var(--ink);
+      border-radius: 20px;
+      background: var(--ink);
+      transform: rotate(1deg);
+    }
+
+    .tablet-screen {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 12px;
+      min-height: 280px;
+      padding: 16px;
+      border-radius: 10px;
+      background: var(--paper);
+    }
+
+    .mini-front {
+      padding-right: 12px;
+      border-right: 1px solid var(--ink);
+    }
+
+    .mini-front h3 {
+      margin: 24px 0 12px;
+      font-size: 1.8rem;
+      line-height: 0.92;
+    }
+
+    .mini-lines i {
+      display: block;
+      height: 5px;
+      margin-bottom: 7px;
+      background: var(--ink);
+      opacity: 0.75;
+    }
+
+    .mini-lines i:nth-child(2) {
+      width: 76%;
+    }
+
+    .mini-lines i:nth-child(3) {
+      width: 88%;
+    }
+
+    .mini-stack article {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      font-family: var(--serif);
+      font-size: 0.86rem;
+      font-weight: 800;
+      line-height: 1.05;
+    }
+
+    .small-devices {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: 0.72fr 0.58fr 1.7fr;
+      gap: 24px;
+      align-items: end;
+      margin-top: 32px;
+      padding-top: 32px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .mini-phone-shell {
+      width: 136px;
+      margin-inline: auto;
+      padding: 7px;
+      border: 3px solid var(--ink);
+      border-radius: 24px;
+      background: var(--ink);
+    }
+
+    .mini-phone-screen {
+      min-height: 244px;
+      padding: 24px 12px 12px;
+      border-radius: 15px;
+      background: var(--paper);
+    }
+
+    .mini-phone-screen h3 {
+      margin: 12px 0;
+      font-size: 1.45rem;
+      line-height: 0.92;
+    }
+
+    .watch-shell {
+      display: grid;
+      place-items: center;
+      width: 112px;
+      height: 132px;
+      margin: 32px auto;
+      border: 8px solid var(--ink);
+      border-radius: 32px;
+      background: var(--ink);
+      color: #fff;
+      text-align: center;
+    }
+
+    .watch-shell strong {
+      display: block;
+      color: var(--red);
+      font-family: var(--serif);
+      font-size: 1.8rem;
+      line-height: 1;
+    }
+
+    .watch-shell span {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.55rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .carplay-shell {
+      padding: 10px;
+      border: 5px solid var(--ink);
+      border-radius: 18px;
+      background: var(--ink);
+    }
+
+    .carplay-screen {
+      display: grid;
+      grid-template-columns: 104px 1fr;
+      gap: 20px;
+      min-height: 176px;
+      padding: 20px;
+      border-radius: 9px;
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .album {
+      display: grid;
+      place-items: center;
+      background: var(--red);
+      font-family: var(--serif);
+      font-size: 1.3rem;
+      font-weight: 800;
+      line-height: 0.9;
+      text-align: center;
+    }
+
+    .now-playing small {
+      color: rgba(251, 250, 247, 0.72);
+      font-size: 0.57rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .now-playing h3 {
+      margin: 16px 0 4px;
+      font-family: var(--sans);
+      font-size: 1.3rem;
+      letter-spacing: -0.01em;
+    }
+
+    .now-playing p {
+      margin-bottom: 16px;
+      color: rgba(251, 250, 247, 0.72);
+      font-size: 0.72rem;
+    }
+
+    .controls {
+      font-size: 1rem;
+      letter-spacing: 0.6em;
+    }
+
+    .closing {
+      padding: 96px 0 80px;
+      border-top: 7px solid var(--ink);
+      text-align: center;
+    }
+
+    .closing h2 {
+      max-width: 920px;
+      margin: 0 auto 32px;
+      font-size: clamp(4.4rem, 12vw, 10.5rem);
+      line-height: 0.78;
+    }
+
+    .red-period {
+      color: var(--red);
+    }
+
+    .closing .cta-row {
+      margin-top: 0;
+    }
+
+    .baseline {
+      width: 112px;
+      height: 8px;
+      margin: 48px auto 0;
+      background: var(--red);
+    }
+
+    footer {
+      padding: 24px 0 32px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .folio {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      color: var(--soft);
+      font-size: 0.64rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .js .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+
+    .js .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 760px) {
+      :root {
+        --page: min(calc(100% - 48px), 960px);
+      }
+
+      .hero {
+        padding-bottom: 64px;
+      }
+
+      .hero .double-rule {
+        margin-bottom: 40px;
+      }
+
+      .hero h1 {
+        font-size: clamp(3.7rem, 18vw, 5rem);
+      }
+
+      .hero-stage {
+        min-height: 680px;
+        margin-top: 40px;
+      }
+
+      .edition-note {
+        display: none;
+      }
+
+      .photo-band {
+        grid-template-columns: 1fr;
+        margin-bottom: 80px;
+      }
+
+      .photo-story {
+        min-height: 248px;
+        border-right: 0;
+        border-bottom: 1px solid var(--paper);
+      }
+
+      .feature,
+      .receipt-section,
+      .events,
+      .share-section,
+      .circle-section,
+      .devices-section {
+        padding-bottom: 80px;
+      }
+
+      .feature-grid,
+      .feature-grid.reverse,
+      .events-layout,
+      .circle-grid {
+        grid-template-columns: 1fr;
+        gap: 40px;
+        padding-top: 40px;
+      }
+
+      .feature-grid.reverse .share-frame {
+        order: 2;
+      }
+
+      .feature-grid.reverse .feature-copy {
+        order: 1;
+      }
+
+      .phone-wrap {
+        min-height: 584px;
+      }
+
+      .receipts {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      .receipt-field {
+        margin-top: 40px;
+        padding: 40px 24px 48px;
+      }
+
+      .story-card {
+        min-height: 224px;
+      }
+
+      .story-card:nth-child(1),
+      .story-card:nth-child(2),
+      .story-card:nth-child(3) {
+        transform: none;
+      }
+
+      .event-card {
+        grid-template-columns: 72px 1fr;
+        gap: 16px;
+      }
+
+      .event-date {
+        padding-right: 8px;
+        font-size: 1.6rem;
+      }
+
+      .circle-phone-wrap {
+        min-height: 560px;
+        padding: 24px;
+      }
+
+      .device-stage {
+        display: block;
+        padding: 24px;
+      }
+
+      .tablet-comp {
+        margin-top: 56px;
+      }
+
+      .small-devices {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+
+      .tv-screen {
+        min-height: 216px;
+      }
+
+      .tv-screen h3 {
+        font-size: 2.8rem;
+      }
+
+      .carplay-screen {
+        grid-template-columns: 72px 1fr;
+        gap: 16px;
+        padding: 16px;
+      }
+
+      .folio {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+      }
+    }
+
+    @media (max-width: 420px) {
+      :root {
+        --page: calc(100% - 40px);
+      }
+
+      .cta-row {
+        gap: 8px;
+      }
+
+      .cta {
+        min-height: 44px;
+        padding-inline: 18px;
+        font-size: 0.8rem;
+      }
+
+      .cta-caption {
+        max-width: none;
+        font-size: 0.625rem;
+        white-space: nowrap;
+      }
+
+      .hero-stage {
+        min-height: 632px;
+      }
+
+      .phone {
+        width: 280px;
+      }
+
+      .phone.compact {
+        width: 248px;
+      }
+
+      .feature h2,
+      .section-heading {
+        font-size: 3.2rem;
+      }
+
+      .editor-note {
+        grid-template-columns: 1fr;
+      }
+
+      .share-frame {
+        padding: 20px;
+      }
+
+      .circle-phone {
+        width: 256px;
+      }
+
+      .tablet-screen {
+        grid-template-columns: 1fr;
+      }
+
+      .mini-front {
+        padding: 0 0 12px;
+        border-right: 0;
+        border-bottom: 1px solid var(--ink);
+      }
+
+      .carplay-screen {
+        grid-template-columns: 64px 1fr;
+      }
+
+      .controls {
+        letter-spacing: 0.35em;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+      }
+
+      .js .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero page" aria-labelledby="hero-title">
+      <div class="double-rule" aria-hidden="true"></div>
+      <div class="hero-copy reveal">
+        <p class="eyebrow">BOSTON.COM · BOSTON MAGAZINE · B-SIDE</p>
+        <h1 id="hero-title">Three titles.<br> One app.</h1>
+        <p class="hero-lede">Boston’s essential news, culture, and things to do, gathered into a front page that learns what matters to you.</p>
+        <div class="cta-row">
+          <a class="cta" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get the beta</a>
+          <span class="cta-caption">Free during the preview · iPhone &amp; iPad</span>
+        </div>
+      </div>
+      <div class="hero-stage reveal">
+        <p class="edition-note">The day’s essential reporting, edited to lead every front page.</p>
+        <div class="phone">
+          <img src="../shared-assets/front.png" alt="Boston News personalized front page on iPhone" width="322" height="700">
+        </div>
+        <p class="edition-note right">Your teams, neighborhoods, food, and nights out move closer.</p>
+      </div>
+    </section>
+
+    <section class="photo-band page reveal" aria-label="Stories from across Boston News">
+      <article class="photo-story">
+        <img src="../shared-assets/local.jpg" alt="Boston city street" width="2560" height="1707" loading="lazy">
+        <div class="photo-caption">
+          <span class="photo-kicker">Local</span>
+          <h2>The stories moving Boston, all day.</h2>
+        </div>
+      </article>
+      <article class="photo-story">
+        <img src="../shared-assets/sox.jpg" alt="A Boston Red Sox game" width="2560" height="1707" loading="lazy">
+        <div class="photo-caption">
+          <span class="photo-kicker">Red Sox</span>
+          <h2>Fenway nights, from first pitch on.</h2>
+        </div>
+      </article>
+      <article class="photo-story">
+        <img src="../shared-assets/weather.jpg" alt="Weather moving over Boston" width="292" height="184" loading="lazy">
+        <div class="photo-caption">
+          <span class="photo-kicker">Weather</span>
+          <h2>What the sky has planned for your commute.</h2>
+        </div>
+      </article>
+    </section>
+
+    <section class="feature page" aria-labelledby="today-title">
+      <div class="section-rule" aria-hidden="true"></div>
+      <div class="feature-grid">
+        <div class="feature-copy reveal">
+          <p class="section-label">Introducing Your Today</p>
+          <h2 id="today-title">Boston News, made for your day.</h2>
+          <p>Pick the interests and neighborhoods you care about. Your Today brings them forward while the biggest local stories still lead for everyone. Personalization boosts. It never buries.</p>
+          <div class="editor-note" aria-label="How Your Today is edited">
+            <div>
+              <strong>Always leads</strong>
+              <span>The news all of Boston needs to know</span>
+            </div>
+            <div>
+              <strong>Moves closer</strong>
+              <span>The teams, places, and pursuits you pick</span>
+            </div>
+          </div>
+        </div>
+        <div class="phone-wrap reveal">
+          <div class="phone compact">
+            <img src="../shared-assets/onboarding.png" alt="Boston News interest and neighborhood onboarding" width="322" height="700" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="receipt-section page" aria-labelledby="receipt-title">
+      <div class="section-rule" aria-hidden="true"></div>
+      <div class="reveal">
+        <p class="section-label">The edit, explained</p>
+        <h2 class="section-heading" id="receipt-title">Every boosted story shows its receipt.</h2>
+        <p class="section-intro">No mystery box. When Your Today moves a story up, a plain label tells you exactly why it appeared.</p>
+      </div>
+      <div class="receipt-field reveal">
+        <div class="receipts">
+          <article class="story-card">
+            <span class="reason">Because you follow Red Sox</span>
+            <h3>Three decisions that could shape the rest of the season</h3>
+            <p class="source">Boston.com · Sports</p>
+          </article>
+          <article class="story-card">
+            <span class="reason">Near you · Cambridge &amp; Somerville</span>
+            <h3>A new stretch of bike lanes is opening this weekend</h3>
+            <p class="source">Boston.com · Local</p>
+          </article>
+          <article class="story-card">
+            <span class="reason">Because you read Food &amp; Drink</span>
+            <h3>The neighborhood bakeries worth waking up early for</h3>
+            <p class="source">Boston Magazine · Dining</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="events page" aria-labelledby="events-title">
+      <div class="section-rule" aria-hidden="true"></div>
+      <div class="events-layout">
+        <div class="reveal">
+          <p class="section-label">News / Explore</p>
+          <h2 class="section-heading" id="events-title">All the news, and everything to do.</h2>
+          <p class="section-intro">The News tab is the raw wire, newest first, with one-tap section chips including the B-Side. Explore turns concerts, Sox games, theater, comedy, and free city events into a plan.</p>
+          <aside class="event-aside">
+            <strong>From “what’s happening?” to “we’re going.”</strong>
+            <p>Preview the music, compare door-to-door times, find Best of Boston winners, and buy tickets without leaving the app.</p>
+          </aside>
+        </div>
+        <div class="event-list reveal">
+          <article class="event-card">
+            <div class="event-date"><span>Fri</span>08.14</div>
+            <div>
+              <p class="event-kicker">Concert · Roadrunner</p>
+              <h3>Tame Impala</h3>
+              <p class="event-meta">Brighton · Doors 7:00 · Best by Green Line</p>
+              <div class="event-player">▶ Let It Happen · ▶ Borderline | Walk 19 · T 9 · Drive 13 | <a href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get tickets</a></div>
+            </div>
+          </article>
+          <article class="event-card">
+            <div class="event-date"><span>Sat</span>08.15</div>
+            <div>
+              <p class="event-kicker">Free · City Hall Plaza</p>
+              <h3>Boston Summer Arts Market</h3>
+              <p class="event-meta">Downtown · 11:00–6:00 · 42 local makers</p>
+              <div class="event-player">Best of Boston nearby | Walk 8 · T 4 · Drive 11 | Free entry</div>
+            </div>
+          </article>
+          <article class="event-card">
+            <div class="event-date"><span>Sun</span>08.16</div>
+            <div>
+              <p class="event-kicker">Baseball · Fenway Park</p>
+              <h3>Red Sox vs. Baltimore</h3>
+              <p class="event-meta">Fenway · First pitch 1:35 · Seats from $38</p>
+              <div class="event-player">Walk 24 · T 12 · Drive 22 | <a href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get tickets</a></div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="share-section feature page" aria-labelledby="share-title">
+      <div class="section-rule" aria-hidden="true"></div>
+      <div class="feature-grid reverse">
+        <figure class="share-frame reveal">
+          <img src="../shared-assets/sharecard.png" alt="A designed Boston News broadsheet clipping share image" width="608" height="760" loading="lazy">
+        </figure>
+        <div class="feature-copy reveal">
+          <p class="section-label">A better share</p>
+          <h2 id="share-title">Send the front page, not a link.</h2>
+          <p>Sharing composes a designed broadsheet clipping with the masthead, headline, photo, and source already set. It looks like the story was worth stopping for because it was.</p>
+          <p class="share-proof">Masthead / Headline / Photo / Source<br>Composed the moment you share</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="circle-section page" aria-labelledby="circle-title">
+      <div class="section-rule" aria-hidden="true"></div>
+      <div class="circle-grid">
+        <div class="reveal">
+          <p class="section-label">The Reading Circle</p>
+          <h2 class="section-heading" id="circle-title">Built for the group chat.</h2>
+          <p class="section-intro">Sign a share with your first name. Stories friends send you land on a shelf on your front page, and you can see how your own shares did. No follower graphs, comments, or strangers.</p>
+          <div class="steps">
+            <article class="step">
+              <span class="step-number">1</span>
+              <div><strong>Sign your shares</strong><p>Add your first name before the clipping goes out.</p></div>
+            </article>
+            <article class="step">
+              <span class="step-number">2</span>
+              <div><strong>Send it like you already do</strong><p>Messages, Mail, or the group chat you check all day.</p></div>
+            </article>
+            <article class="step">
+              <span class="step-number">3</span>
+              <div><strong>Their stories find you</strong><p>Open a friend’s share and it joins your Reading Circle shelf.</p></div>
+            </article>
+          </div>
+          <p class="privacy">Names travel inside your messages, never to our servers.</p>
+        </div>
+        <div class="circle-phone-wrap reveal">
+          <div class="circle-phone" aria-label="Reading Circle phone preview">
+            <div class="circle-screen">
+              <div class="circle-top">
+                <span>From people you know</span>
+                <strong>The stories they thought you should see</strong>
+              </div>
+              <div class="circle-sheet">
+                <h3>Your circle</h3>
+                <div class="circle-person">
+                  <span class="circle-avatar">M</span>
+                  <span><b>Mom sent you 3 this week</b><em>2 read</em></span>
+                  <span class="circle-count">3</span>
+                </div>
+                <div class="circle-person">
+                  <span class="circle-avatar">J</span>
+                  <span><b>Jamie sent you 2</b><em>1 new</em></span>
+                  <span class="circle-count">2</span>
+                </div>
+                <div class="circle-person">
+                  <span class="circle-avatar">A</span>
+                  <span><b>Your shares</b><em>4 opened</em></span>
+                  <span class="circle-count">6</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="devices-section page" aria-labelledby="devices-title">
+      <div class="section-rule" aria-hidden="true"></div>
+      <div class="reveal">
+        <p class="section-label">Boston News, everywhere</p>
+        <h2 class="section-heading" id="devices-title">Every screen in your life.</h2>
+        <p class="section-intro">The front page follows your day, from the kitchen counter to the train, the dashboard, and the big screen.</p>
+      </div>
+      <div class="device-stage reveal" aria-label="Boston News across Apple TV, iPad, iPhone, Apple Watch, and CarPlay">
+        <div class="tv-comp">
+          <span class="device-label">Apple TV</span>
+          <div class="tv-screen">
+            <small>Tonight in Boston</small>
+            <h3>Five things to know before you head out.</h3>
+          </div>
+        </div>
+        <div class="tablet-comp">
+          <span class="device-label">iPad</span>
+          <div class="tablet-shell">
+            <div class="tablet-screen">
+              <div class="mini-front">
+                <small>Your Today</small>
+                <h3>What Boston is talking about now</h3>
+                <div class="mini-lines"><i></i><i></i><i></i></div>
+              </div>
+              <div class="mini-stack">
+                <article>The morning’s five essential stories</article>
+                <article>Red Sox set the weekend rotation</article>
+                <article>Tonight’s best free events</article>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="small-devices">
+          <div>
+            <span class="device-label">iPhone</span>
+            <div class="mini-phone-shell">
+              <div class="mini-phone-screen">
+                <span class="reason">Near you</span>
+                <h3>A better way through the city today</h3>
+                <div class="mini-lines"><i></i><i></i><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <span class="device-label">Apple Watch</span>
+            <div class="watch-shell"><div><strong>48°</strong><span>Boston · 3 new</span></div></div>
+          </div>
+          <div>
+            <span class="device-label">CarPlay</span>
+            <div class="carplay-shell">
+              <div class="carplay-screen">
+                <div class="album">THE<br>B-SIDE</div>
+                <div class="now-playing">
+                  <small>Now previewing</small>
+                  <h3>Let It Happen</h3>
+                  <p>Tame Impala · Roadrunner</p>
+                  <div class="controls" aria-label="Playback controls">◀ ‖ ▶</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing page reveal" aria-labelledby="closing-title">
+      <h2 id="closing-title">Know your city<span class="red-period">.</span></h2>
+      <div class="cta-row">
+        <a class="cta" href="mailto:matt@karolian.com?subject=Boston%20News%20beta">Get the beta</a>
+        <span class="cta-caption">Free during the preview · iPhone &amp; iPad</span>
+      </div>
+      <div class="baseline" aria-hidden="true"></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="folio page">
+      <span>Boston.com · Boston Magazine · B-Side</span>
+      <span>Preview edition · Boston, Massachusetts</span>
+      <span>© 2026 Boston Globe Media</span>
+    </div>
+  </footer>
+
+  <script>
+    const items = document.querySelectorAll('.reveal');
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.1, rootMargin: '0px 0px -32px' });
+      items.forEach((item) => observer.observe(item));
+    } else {
+      items.forEach((item) => item.classList.add('is-visible'));
+    }
+  </script>
+</body>
+</html>

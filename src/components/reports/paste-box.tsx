@@ -1,12 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Table2, Trash2, Type } from 'lucide-react';
+import { AlertTriangle, FileUp, Plus, Table2, Trash2, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatRelative } from '@/components/ui/format';
 import { cn } from '@/lib/utils';
 import type { ManualSectionSpec, ManualTable } from '@/lib/reports/types';
 import { emptyTable, parseTable, rowsToTsv } from '@/lib/reports/tsv';
+import { importAdobeFreeform, describeImport, type ImportSummary } from '@/lib/reports/freeform-import';
 import { SectionCard } from './ui';
 
 const DELIMITER_LABEL: Record<string, string> = {
@@ -40,6 +41,7 @@ export function PasteBox({
   const [mode, setMode] = React.useState<'paste' | 'grid'>(
     table.rows.length > 0 ? 'grid' : 'paste',
   );
+  const [importState, setImportState] = React.useState<ImportState>({ status: 'idle' });
   const parsed = React.useMemo(() => parseTable(table.raw, spec.columns), [table.raw, spec.columns]);
 
   const applyRaw = (raw: string) => {
@@ -49,6 +51,34 @@ export function PasteBox({
 
   const applyRows = (rows: string[][]) => {
     onChange({ raw: rowsToTsv(rows), rows, updatedAt: new Date().toISOString() });
+  };
+
+  /**
+   * Read a dropped or chosen file.
+   *
+   * A failed import deliberately leaves the existing table alone. The common
+   * mistake is grabbing the wrong export out of a downloads folder, and wiping
+   * good rows to replace them with an error message would punish it twice.
+   */
+  const importFile = async (file: File) => {
+    setImportState({ status: 'reading' });
+    try {
+      const text = await file.text();
+      const result = importAdobeFreeform(text);
+      if (!result.ok) {
+        setImportState({ status: 'error', problems: result.problems, fileName: file.name });
+        return;
+      }
+      onChange(result.table);
+      setImportState({ status: 'ok', summary: result.summary, fileName: file.name });
+      setMode('grid');
+    } catch {
+      setImportState({
+        status: 'error',
+        fileName: file.name,
+        problems: ['The file could not be read. If it is open in Excel, close it and try again.'],
+      });
+    }
   };
 
   const setCell = (rowIndex: number, colIndex: number, value: string) => {
@@ -93,7 +123,10 @@ export function PasteBox({
         </div>
       }
       footer={
-        rowCount > 0 ? (
+        importState.status === 'ok' ? (
+          <ImportFooter summary={importState.summary} fileName={importState.fileName}
+            updatedAt={table.updatedAt} />
+        ) : rowCount > 0 ? (
           <span className="pb-num">
             {rowCount + (rowCount === 1 ? ' row' : ' rows')
               + ' · ' + (DELIMITER_LABEL[parsed.delimiter] ?? parsed.delimiter)
@@ -101,12 +134,29 @@ export function PasteBox({
               + (table.updatedAt ? ' · entered ' + formatRelative(table.updatedAt) : '')}
           </span>
         ) : (
-          <span>Nothing pasted yet. This section will be omitted from the export.</span>
+          <span>
+            {spec.importer
+              ? 'Nothing imported yet. This section will be omitted from the export.'
+              : 'Nothing pasted yet. This section will be omitted from the export.'}
+          </span>
         )
       }
     >
       {mode === 'paste' ? (
         <div className="space-y-2 p-4">
+          {spec.importer ? (
+            <>
+              <DropZone
+                hint={spec.importHint}
+                state={importState}
+                disabled={disabled}
+                onFile={importFile}
+              />
+              <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500">
+                or paste rows directly
+              </p>
+            </>
+          ) : null}
           <textarea
             value={table.raw}
             onChange={(e) => applyRaw(e.target.value)}
@@ -185,6 +235,162 @@ export function PasteBox({
         </div>
       )}
     </SectionCard>
+  );
+}
+
+type ImportState =
+  | { status: 'idle' }
+  | { status: 'reading' }
+  | { status: 'ok'; summary: ImportSummary; fileName: string }
+  | { status: 'error'; problems: string[]; fileName: string };
+
+/**
+ * File drop target for sections whose source export cannot survive a paste.
+ *
+ * Drag events fire on every child element, so a naive dragenter/dragleave pair
+ * flickers as the pointer crosses the inner text. The depth counter is what
+ * keeps the highlight steady.
+ */
+function DropZone({
+  hint, state, disabled, onFile,
+}: {
+  hint?: string;
+  state: ImportState;
+  disabled?: boolean;
+  onFile: (file: File) => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const depth = React.useRef(0);
+  const [over, setOver] = React.useState(false);
+
+  const take = (files: FileList | null) => {
+    const file = files?.[0];
+    if (file && !disabled) onFile(file);
+  };
+
+  return (
+    <div>
+      <div
+        onDragEnter={(e) => {
+          e.preventDefault(); depth.current += 1; setOver(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={(e) => {
+          e.preventDefault(); depth.current -= 1;
+          if (depth.current <= 0) { depth.current = 0; setOver(false); }
+        }}
+        onDrop={(e) => {
+          e.preventDefault(); depth.current = 0; setOver(false);
+          take(e.dataTransfer.files);
+        }}
+        className={cn(
+          'flex flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 py-6 text-center transition-colors',
+          over
+            ? 'border-accent-600 bg-accent-600/5'
+            : 'border-zinc-300 bg-zinc-50/60 dark:border-zinc-700 dark:bg-zinc-900/40',
+          disabled && 'opacity-60',
+        )}
+      >
+        <FileUp className="h-4 w-4 text-zinc-400" aria-hidden />
+        <p className="text-xs text-zinc-600 dark:text-zinc-300">
+          {state.status === 'reading' ? 'Reading the file…' : (
+            <>
+              Drop the CSV here, or{' '}
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                disabled={disabled}
+                className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-600 disabled:no-underline dark:text-accent-400"
+              >
+                choose a file
+              </button>
+            </>
+          )}
+        </p>
+        {hint ? (
+          <p className="max-w-md text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">{hint}</p>
+        ) : null}
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,text/csv,text/plain"
+          className="sr-only"
+          disabled={disabled}
+          onChange={(e) => { take(e.target.files); e.target.value = ''; }}
+        />
+      </div>
+
+      {state.status === 'error' ? (
+        <div
+          role="alert"
+          className="mt-2 flex gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 dark:border-red-900/50 dark:bg-red-950/30"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600 dark:text-red-400" aria-hidden />
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-red-800 dark:text-red-300">
+              {state.fileName} could not be imported. The existing rows were left alone.
+            </p>
+            {state.problems.map((p) => (
+              <p key={p} className="text-[11px] leading-relaxed text-red-700 dark:text-red-400">{p}</p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What the import did, stated in full.
+ *
+ * Every figure here is one a reader could otherwise only discover by adding up
+ * the table and finding it did not match Adobe. Rows were dropped and traffic
+ * was excluded; saying so is cheaper than being asked about it later.
+ */
+function ImportFooter({
+  summary, fileName, updatedAt,
+}: {
+  summary: ImportSummary;
+  fileName: string;
+  updatedAt: string | null;
+}) {
+  const notes: string[] = [];
+  if (summary.direct) {
+    notes.push(
+      `Direct traffic (${summary.direct.subscriptions.toLocaleString()} new subscriptions on `
+      + `${summary.direct.visits.toLocaleString()} visits) is held out of the ranking because it `
+      + 'is not a referrer.');
+  }
+  if (summary.ratesWithheld > 0) {
+    notes.push(
+      `Conversion is shown as — for ${summary.ratesWithheld} platforms that drove fewer than `
+      + `${summary.minConversionsForRate} subscriptions. A rate built on one or two conversions `
+      + 'is sampling noise, and reads as a real number next to Google.');
+  }
+  if (summary.zeroSubDomains > 0) {
+    notes.push(
+      `${summary.zeroSubDomains.toLocaleString()} domains drove no subscriptions `
+      + `(${summary.zeroSubVisits.toLocaleString()} visits) and are not listed.`);
+  }
+  if (summary.unitemisedSubscriptions && summary.unitemisedSubscriptions > 0) {
+    notes.push(
+      `${summary.unitemisedSubscriptions} subscriptions in Adobe's total row are not attributed `
+      + 'to any itemised domain, so the column will not sum to the site total.');
+  }
+  for (const p of summary.problems) notes.push(p);
+
+  return (
+    <div className="space-y-1">
+      <span className="pb-num block">
+        {describeImport(summary, fileName)
+          + (updatedAt ? ' · imported ' + formatRelative(updatedAt) : '')}
+      </span>
+      {notes.map((n) => (
+        <span key={n} className="block text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+          {n}
+        </span>
+      ))}
+    </div>
   );
 }
 

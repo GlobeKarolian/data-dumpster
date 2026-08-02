@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseAdobeFreeform } from './adobe-freeform';
 import { rollUpReferrals } from './referral-platforms';
+import { importAdobeFreeform } from './freeform-import';
 
 const FIXTURE = '﻿'
   + '#=================================================================\n'
@@ -172,4 +173,67 @@ test('an unrecognised domain stays its own row rather than being guessed at', ()
   const { platforms } = rollUpReferrals(parseAdobeFreeform(FIXTURE).rows);
   const unknown = platforms.find((p) => p.label === 'nowhere.example');
   assert.equal(unknown?.category, 'other');
+});
+
+/* -------------------------------------------------------------- import */
+
+test('a rate built on too few conversions is withheld, not printed', () => {
+  const r = importAdobeFreeform(FIXTURE);
+  assert.ok(r.ok);
+  // linkin.bio rolls into Instagram for 30 subs, so Instagram keeps its rate.
+  const instagram = r.table.rows.find((row) => row[0] === 'Instagram');
+  assert.notEqual(instagram?.[3], '—');
+  // ChatGPT's 6 conversions clear the floor; the finding survives the guard.
+  const chatgpt = r.table.rows.find((row) => row[0] === 'ChatGPT');
+  assert.equal(chatgpt?.[2], '6');
+  assert.equal(chatgpt?.[3], '1.279%');
+});
+
+test('a single conversion never becomes a headline percentage', () => {
+  // Inserted BEFORE the ISP "Domain" marker; anything after it is correctly
+  // dropped as an internet-provider row rather than a referrer.
+  // Anchored to the line start: an unanchored 'Domain,' also matches inside
+  // the 'Referring Domain,' total row further up.
+  const tiny = FIXTURE.replace('\nDomain,1391557', '\nquestkm.example,4,1,0.25\nDomain,1391557');
+  const r = importAdobeFreeform(tiny);
+  assert.ok(r.ok);
+  const row = r.table.rows.find((x) => x[0] === 'questkm.example');
+  assert.equal(row?.[2], '1');
+  assert.equal(row?.[3], '—', 'a 25% rate on four visits must not be shown');
+  assert.ok(r.summary.ratesWithheld > 0);
+});
+
+test('numbers are grouped for the export, in a pinned locale', () => {
+  const r = importAdobeFreeform(FIXTURE);
+  assert.ok(r.ok);
+  const google = r.table.rows.find((row) => row[0] === 'Google');
+  assert.equal(google?.[1], '723,017');
+});
+
+test('raw is the rows, never the source file', () => {
+  const r = importAdobeFreeform(FIXTURE);
+  assert.ok(r.ok);
+  assert.ok(!r.table.raw.includes('# Freeform'),
+    'the multi-table source must not land in the editable textarea');
+  assert.equal(r.table.raw.split('\n').length, r.table.rows.length);
+});
+
+test('the unitemised remainder is reported rather than absorbed', () => {
+  // Total row says 1865; the itemised domains in the fixture sum to less.
+  const r = importAdobeFreeform(FIXTURE);
+  assert.ok(r.ok);
+  assert.ok((r.summary.unitemisedSubscriptions ?? 0) > 0);
+});
+
+test('direct traffic is reported separately from the ranked totals', () => {
+  const r = importAdobeFreeform(FIXTURE);
+  assert.ok(r.ok);
+  assert.equal(r.summary.direct?.subscriptions, 795);
+  assert.ok(!r.table.rows.some((row) => row[0].includes('Typed')));
+});
+
+test('a bad file leaves the caller able to keep existing rows', () => {
+  const r = importAdobeFreeform('nonsense');
+  assert.equal(r.ok, false);
+  assert.ok(!('table' in r));
 });

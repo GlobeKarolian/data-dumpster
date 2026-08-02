@@ -15,6 +15,7 @@ import { apiHandler, requireRole, AuthError } from '@/lib/session';
 import { db } from '@/db';
 import { companies } from '@/db/schema';
 import { readJson } from '../../_lib/query';
+import { assertCompanyNotSharedWithOtherOrgs } from '../../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
   const { orgId } = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
   const body = await readJson(req, updateCompanySchema);
+  await assertCompanyNotSharedWithOtherOrgs(id, orgId);
 
   const [updated] = await db
     .update(companies)
@@ -53,6 +55,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
 export const DELETE = apiHandler<{ id: string }>(async (_req, ctx) => {
   const { orgId } = await requireRole('admin');
   const id = idSchema.parse((await ctx.params).id);
+  await assertCompanyNotSharedWithOtherOrgs(id, orgId);
 
   const [deleted] = await db
     .delete(companies)
