@@ -22,6 +22,7 @@ import { apiHandler, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
 import { modelConnections } from '@/db/schema';
 import { encrypt, decrypt, maskSecret } from '@/lib/crypto';
+import { checkBaseUrl } from '@/lib/ai/base-url';
 import { getProvider } from '@/lib/ai/registry';
 import { readJson } from '../../../_lib/query';
 
@@ -102,6 +103,16 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
   if (definition.baseUrl === 'required' && !nextBaseUrl) {
     throw new HttpError(422, definition.displayName + ' needs a base URL.', 'base_url_required');
   }
+  /*
+   * Re-checked on every PATCH, not only when the URL changes.
+   *
+   * apiKey is sticky here: omitting it keeps the stored key. That is what makes
+   * an unchecked baseUrl a credential-exfiltration primitive, because it lets
+   * someone repoint an existing connection at a host they control without
+   * knowing the key they are about to be sent.
+   */
+  const check = checkBaseUrl(nextBaseUrl);
+  if (!check.ok) throw new HttpError(422, check.reason, 'base_url_rejected');
 
   if (body.isDefault) {
     await db

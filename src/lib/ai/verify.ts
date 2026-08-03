@@ -18,6 +18,7 @@
  * what the model said but what was verified at the time it said it.
  */
 import type { FactSheet } from '@/lib/metrics/contract';
+import { unavailableMetricField } from './prompts';
 import { METRIC_DEFS } from '@/lib/metrics/definitions';
 import { METRIC_KEYS, type MetricKey } from '@/lib/types';
 
@@ -151,6 +152,22 @@ export function indexFactNumbers(facts: FactSheet): NumericSourceEntry[] {
       const record = node as Record<string, unknown>;
       const recordMetric = asMetricKey(record.metric) ?? asMetricKey(record.key) ?? metric;
       for (const [k, v] of Object.entries(record)) {
+        /*
+         * Skip what the prompt suppressed.
+         *
+         * prompts.ts hides value, rank and changePct on any row with
+         * available === false, and previousValue when previousAvailable is
+         * false, because an unmeasured row's number is an artefact of a partial
+         * ingest rather than a measurement. This index did not skip them, so
+         * the set of numbers the verifier would accept was strictly larger than
+         * the set the model was ever shown.
+         *
+         * That is the one gap that matters here. A row with no audience data
+         * carries value 0; the model never sees it, but a sentence inventing
+         * "flat at 0" matched the index and was certified. The check has to
+         * enforce the same honesty rule as the prompt or it certifies nothing.
+         */
+        if (unavailableMetricField(record, k)) continue;
         const childMetric = asMetricKey(k) ?? recordMetric;
         const childInsideMetricValues = insideMetricValues
           || k === 'breakdown'

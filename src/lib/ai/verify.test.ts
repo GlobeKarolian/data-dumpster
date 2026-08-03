@@ -4,6 +4,7 @@ import {
   indexMaterialNumbers,
   verifyBrief,
   verifyNumbersAgainstMaterial,
+  indexFactNumbers,
 } from './verify';
 import type { FactSheet, HeadlineStat } from '@/lib/metrics/contract';
 import type { MetricKey } from '@/lib/types';
@@ -247,5 +248,43 @@ describe('verifyBrief', () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.claims[0]?.found, false);
+  });
+});
+
+describe('unmeasured rows are not grounds for a claim', () => {
+  it('does not index a value the prompt suppressed', () => {
+    // A leaderboard row with no audience data still carries value 0 in the
+    // fact sheet. The model never sees it. Before this, a sentence inventing
+    // "flat at 0" matched the index and was reported as verified.
+    const facts = {
+      leaderboards: {
+        audience: [
+          { company: { id: 'a', name: 'Alpha' }, value: 0, rank: 0, available: false },
+          { company: { id: 'b', name: 'Beta' }, value: 12345, rank: 1, available: true },
+        ],
+      },
+    } as unknown as Parameters<typeof indexFactNumbers>[0];
+
+    const index = indexFactNumbers(facts);
+    const values = index.map((e) => e.value);
+    assert.ok(values.includes(12345), 'the measured value must still be groundable');
+    assert.ok(!index.some((e) => e.path.includes('[0].value')),
+      'a suppressed value must not be groundable');
+    assert.ok(!index.some((e) => e.path.includes('[0].rank')),
+      'a suppressed rank must not be groundable');
+  });
+
+  it('suppresses previousValue when the prior window was unmeasured', () => {
+    const facts = {
+      leaderboards: {
+        audience: [
+          { company: { id: 'a', name: 'Alpha' }, value: 500, previousValue: 0,
+            available: true, previousAvailable: false },
+        ],
+      },
+    } as unknown as Parameters<typeof indexFactNumbers>[0];
+    const index = indexFactNumbers(facts);
+    assert.ok(index.some((e) => e.value === 500));
+    assert.ok(!index.some((e) => e.path.includes('previousValue')));
   });
 });

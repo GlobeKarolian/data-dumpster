@@ -52,7 +52,22 @@ export async function getStoryCloud(q: StoryQuery): Promise<StoryCloud> {
     .innerJoin(companies, eq(posts.companyId, companies.id))
     .leftJoin(postedUrls, eq(postedUrls.postId, posts.id))
     .where(and(
-      inArray(posts.companyId, q.companyIds && q.companyIds.length > 0 ? q.companyIds : memberIds),
+      /*
+       * The company filter INTERSECTS landscape membership; it never replaces it.
+       *
+       * This read `q.companyIds ?? memberIds`, which made membership a default
+       * rather than a bound: any caller who supplied companyIds got exactly
+       * those companies, whether or not their org had ever heard of them.
+       * Because companies and posts are pooled across orgs by design, a viewer
+       * could name another tenant's company id and read its post text,
+       * permalinks and engagement through a route that had already, correctly,
+       * proven they owned the landscape. Every other scoped query in the
+       * product intersects; this one is the reason org-scope.ts exists.
+       */
+      inArray(posts.companyId, memberIds),
+      q.companyIds && q.companyIds.length > 0
+        ? inArray(posts.companyId, q.companyIds)
+        : undefined,
       gte(posts.postedAt, q.start),
       lte(posts.postedAt, q.end),
       q.platforms && q.platforms.length > 0 ? inArray(posts.platform, q.platforms) : undefined,

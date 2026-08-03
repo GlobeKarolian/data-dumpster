@@ -246,7 +246,26 @@ export async function computeWeeklyReport(
 
   /* ---------------------------------------------------------------- cohort */
 
-  const cohortRows: CohortRow[] = engagementBoard.map((row) => ({
+  /*
+   * Unmeasured companies do not appear in the cohort table.
+   *
+   * A leaderboard row carries `available: false` when its window was not fully
+   * collected. This mapped every row regardless, and an unavailable row has
+   * `rank === 0` (queries.ts sets `rank = available ? ++rank : 0`) and a `value`
+   * that is whatever partial sum the incomplete ingest happened to reach.
+   *
+   * The result reached the printed deck: a company ranked literally "0" beside
+   * a real-looking engagement total that understated it by however much was
+   * missing. Worse, the same slide showed "Cohort engagement: n/a" from
+   * sumCompleteValues, which correctly refuses to total a set with gaps. The
+   * document argued with itself, and the plausible number was the wrong one.
+   *
+   * The leaderboard UI already filters on `available`; this path is the leak.
+   */
+  const measuredBoard = engagementBoard.filter((row) => row.available !== false);
+  const unmeasuredCohort = engagementBoard.length - measuredBoard.length;
+
+  const cohortRows: CohortRow[] = measuredBoard.map((row) => ({
     companyId: row.company.id,
     name: row.company.name,
     rank: row.rank,
@@ -288,6 +307,16 @@ export async function computeWeeklyReport(
       focusPostRank: focusPostIndex >= 0 ? focusPostIndex + 1 : null,
       focusPostPool: facts.topPostsOverall.length,
     },
-    caveats: facts.caveats,
+    // A company dropped from the cohort table is disclosed, never just absent.
+    // Silently shortening a ranking is the same failure as publishing a wrong
+    // rank, one step further from being noticed.
+    caveats: unmeasuredCohort > 0
+      ? [
+        `${unmeasuredCohort} compan${unmeasuredCohort === 1 ? 'y is' : 'ies are'} missing from `
+        + 'the cohort table: their window was not fully collected, so they carry no measured '
+        + 'rank. Ranks shown are among the companies that were measured.',
+        ...facts.caveats,
+      ]
+      : facts.caveats,
   };
 }

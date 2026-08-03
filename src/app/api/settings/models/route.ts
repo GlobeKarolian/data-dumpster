@@ -20,6 +20,7 @@ import { db } from '@/db';
 import { modelConnections, modelProviderEnum } from '@/db/schema';
 import { encrypt, decrypt, maskSecret } from '@/lib/crypto';
 import { checkKeyShape } from '@/lib/ai/key-shape';
+import { checkBaseUrl } from '@/lib/ai/base-url';
 import { getProvider, isProviderImplemented } from '@/lib/ai/registry';
 import { readJson } from '../../_lib/query';
 
@@ -117,6 +118,10 @@ export const POST = apiHandler(async (req: NextRequest) => {
   if (definition.baseUrl === 'required' && !baseUrl) {
     throw new HttpError(422, definition.displayName + ' needs a base URL.', 'base_url_required');
   }
+  // Every provider posts the decrypted key to this host, so it is checked
+  // before it is stored rather than at request time. See lib/ai/base-url.ts.
+  const check = checkBaseUrl(baseUrl);
+  if (!check.ok) throw new HttpError(422, check.reason, 'base_url_rejected');
   if (definition.needsApiKey && !body.apiKey) {
     throw new HttpError(422, definition.displayName + ' needs an API key.', 'api_key_required');
   }

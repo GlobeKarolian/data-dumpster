@@ -46,7 +46,15 @@ function trim(text: string | null | undefined, max = MAX_TEXT): string {
   return flat.length > max ? flat.slice(0, max) + '…' : flat;
 }
 
-function unavailableMetricField(record: Record<string, unknown>, key: string): boolean {
+/**
+ * Fields suppressed because the row was never measured.
+ *
+ * Exported so the verifier applies the identical rule. When these were two
+ * implementations the check drifted wider than the prompt, and the gap is
+ * exactly where an ungrounded number gets certified: the model is not shown a
+ * value, invents it, and the verifier finds it in the raw sheet anyway.
+ */
+export function unavailableMetricField(record: Record<string, unknown>, key: string): boolean {
   if (record.available === false && (key === 'value' || key === 'rank' || key === 'changePct')) {
     return true;
   }
