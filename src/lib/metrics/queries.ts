@@ -43,7 +43,7 @@ import {
   type PostType,
   type TimeSeriesPoint,
 } from '@/lib/types';
-import { autoGranularity, daysIn, previousRange, toDayString } from '@/lib/dates';
+import { autoGranularity, daysIn, parseLocalDay, previousRange, toDayString } from '@/lib/dates';
 import type {
   FactSheet,
   HeadlineStat,
@@ -2443,6 +2443,16 @@ type CoverageRow = {
   platform: Platform;
   channel_id: string;
   observed_days: string | number | null;
+  /**
+   * First day this channel was ever observed, ignoring the window.
+   *
+   * Without it a gap is unreadable: a channel with two of seven days looks
+   * identical whether collection has been failing all week or simply had not
+   * started yet on the Monday. The first case is a fault worth chasing and the
+   * second is a fact about the estate that will never change, and reporting
+   * them in the same sentence turns a real signal into fifteen lines of noise.
+   */
+  first_ever_day: string | null;
 };
 
 /** How many days of audience data we actually hold per tracked channel. */
@@ -2455,7 +2465,11 @@ async function coverageRows(scope: Scope, range: DateRange, f: PostFilters): Pro
     SELECT ch.company_id,
            ch.platform,
            ch.id           AS channel_id,
-           count(a.day)::int AS observed_days
+           count(a.day)::int AS observed_days,
+           -- Deliberately unbounded by the window: this answers "has this
+           -- channel ever been collected", which the windowed count cannot.
+           (SELECT min(f.day)::text FROM audience_snapshots f
+             WHERE f.channel_id = ch.id) AS first_ever_day
       FROM channels ch
       LEFT JOIN audience_snapshots a
         ON a.channel_id = ch.id
@@ -2488,6 +2502,7 @@ function buildCaveats(
   coverage: CoverageRow[],
 ): string[] {
   const out: string[] = [];
+  const thinAudience: string[] = [];
   const days = daysIn(range);
 
   if (days < 7) {
@@ -2530,33 +2545,88 @@ function buildCaveats(
     }
 
     if (cur.applicablePlatforms > 0 && cur.audienceDays < 2) {
-      out.push(
-        `${company.name} has fewer than two audience observations on at least one included ` +
-        'channel in this window, so audience net change and growth rate are unavailable.',
-      );
+      thinAudience.push(company.name);
     }
   }
 
-  // Audience coverage gaps, rolled up to one line per company+platform.
-  const gaps = new Map<string, number>();
-  for (const r of coverage) {
-    const missing = days - num(r.observed_days);
-    if (missing <= 0) continue;
-    const key = `${r.company_id}|${r.platform}`;
-    gaps.set(key, Math.max(gaps.get(key) ?? 0, missing));
-  }
-  for (const [key, missing] of gaps) {
-    const [companyId, platform] = key.split('|');
-    const company = scope.byId.get(companyId);
-    if (!company) continue;
-    const label = PLATFORM_LABELS[platform as Platform] ?? platform;
+  // One line, however many companies. Net change needs two readings to
+  // subtract; naming each company that lacks them separately says the same
+  // thing N times and pushes the substantive caveats off the end of the list.
+  if (thinAudience.length > 0) {
     out.push(
-      missing >= days
-        ? `${label} audience data for ${company.name} is missing for the entire window, so its ` +
-          'audience and growth figures exclude that channel.'
-        : `${label} data for ${company.name} is missing for ${missing} day${missing === 1 ? '' : 's'} ` +
-          'in this window.',
+      (thinAudience.length === 1
+        ? `${thinAudience[0]} has`
+        : `${thinAudience.length} companies have`) +
+      ' fewer than two audience readings on at least one channel in this window, so audience ' +
+      'net change and growth rate are unavailable for ' +
+      (thinAudience.length === 1 ? 'it' : 'them') + ': ' +
+      thinAudience.slice(0, 6).join(', ') +
+      (thinAudience.length > 6 ? ` and ${thinAudience.length - 6} more.` : '.'),
     );
+  }
+
+  /*
+   * Audience coverage, said once rather than once per channel.
+   *
+   * The previous version emitted a line for every company and platform with a
+   * gap, which on a landscape of 22 companies across 8 platforms could reach
+   * 176 lines truncated to 15. The result read like a fault log and buried the
+   * two facts a reader actually needs: when collection started, and which
+   * platform is genuinely broken. Both are stated below in one line each.
+   */
+  const startedAt = coverage
+    .map((r) => r.first_ever_day)
+    .filter((d): d is string => Boolean(d))
+    .sort()[0];
+
+  // Days of the window that predate collection entirely. Not a fault, and not
+  // fixable: a follower count is only knowable on the day it is read.
+  const startedOn = startedAt ? parseLocalDay(startedAt) : null;
+  const preCollectionDays = startedOn && startedOn > range.start
+    ? Math.max(0, Math.min(days, daysIn({ start: range.start, end: startedOn }) - 1))
+    : 0;
+
+  if (preCollectionDays > 0) {
+    out.push(
+      `Audience collection began ${startedAt}, which is ${preCollectionDays} day` +
+      `${preCollectionDays === 1 ? '' : 's'} after this window opens. Follower readings for ` +
+      'those days were never taken and cannot be recovered, so growth figures here are ' +
+      'measured from the first day on record rather than the first day of the window.',
+    );
+  }
+
+  // Real gaps only: days when collection was running and still missed a channel.
+  const collectible = Math.max(1, days - preCollectionDays);
+  const byPlatform = new Map<Platform, { companies: Set<string>; worst: number; never: number }>();
+  for (const r of coverage) {
+    const missing = collectible - num(r.observed_days);
+    const entry = byPlatform.get(r.platform)
+      ?? { companies: new Set<string>(), worst: 0, never: 0 };
+    if (!r.first_ever_day) entry.never += 1;
+    else if (missing > 0) {
+      entry.companies.add(r.company_id);
+      entry.worst = Math.max(entry.worst, missing);
+    }
+    byPlatform.set(r.platform, entry);
+  }
+
+  const trackedCompanies = scope.companies.length;
+  for (const [platform, e] of [...byPlatform.entries()]
+    .sort((a, b) => (b[1].never + b[1].companies.size) - (a[1].never + a[1].companies.size))) {
+    const label = PLATFORM_LABELS[platform] ?? platform;
+    if (e.never > 0) {
+      out.push(
+        `${label} has never been collected for ${e.never} channel${e.never === 1 ? '' : 's'}, ` +
+        'so those channels contribute no audience or growth figures at all. This is a ' +
+        'collection failure rather than a measurement limit.',
+      );
+    } else if (e.companies.size > 0) {
+      out.push(
+        `${label} audience is incomplete for ${e.companies.size} of ${trackedCompanies} ` +
+        `companies, missing up to ${e.worst} of ${collectible} collectible day` +
+        `${collectible === 1 ? '' : 's'}.`,
+      );
+    }
   }
 
   return out.slice(0, 15);

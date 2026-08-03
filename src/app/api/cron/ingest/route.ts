@@ -26,6 +26,25 @@ export const dynamic = 'force-dynamic';
 /** Ingestion is the long pole; Vercel caps this at the plan maximum anyway. */
 export const maxDuration = 300;
 
+/*
+ * Why vercel.json schedules this every three hours.
+ *
+ * Audience is a point-in-time snapshot. A follower count is only knowable on
+ * the day it is read, and a day that passes uncollected is missing forever;
+ * there is no backfill for it. Every channel therefore has to be visited at
+ * least once a day or the weekly report loses net change and growth rate.
+ *
+ * The arithmetic: ~139 active channels against a ceiling of 60 per run, which
+ * is what fits inside maxDuration at roughly 2s per vendor call. Three runs
+ * cover the estate once. Eight runs a day is deliberate headroom rather than
+ * three times the data: Facebook goes through a scraper that fails and retries,
+ * and a channel that misses its slot has to catch the next one the same day or
+ * the reading is gone. The queue claims oldest-first with SKIP LOCKED, so extra
+ * runs re-cover stale channels instead of repeating the same sixty.
+ *
+ * Running it less often is how the estate ended up with six uneven days of
+ * audience inside a seven-day window, and one day missing altogether.
+ */
 const paramsSchema = z.object({
   /** Channels to process in one invocation. Kept modest so a run fits the timeout. */
   limit: z.coerce.number().int().min(1).max(60).default(24),
