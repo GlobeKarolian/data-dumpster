@@ -34,20 +34,31 @@ export const maxDuration = 300;
  * there is no backfill for it. Every channel therefore has to be visited at
  * least once a day or the weekly report loses net change and growth rate.
  *
- * The arithmetic: ~139 active channels against a ceiling of 60 per run, which
- * is what fits inside maxDuration at roughly 2s per vendor call. Three runs
- * cover the estate once. Eight runs a day is deliberate headroom rather than
- * three times the data: Facebook goes through a scraper that fails and retries,
- * and a channel that misses its slot has to catch the next one the same day or
- * the reading is gone. The queue claims oldest-first with SKIP LOCKED, so extra
- * runs re-cover stale channels instead of repeating the same sixty.
+ * The arithmetic, measured rather than assumed: a full pass over the 138 active
+ * channels is 965 seconds of serial wall time, which is 96 seconds at ten
+ * concurrent workers. The whole estate therefore fits in one request, and the
+ * per-run ceiling is 200 rather than 60 so a run is bounded by the clock rather
+ * than by an arbitrary count.
+ *
+ * Eight runs a day is deliberate headroom, not eight times the data. Facebook
+ * goes through a scraper whose successful calls take about two minutes each,
+ * and a channel that misses its slot has to catch a later one the same day or
+ * the reading is gone for good. The queue claims oldest-first with SKIP LOCKED,
+ * so extra runs advance the stale tail instead of repeating the same work.
  *
  * Running it less often is how the estate ended up with six uneven days of
  * audience inside a seven-day window, and one day missing altogether.
  */
 const paramsSchema = z.object({
-  /** Channels to process in one invocation. Kept modest so a run fits the timeout. */
-  limit: z.coerce.number().int().min(1).max(60).default(24),
+  /*
+   * Channels per invocation.
+   *
+   * The ceiling was 60 against an estate of 138, so no single run could ever
+   * see more than 43% of it and the rest waited three hours for the next one.
+   * At ten workers a full pass measures about 96 seconds, so the whole estate
+   * now fits inside one request with room for the slow tail.
+   */
+  limit: z.coerce.number().int().min(1).max(250).default(24),
   /** Maximum posts read from one profile before pagination continues next batch. */
   postLimit: z.coerce.number().int().min(25).max(1000).default(500),
 });

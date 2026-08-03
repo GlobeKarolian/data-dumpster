@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/ingest?limit=60&postLimit=500",
+      "path": "/api/cron/ingest?limit=200&postLimit=500",
       "schedule": "0 */3 * * *"
     },
     {

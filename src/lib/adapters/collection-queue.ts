@@ -22,7 +22,28 @@ import {
 
 const DEFAULT_HISTORY_DAYS = 90;
 const DEFAULT_FRESH_MS = 3 * 60 * 60 * 1_000;
-const DEFAULT_CONCURRENCY = 4;
+/*
+ * Ten, because this work is waiting rather than computing.
+ *
+ * Every item here is an outbound HTTP call that spends almost all of its time
+ * idle. Four workers left a 300-second request mostly blocked on sockets while
+ * channels queued behind it lost the day.
+ *
+ * The measured shape of a full pass over 138 channels: 965 seconds of serial
+ * wall time, which is 241s at four workers and 96s at ten. That number hides
+ * the real problem, though. Facebook's median run is 3.1s and its p90 is 126.8s
+ * because the median is dominated by calls that failed instantly; a Facebook
+ * page that actually collects costs about two minutes, roughly forty times
+ * every other platform. Twenty-three of them at four workers is 730 seconds,
+ * more than two whole runs for one platform, which is why competitor Facebook
+ * pages sat at the same follower count for five days.
+ *
+ * Raising this is safe in a way it would not have been a week ago: per-platform
+ * rate gates still throttle each vendor independently, and an unfinished Bright
+ * Data snapshot is now resumable, so a worker that runs out of time hands the
+ * job to the next run instead of forfeiting it.
+ */
+const DEFAULT_CONCURRENCY = 10;
 // A Vercel request is capped at five minutes. A lease must outlive that request
 // so a second worker cannot buy the same data concurrently, but it must also
 // become reclaimable promptly when the request is killed mid-batch.
