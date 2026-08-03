@@ -5,6 +5,7 @@ import {
   CompaniesManager, type CompanyRecord, type LandscapeRecordFull,
 } from '@/components/settings/companies-manager';
 import { query, type SearchParamsInput } from '../../_lib/data';
+import { resolveContext } from '../../_lib/context';
 
 export const metadata: Metadata = { title: 'Companies and Social Profiles' };
 
@@ -25,6 +26,7 @@ type CompanyRow = {
   attributed_to_org: boolean;
   channel_count: number | string;
   channels: CompanyProfileRow[] | null;
+  in_selected_landscape: boolean | null;
 };
 
 type LandscapeRow = {
@@ -41,14 +43,28 @@ export default async function CompaniesSettingsPage({
 }: {
   searchParams: Promise<SearchParamsInput>;
 }) {
-  await searchParams;
+  /*
+   * The selected landscape decides what this page leads with.
+   *
+   * searchParams was awaited and thrown away, so the page rendered every
+   * company the workspace could see no matter which landscape the switcher was
+   * on. Switching landscapes changed nothing, which reads as a broken control
+   * and makes the screen useless for the question people bring to it.
+   */
+  const ctx = await resolveContext(await searchParams);
   const { requireOrg } = await import('@/lib/session');
   const { orgId, role } = await requireOrg();
+  const selectedLandscapeId = ctx.landscape?.id ?? null;
 
   const [companies, landscapes] = await Promise.all([
     query<CompanyRow>(({ sql }) => sql`
       SELECT c.id, c.name, c.website, c.segment, c.color,
              (c.org_id = ${orgId}::uuid) AS attributed_to_org,
+             EXISTS (
+               SELECT 1 FROM landscape_companies sel
+                WHERE sel.company_id = c.id
+                  AND sel.landscape_id = ${selectedLandscapeId}::uuid
+             ) AS in_selected_landscape,
              count(ch.id) AS channel_count,
              coalesce(
                jsonb_agg(
@@ -98,6 +114,7 @@ export default async function CompaniesSettingsPage({
     segment: c.segment,
     color: c.color,
     attributedToOrg: c.attributed_to_org === true,
+    inSelectedLandscape: c.in_selected_landscape === true,
     channelCount: Number(c.channel_count) || 0,
     channels: Array.isArray(c.channels) ? c.channels : [],
   }));
@@ -131,6 +148,7 @@ export default async function CompaniesSettingsPage({
 
       <CompaniesManager
         companies={companyRecords}
+        landscapeName={ctx.landscape?.name ?? null}
         landscapes={landscapeRecords}
         canEdit={roleAtLeast(role, 'editor')}
         canDeleteCompanies={roleAtLeast(role, 'admin')}

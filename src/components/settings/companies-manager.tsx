@@ -34,6 +34,8 @@ export interface CompanyRecord {
   attributedToOrg: boolean;
   channelCount: number;
   channels: CompanyProfileRecord[];
+  /** Whether this company belongs to the landscape currently selected. */
+  inSelectedLandscape: boolean;
 }
 
 export interface LandscapeRecordFull {
@@ -62,19 +64,55 @@ export function CompaniesManager({
   landscapes,
   canEdit,
   canDeleteCompanies,
+  landscapeName,
 }: {
   companies: CompanyRecord[];
   landscapes: LandscapeRecordFull[];
   canEdit: boolean;
   canDeleteCompanies: boolean;
+  landscapeName: string | null;
 }) {
+  /*
+   * Split by the selected landscape.
+   *
+   * This screen listed every company the workspace could see, in one flat
+   * list, and did not change when the landscape switcher did. Switching from a
+   * three-company landscape to a twenty-two-company one showed the same rows
+   * either way, which makes the switcher look broken and makes the page
+   * useless for the question people actually bring to it: who is in this
+   * landscape.
+   *
+   * The rest are still here, below and collapsed, because they have to be. A
+   * company has to exist before it can be added to a landscape, and companies
+   * are pooled, so the ones not in this landscape are exactly the candidates.
+   */
+  const inLandscape = companies.filter((c) => c.inSelectedLandscape);
+  const others = companies.filter((c) => !c.inSelectedLandscape);
+
   return (
     <div className="space-y-4">
       <CompaniesCard
-        companies={companies}
+        companies={inLandscape}
         canEdit={canEdit}
         canDeleteCompanies={canDeleteCompanies}
+        title={landscapeName ? 'Companies in ' + landscapeName : 'Companies'}
+        emptyHint={landscapeName
+          ? 'This landscape has no companies yet. Add one below, or create a new one.'
+          : undefined}
       />
+      {others.length > 0 ? (
+        <CompaniesCard
+          companies={others}
+          canEdit={canEdit}
+          canDeleteCompanies={canDeleteCompanies}
+          title={'Other companies in your workspace (' + others.length + ')'}
+          subtitle={landscapeName
+            ? 'Tracked elsewhere, or not yet in any landscape. Add them to '
+              + landscapeName + ' from the landscape card below.'
+            : undefined}
+          startCollapsed
+        />
+      ) : null}
       <LandscapesCard
         companies={companies}
         landscapes={landscapes}
@@ -89,13 +127,21 @@ function CompaniesCard({
   companies,
   canEdit,
   canDeleteCompanies,
+  title = 'Companies',
+  subtitle,
+  emptyHint,
+  startCollapsed = false,
 }: {
   companies: CompanyRecord[];
   canEdit: boolean;
   canDeleteCompanies: boolean;
+  title?: string;
+  subtitle?: string;
+  emptyHint?: string;
+  startCollapsed?: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = React.useState(companies.length === 0);
+  const [open, setOpen] = React.useState(!startCollapsed && companies.length === 0);
   const [addingFor, setAddingFor] = React.useState<string | null>(null);
   const [name, setName] = React.useState('');
   const [website, setWebsite] = React.useState('');
@@ -148,9 +194,10 @@ function CompaniesCard({
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Companies and social profiles</CardTitle>
+            <CardTitle>{title}</CardTitle>
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Add each brand once, then connect every social profile Data Dumpster should measure.
+              {subtitle
+                ?? 'Add each brand once, then connect every social profile Data Dumpster should measure.'}
             </p>
           </div>
           {canEdit ? (
@@ -217,7 +264,8 @@ function CompaniesCard({
             compact
             icon={Building2}
             title="No companies yet"
-            description="Start with your own brand, then add the outlets you actually compete with for attention."
+            description={emptyHint
+              ?? 'Start with your own brand, then add the outlets you actually compete with for attention.'}
           />
         ) : (
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
