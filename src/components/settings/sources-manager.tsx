@@ -528,7 +528,34 @@ export function SourcesManager({
               description="Paste a profile URL or a handle. Data Dumpster resolves it to a platform id on the first ingest."
             />
           ) : (
-            <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+            <>
+              {/*
+                * Column headers.
+                *
+                * Two columns shipped with nothing but a `title` attribute: the
+                * relative time and the post count. A tooltip you have to
+                * discover by hovering is not a label, and the first question
+                * anyone asked of this screen was what those numbers meant.
+                * "Posts (all time)" is spelled out because the instinct is to
+                * read it as posts in the current window, which it is not.
+                *
+                * The widths mirror the row below exactly. aria-hidden because
+                * each cell already carries its own accessible text.
+                */}
+              <div
+                aria-hidden
+                className="flex items-center gap-3 border-b border-zinc-200 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:border-zinc-800 dark:text-zinc-500"
+              >
+                <span className="w-4 shrink-0" />
+                <span className="w-2 shrink-0" />
+                <span className="w-24 shrink-0">Platform</span>
+                <span className="min-w-0 flex-1">Profile</span>
+                <span className="w-[4.5rem] shrink-0 text-center">Status</span>
+                <span className="w-24 shrink-0 text-right">Last collected</span>
+                <span className="w-14 shrink-0 text-right">Posts, all time</span>
+                <span className="w-[3.75rem] shrink-0" />
+              </div>
+              <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
               {company.channels.map((channel) => {
                 const state = collectionStateOf(channel);
                 const tone = state.health === 'complete'
@@ -660,7 +687,8 @@ export function SourcesManager({
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </>
           )}
           </Card>
         );
