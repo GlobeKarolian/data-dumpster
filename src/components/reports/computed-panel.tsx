@@ -154,7 +154,7 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
     <SectionCard
       title="Owned Brands Key Metrics"
       kind="computed"
-      description="Every brand in the landscape, ranked by total followers across the five platforms the printed report carries."
+      description="Every brand in the landscape, ranked by total followers across the platforms the printed report carries."
     >
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
@@ -168,7 +168,7 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
               <th className={THR} scope="col">
                 <HeaderWithDefinition
                   label="Net change"
-                  hint="Followers on the last day of the window minus the first day, summed across the five platforms."
+                  hint="Followers on the last day of the window minus the first day, summed across every platform column shown here."
                 />
               </th>
               {REPORT_PLATFORMS.map((p) => (

@@ -135,7 +135,7 @@ function toTopPost(post: PostDto, index: number): TopPost {
 /**
  * Build the computed block for one landscape and one Monday-to-Sunday window.
  *
- * The brand table is deliberately restricted to the five platforms the printed
+ * The brand table is deliberately restricted to the platforms the printed
  * artefact carries, while engagement and the cohort are not: a follower total
  * that quietly included a platform the table does not show would not add up on
  * screen, whereas engagement is reported as a single figure and should count

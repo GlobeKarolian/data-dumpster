@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, FileUp, Plus, Table2, Trash2, Type } from 'lucide-react';
+import { AlertTriangle, ChevronRight, FileUp, Plus, Table2, Trash2, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatRelative } from '@/components/ui/format';
 import { cn } from '@/lib/utils';
@@ -44,6 +44,9 @@ export function PasteBox({
     table.rows.length > 0 ? 'grid' : 'paste',
   );
   const [importState, setImportState] = React.useState<ImportState>({ status: 'idle' });
+  // Single-open accordion: the breakdowns are short and several open at once
+  // pushes the table itself off screen.
+  const [expanded, setExpanded] = React.useState<string | null>(null);
   const parsed = React.useMemo(() => parseTable(table.raw, spec.columns), [table.raw, spec.columns]);
 
   const applyRaw = (raw: string) => {
@@ -211,34 +214,81 @@ export function PasteBox({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-              {table.rows.map((row, i) => (
-                <tr key={i}>
-                  {spec.columns.map((c, j) => (
-                    <td key={c.key} className="px-1 py-1">
-                      <input
-                        value={row[j] ?? ''}
-                        onChange={(e) => setCell(i, j, e.target.value)}
-                        disabled={disabled}
-                        className={cn(
-                          'w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-zinc-800 transition-colors',
-                          'hover:border-zinc-200 focus:border-accent-600 focus:outline-none dark:text-zinc-200 dark:hover:border-zinc-700',
-                          c.numeric && 'pb-num text-right',
-                        )}
-                      />
-                    </td>
-                  ))}
-                  <td className="px-1 py-1 text-right">
-                    <button
-                      type="button"
-                      onClick={() => applyRows(table.rows.filter((_, k) => k !== i))}
-                      className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800"
-                      aria-label={'Remove row ' + (i + 1)}
-                    >
-                      <Trash2 className="h-3 w-3" aria-hidden />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {table.rows.map((row, i) => {
+                const parts = table.breakdown?.[row[0] ?? ''];
+                const isOpen = expanded === row[0];
+                return (
+                  <React.Fragment key={i}>
+                    <tr>
+                      {spec.columns.map((c, j) => (
+                        <td key={c.key} className="px-1 py-1">
+                          {j === 0 && parts ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setExpanded(isOpen ? null : row[0])}
+                                aria-expanded={isOpen}
+                                title={`Show the ${parts.length} hostnames folded into ${row[0]}`}
+                                className="shrink-0 rounded p-0.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                              >
+                                <ChevronRight
+                                  className={cn('h-3 w-3 transition-transform', isOpen && 'rotate-90')}
+                                  aria-hidden
+                                />
+                              </button>
+                              <input
+                                value={row[j] ?? ''}
+                                onChange={(e) => setCell(i, j, e.target.value)}
+                                disabled={disabled}
+                                className="w-full rounded border border-transparent bg-transparent px-1 py-1 text-sm text-zinc-800 transition-colors hover:border-zinc-200 focus:border-accent-600 focus:outline-none dark:text-zinc-200 dark:hover:border-zinc-700"
+                              />
+                            </div>
+                          ) : (
+                            <input
+                              value={row[j] ?? ''}
+                              onChange={(e) => setCell(i, j, e.target.value)}
+                              disabled={disabled}
+                              className={cn(
+                                'w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-zinc-800 transition-colors',
+                                'hover:border-zinc-200 focus:border-accent-600 focus:outline-none dark:text-zinc-200 dark:hover:border-zinc-700',
+                                c.numeric && 'pb-num text-right',
+                                j === 0 && table.breakdown && 'pl-5',
+                              )}
+                            />
+                          )}
+                        </td>
+                      ))}
+                      <td className="px-1 py-1 text-right">
+                        <button
+                          type="button"
+                          onClick={() => applyRows(table.rows.filter((_, k) => k !== i))}
+                          className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800"
+                          aria-label={'Remove row ' + (i + 1)}
+                        >
+                          <Trash2 className="h-3 w-3" aria-hidden />
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen && parts ? (
+                      <tr className="bg-zinc-50/70 dark:bg-zinc-900/40">
+                        <td colSpan={spec.columns.length + 1} className="px-3 py-2">
+                          <p className="mb-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                            {`${row[0]} combines ${parts.length} hostnames. These are the figures `
+                              + 'Adobe reports individually.'}
+                          </p>
+                          <ul className="space-y-0.5">
+                            {parts.map((p) => (
+                              <li key={p} className="pb-num text-[11px] text-zinc-600 dark:text-zinc-300">
+                                {p}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
           </div>

@@ -17,8 +17,21 @@
  */
 import type { Platform } from '@/lib/types';
 
-/** The five platforms the owned-brand table reports on, in artefact order. */
-export const REPORT_PLATFORMS = ['facebook', 'instagram', 'youtube', 'twitter', 'tiktok'] as const;
+/**
+ * The platforms the owned-brand table reports on, in artefact order.
+ *
+ * Threads and Bluesky were missing from the original five and should not have
+ * been: across the Boston News landscape they carry 200 and 396 posts a week
+ * against TikTok's 98, so leaving them out understated the estate and hid the
+ * two fastest-moving channels the newsroom runs.
+ *
+ * Reddit is here on one channel with no posts yet. An empty column is the
+ * correct thing to show: it says the channel is tracked and not collecting,
+ * which is a fault worth seeing rather than an absence worth hiding.
+ */
+export const REPORT_PLATFORMS = [
+  'facebook', 'instagram', 'youtube', 'twitter', 'tiktok', 'threads', 'bluesky', 'reddit',
+] as const;
 export type ReportPlatform = (typeof REPORT_PLATFORMS)[number];
 
 export const REPORT_PLATFORM_LABELS: Record<ReportPlatform, string> = {
@@ -27,6 +40,9 @@ export const REPORT_PLATFORM_LABELS: Record<ReportPlatform, string> = {
   youtube: 'YouTube',
   twitter: 'X',
   tiktok: 'TikTok',
+  threads: 'Threads',
+  bluesky: 'Bluesky',
+  reddit: 'Reddit',
 };
 
 /** Which way a figure moved. 'unknown' when there was no comparable baseline. */
@@ -165,6 +181,17 @@ export type ManualTable = {
   raw: string;
   rows: string[][];
   updatedAt: string | null;
+  /**
+   * What a rolled-up row is made of, keyed by its first cell.
+   *
+   * The referral import folds hostnames into platforms, so "Reddit 8,423" is
+   * reddit.com plus com.reddit and matches neither number in Adobe. That was
+   * caught by eye, which is one time too many. It lives in its own field rather
+   * than a trailing column because parseTable truncates every row to the
+   * section's column count, so a hidden column would be destroyed the moment
+   * anyone touched the paste box.
+   */
+  breakdown?: Record<string, string[]>;
 };
 
 export type ManualBlock = Record<string, ManualTable>;
@@ -422,10 +449,18 @@ export function readManual(value: unknown): ManualState {
           .filter((r): r is unknown[] => Array.isArray(r))
           .map((r) => r.map((cell) => (typeof cell === 'string' ? cell : String(cell ?? ''))))
         : [];
+      const breakdown: Record<string, string[]> = {};
+      if (isRecord(raw.breakdown)) {
+        for (const [label, parts] of Object.entries(raw.breakdown)) {
+          if (!Array.isArray(parts)) continue;
+          breakdown[label] = parts.filter((p): p is string => typeof p === 'string');
+        }
+      }
       tables[key] = {
         raw: typeof raw.raw === 'string' ? raw.raw : '',
         rows,
         updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+        ...(Object.keys(breakdown).length > 0 ? { breakdown } : {}),
       };
     }
   }

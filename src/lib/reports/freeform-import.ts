@@ -184,6 +184,28 @@ export function importAdobeFreeform(
     problems: parsed.problems,
   };
 
+  /*
+   * What each rolled-up row is made of.
+   *
+   * Only recorded where a group folded more than one hostname, because a row
+   * that already matches Adobe exactly does not need explaining and a
+   * disclosure arrow on every line would be noise. This is the part that makes
+   * "Reddit 8,423" traceable back to reddit.com 8,246 and com.reddit 177.
+   */
+  const breakdown: Record<string, string[]> = {};
+  for (const g of [...ranked, ...roll.nonPlatform, ...(roll.direct ? [roll.direct] : [])]) {
+    if (g.members.length < 2) continue;
+    const label = roll.nonPlatform.includes(g)
+      ? `${g.label} (${CATEGORY_LABELS[g.category].toLowerCase()})`
+      : g.label;
+    breakdown[label] = g.members.map((m) => {
+      const visits = m.visits === null ? '—' : int(m.visits);
+      return bySubs && m.newSubscriptions !== null
+        ? `${m.domain} · ${visits} visits · ${m.newSubscriptions} subs`
+        : `${m.domain} · ${visits} visits`;
+    });
+  }
+
   return {
     ok: true,
     groups: ranked,
@@ -192,6 +214,7 @@ export function importAdobeFreeform(
       raw: rowsToTsv(rows),
       rows,
       updatedAt: new Date().toISOString(),
+      ...(Object.keys(breakdown).length > 0 ? { breakdown } : {}),
     },
   };
 }
