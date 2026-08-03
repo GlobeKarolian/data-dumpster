@@ -183,7 +183,33 @@ async function awaitSnapshot(
     return Array.isArray(rows) ? rows : [];
   }
 
-  fail(opts.platform, 'snapshot ' + snapshotId + ' did not finish within the time budget');
+  // Out of time, but the job is still running on Bright Data's side and will
+  // finish without us. Throwing a plain failure here was expensive twice over:
+  // the units already spent on the trigger were forfeited, and the next attempt
+  // paid for the same collection again, only to be killed at the same point.
+  throw new PendingSnapshotError(opts.platform, snapshotId);
+}
+
+/**
+ * A scrape that has been paid for and is still running.
+ *
+ * Bright Data is trigger-and-poll: a Facebook Page with a hundred posts takes
+ * minutes, which is longer than a serverless request lives. The snapshot id is
+ * the receipt, so it travels with the error and the caller stores it. The next
+ * run polls that id instead of triggering a second collection.
+ */
+export class PendingSnapshotError extends AdapterError {
+  readonly snapshotId: string;
+
+  constructor(platform: Platform, snapshotId: string) {
+    super(
+      'Bright Data snapshot ' + snapshotId + ' is still collecting. It will be picked up '
+      + 'on the next run rather than started again.',
+      { platform, retryable: true },
+    );
+    this.name = 'PendingSnapshotError';
+    this.snapshotId = snapshotId;
+  }
 }
 
 /**
@@ -209,6 +235,11 @@ export async function scrapeSync<T = Record<string, unknown>>(
       | 'profile_url'
       | 'user_name'
       | 'keyword';
+    /**
+     * Poll this existing snapshot instead of paying to start a new one.
+     * Set from the channel cursor after a previous run ran out of time.
+     */
+    resumeSnapshotId?: string;
   },
 ): Promise<T[]> {
   if (input.length === 0) return [];
@@ -216,10 +247,22 @@ export async function scrapeSync<T = Record<string, unknown>>(
     fail(opts.platform, 'sync requests accept at most ' + MAX_SYNC_URLS + ' URLs, got ' + input.length);
   }
 
-  // Discovery enumerates a profile and routinely runs past the sync budget, so
-  // it needs a longer ceiling before the snapshot fallback takes over.
-  const timeout = opts.timeoutMs ?? (opts.discoverBy ? 300_000 : 120_000);
+  /*
+   * The budget has to leave room for the rest of the batch.
+   *
+   * It used to be 300s for discovery, which is the entire Vercel maxDuration:
+   * one slow Facebook Page consumed the whole request, was killed mid-poll, and
+   * every other channel behind it in the queue went uncollected. Since an
+   * unfinished snapshot is now resumable rather than lost, a short budget costs
+   * nothing but a few minutes of latency, and keeps one slow Page from
+   * starving the queue.
+   */
+  const timeout = opts.timeoutMs ?? (opts.discoverBy ? 75_000 : 60_000);
   const deadline = Date.now() + timeout;
+
+  if (opts.resumeSnapshotId) {
+    return await awaitSnapshot(opts.resumeSnapshotId, opts, deadline) as T[];
+  }
   const url = BASE + '/scrape?dataset_id=' + encodeURIComponent(datasetId)
     + '&format=json&include_errors=true'
     + (opts.discoverBy ? '&type=discover_new&discover_by=' + opts.discoverBy : '');

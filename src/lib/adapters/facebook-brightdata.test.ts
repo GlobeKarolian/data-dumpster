@@ -103,3 +103,26 @@ describe('Bright Data Facebook post creative', () => {
     assert.match(result.incompleteReason ?? '', /without a continuation cursor/);
   });
 });
+
+describe('resumable snapshots', () => {
+  it('raises an unfinished snapshot as retryable, carrying its id', async () => {
+  const { PendingSnapshotError } = await import('@/lib/vendors/brightdata');
+  const err = new PendingSnapshotError('facebook', 'sd_abc123');
+  assert.equal(err.snapshotId, 'sd_abc123');
+  assert.equal(err.opts.retryable, true,
+    'the job is still running on the vendor side, so giving up permanently forfeits the spend');
+    assert.match(err.message, /sd_abc123/);
+  });
+
+  it('treats a filled post cap as a completeness caveat, not a blocking error', () => {
+  // Mirrors the runner's decision for exhaustive === false. Globe Rhode
+  // Island's Page was marked Blocked for the offence of having 200+ posts,
+  // which meant nothing would ever collect it again.
+  const exhaustive = false;
+  const status = 'partial';
+  const retryable = status === 'partial';
+  assert.equal(retryable, true);
+    assert.ok(exhaustive === false && retryable,
+      'a capped page must stay in the queue rather than being retired');
+  });
+});

@@ -640,23 +640,75 @@ export const facebookAdapter: ChannelAdapter = {
     const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
     if (!owned && !isPpcaApproved(ctx.credentials) && vendorKey) {
       const { fetchPagePosts } = await import('./facebook-brightdata');
-      const result = await fetchPagePosts(ctx.handle, vendorKey, {
-        since: ctx.since,
-        until: ctx.until,
-        limit: ctx.limit,
-        onApiCall: ctx.onApiCall,
-        signal: ctx.signal,
-      });
-      return {
-        posts: result.posts,
-        audience: result.audience ? [result.audience] : [],
-        profile: result.profile,
-        cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
-        hasMore: false,
-        exhaustive: result.exhaustive,
-        incompleteReason: result.incompleteReason,
-        warnings: result.warnings,
-      };
+      const { PendingSnapshotError } = await import('@/lib/vendors/brightdata');
+
+      /*
+       * Resume a snapshot this channel already paid for.
+       *
+       * Bright Data takes minutes on a busy Page, which outlives a serverless
+       * request. Before this, every attempt triggered a fresh collection, was
+       * killed mid-poll, and forfeited the spend; Facebook Pages sat unread for
+       * days while being billed repeatedly. The receipt now survives in the
+       * cursor, so a run either finishes the outstanding job or hands it on.
+       */
+      const prior: Record<string, unknown> =
+        typeof ctx.cursor === 'object' && ctx.cursor !== null && !Array.isArray(ctx.cursor)
+          ? ctx.cursor as Record<string, unknown>
+          : {};
+      const pendingId = typeof prior.pendingSnapshotId === 'string'
+        ? prior.pendingSnapshotId
+        : undefined;
+      // A snapshot Bright Data has not finished within a day is not coming
+      // back, and polling it forever would wedge the channel permanently.
+      const pendingSince = typeof prior.pendingSince === 'string' ? prior.pendingSince : null;
+      const stale = pendingSince
+        ? Date.now() - Date.parse(pendingSince) > 24 * 60 * 60 * 1000
+        : false;
+      const resumeSnapshotId = stale ? undefined : pendingId;
+
+      try {
+        const result = await fetchPagePosts(ctx.handle, vendorKey, {
+          since: ctx.since,
+          until: ctx.until,
+          limit: ctx.limit,
+          onApiCall: ctx.onApiCall,
+          signal: ctx.signal,
+          resumeSnapshotId,
+        });
+        return {
+          posts: result.posts,
+          audience: result.audience ? [result.audience] : [],
+          profile: result.profile,
+          // Cleared on success so the next window starts fresh.
+          cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
+          hasMore: false,
+          exhaustive: result.exhaustive,
+          incompleteReason: result.incompleteReason,
+          warnings: [
+            ...result.warnings,
+            ...(resumeSnapshotId
+              ? ['Completed a snapshot started by an earlier run, at no extra cost.']
+              : []),
+          ],
+        };
+      } catch (err) {
+        if (!(err instanceof PendingSnapshotError)) throw err;
+        // Nothing collected yet, but the job is alive and now recoverable.
+        return {
+          posts: [],
+          audience: [],
+          cursor: {
+            source: 'brightdata',
+            pendingSnapshotId: err.snapshotId,
+            pendingSince: pendingSince ?? new Date().toISOString(),
+            lastRunAt: new Date().toISOString(),
+          },
+          hasMore: true,
+          exhaustive: false,
+          incompleteReason: err.message,
+          warnings: [err.message],
+        };
+      }
     }
 
     // Refuse loudly before spending a call. A competitor Page without PPCA and

@@ -1065,16 +1065,27 @@ export async function runChannelIngest(
     );
   }
 
+  /*
+   * A full page of data is not a failure.
+   *
+   * `exhaustive === false` means the vendor returned everything we asked for
+   * and could not promise there was nothing older. That is a completeness
+   * caveat about the window, not an error about the run: the posts landed and
+   * the audience snapshot was written. Recording it as an error with retryable
+   * false put Globe Rhode Island's Facebook Page into a permanent Blocked
+   * state for the offence of having more than 200 posts, and nothing would
+   * ever have collected it again.
+   *
+   * It stays `partial`, so the coverage panel still refuses to call the window
+   * complete, and it stays retryable so the next run picks up where this left.
+   */
   const result = {
     status,
     postsUpserted, snapshotsUpserted, tagsAssigned, urlsRecorded, apiCalls,
     durationMs: Date.now() - startedAt.getTime(),
     hasMore: fetched.hasMore ?? false,
     warnings,
-    ...(fetched.exhaustive === false
-      ? { error: fetched.incompleteReason ?? 'The source could not certify the full window.' }
-      : {}),
-    retryable: status === 'partial' && fetched.exhaustive !== false,
+    retryable: status === 'partial',
   };
   await recordRun(channel, result, startedAt, { since, until });
   return { ...base, ...result };

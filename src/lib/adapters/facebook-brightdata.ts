@@ -158,7 +158,14 @@ export interface FacebookVendorResult {
 export async function fetchPagePosts(
   handle: string,
   apiKey: string,
-  opts: { since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal },
+  opts: {
+    since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal;
+    /**
+     * A snapshot a previous run started and ran out of time waiting for.
+     * Polling it is free; re-triggering the same collection is not.
+     */
+    resumeSnapshotId?: string;
+  },
 ): Promise<FacebookVendorResult> {
   const pageUrl = handle.includes('://') ? handle : 'https://www.facebook.com/' + handle;
   const requestedPosts = Math.min(opts.limit, 200);
@@ -171,7 +178,13 @@ export async function fetchPagePosts(
       start_date: vendorDate(opts.since),
       end_date: vendorDate(opts.until),
     }],
-    { apiKey, platform: PLATFORM, onApiCall: opts.onApiCall, signal: opts.signal },
+    {
+      apiKey,
+      platform: PLATFORM,
+      onApiCall: opts.onApiCall,
+      signal: opts.signal,
+      resumeSnapshotId: opts.resumeSnapshotId,
+    },
   );
 
   const warnings: string[] = [];
