@@ -39,12 +39,30 @@ export interface CoverageGap {
 }
 
 /**
+ * Channels that structurally cannot produce an audience reading.
+ *
+ * A Reddit USER account has karma, not followers, and karma is not a
+ * denominator for anything. The Reddit adapter deliberately emits no audience
+ * for `u/` handles, and the metrics layer has always excluded them from
+ * coverage for the same reason.
+ *
+ * This check did not, so it counted the one Reddit user account as a permanent
+ * daily gap that no amount of collection could ever close, and reported the
+ * estate as incomplete forever. A monitor that can never go green is a monitor
+ * people learn to ignore, which defeats the entire point of building it.
+ */
+const NO_AUDIENCE_BY_DESIGN = sql`
+  NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
+`;
+
+/**
  * Channels with no audience reading for the given day.
  *
- * Deliberately compares against `audience_snapshots`, not `channels.
- * last_ingested_at`. A run can finish, be recorded as a success, and still
- * write no snapshot, which is exactly what the Reddit adapter does today. The
- * question is whether the reading exists, not whether a job ran.
+ * Deliberately compares against `audience_snapshots`, not
+ * `channels.last_ingested_at`. A run can finish, be recorded as a success, and
+ * still write no snapshot: X does exactly that, returning a hundred rows of
+ * profile highlights that all fall outside the window. The question this asks
+ * is whether the reading exists, not whether a job ran.
  */
 export async function coverageGaps(day: string): Promise<CoverageGap[]> {
   const { rows } = await db.execute<{
@@ -55,6 +73,7 @@ export async function coverageGaps(day: string): Promise<CoverageGap[]> {
       FROM channels ch
       JOIN companies c ON c.id = ch.company_id
      WHERE ch.active
+       AND ${NO_AUDIENCE_BY_DESIGN}
        AND NOT EXISTS (
          SELECT 1 FROM audience_snapshots a
           WHERE a.channel_id = ch.id AND a.day = ${day}::date
@@ -81,12 +100,15 @@ export async function recentCoverage(days = 14): Promise<DayCoverage[]> {
         '1 day'
       )::date AS day
     ),
-    active AS (SELECT count(*)::int AS n FROM channels WHERE active)
+    active AS (
+      SELECT count(*)::int AS n FROM channels ch
+       WHERE ch.active AND ${NO_AUDIENCE_BY_DESIGN}
+    )
     SELECT d.day::text AS day,
            (SELECT count(DISTINCT a.channel_id)::int
               FROM audience_snapshots a
               JOIN channels ch ON ch.id = a.channel_id AND ch.active
-             WHERE a.day = d.day) AS observed,
+             WHERE a.day = d.day AND ${NO_AUDIENCE_BY_DESIGN}) AS observed,
            active.n AS active
       FROM days d CROSS JOIN active
      ORDER BY d.day DESC

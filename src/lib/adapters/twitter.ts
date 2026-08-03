@@ -515,6 +515,32 @@ async function fetchViaEnsemble(
       lastRunAt: new Date().toISOString(),
     },
     hasMore: false,
+    /*
+     * This source can never certify a window, so it never claims to.
+     *
+     * EnsembleData's /twitter/user/tweets returns whatever Twitter selects for
+     * the profile, which for most accounts is the Highlights tab rather than a
+     * chronological timeline. Checked live against @BostonGlobe: 100 rows came
+     * back, every one parsed cleanly with full engagement, and their dates were
+     * 2015, 2018, 2019, 2021 and 2024. The window filter correctly discarded
+     * all of them.
+     *
+     * The adapter already warned about exactly this. What it did not do was set
+     * exhaustive, so the run was recorded as `succeeded` and the coverage panel
+     * printed a green "Complete" beside a post count of zero. Twenty-two
+     * channels read as fully collected while holding no posts at all, which is
+     * a worse failure than an error: an error gets investigated.
+     *
+     * Marking it incomplete keeps the channel in the queue (partial stays
+     * retryable) and keeps the profile honest about what it holds.
+     */
+    exhaustive: false,
+    incompleteReason: result.posts.length === 0
+      ? 'X returned only its profile highlights for @' + ctx.handle + ', which are chosen by '
+        + 'Twitter and are not chronological. None fell inside this window, so the account\'s '
+        + 'recent posting is unmeasured rather than absent.'
+      : 'X posts come from Twitter\'s own selected set rather than a chronological timeline, '
+        + 'so this window cannot be certified complete.',
     warnings: result.warnings,
   };
 }
