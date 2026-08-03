@@ -71,7 +71,7 @@ test('prefers the conversion block over the device block', () => {
   const google = r.rows.find((x) => x.domain === 'google.com');
   assert.ok(google);
   // 599603 is logged-out visits; 677905 is total visits from the other block.
-  assert.equal(google.loggedOutVisits, 599603);
+  assert.equal(google.visits, 599603);
   assert.equal(google.totalVisits, 677905);
   assert.equal(google.newSubscriptions, 761);
 });
@@ -85,8 +85,8 @@ test("Adobe's own conversion rate is preserved, not recomputed", () => {
 test('the conversion rate divides by logged-out visits, so the math ties', () => {
   const r = parseAdobeFreeform(FIXTURE);
   for (const row of r.rows) {
-    if (!row.loggedOutVisits || row.newSubscriptions === null) continue;
-    const recomputed = row.newSubscriptions / row.loggedOutVisits;
+    if (!row.visits || row.newSubscriptions === null) continue;
+    const recomputed = row.newSubscriptions / row.visits;
     assert.ok(Math.abs(recomputed - (row.conversionRate ?? 0)) < 1e-9,
       `${row.domain}: reported ${row.conversionRate}, recomputed ${recomputed}`);
   }
@@ -115,9 +115,9 @@ test('period rows and segment labels never become domains', () => {
 test('rejects a domain table that has no subscriptions column', () => {
   const r = parseAdobeFreeform('domain,visits\ngoogle.com,100\n');
   assert.equal(r.ok, false);
-  // The message names what is missing rather than the file format, because the
-  // parser now accepts plain sheets as well as Freeform exports.
-  assert.match(r.problems[0], /subscriptions column/);
+  // The message points at the export to re-pull rather than naming an internal
+  // format, because the parser now accepts plain sheets as well as Freeform.
+  assert.match(r.problems[0], /Top Referrals export/);
 });
 
 test('survives an empty file without throwing', () => {
@@ -132,7 +132,7 @@ test('Google is one platform, not two rows', () => {
   const { platforms } = rollUpReferrals(parseAdobeFreeform(FIXTURE).rows);
   const google = platforms.find((p) => p.id === 'google');
   assert.equal(google?.newSubscriptions, 761 + 46);
-  assert.equal(google?.loggedOutVisits, 599603 + 123414);
+  assert.equal(google?.visits, 599603 + 123414);
   assert.equal(google?.members.length, 2);
 });
 
@@ -159,7 +159,7 @@ test('a rolled-up conversion rate is recomputed from its own totals', () => {
 
 test('conversion rate is null on zero visits, never Infinity', () => {
   const { platforms } = rollUpReferrals([
-    { domain: 'ghost.example', loggedOutVisits: 0, totalVisits: null,
+    { domain: 'ghost.example', visits: 0, totalVisits: null,
       newSubscriptions: 3, conversionRate: null },
   ]);
   assert.equal(platforms[0].conversionRate, null);
@@ -253,7 +253,7 @@ test('a file with no "# Freeform table" markers is still recovered', () => {
   assert.equal(r.ok, true, 'the anchor-based fallback must find the table');
   const google = r.rows.find((x) => x.domain === 'google.com');
   assert.equal(google?.newSubscriptions, 761);
-  assert.equal(google?.loggedOutVisits, 599603);
+  assert.equal(google?.visits, 599603);
 });
 
 test('the marker-less path still separates the total row', () => {
@@ -282,7 +282,7 @@ test('a percent-formatted rate is read as a fraction, not multiplied by 100', ()
   assert.ok(google);
   assert.ok(google.conversionRate !== null && google.conversionRate < 0.002,
     `expected ~0.00127, got ${google.conversionRate}`);
-  const recomputed = google.newSubscriptions! / google.loggedOutVisits!;
+  const recomputed = google.newSubscriptions! / google.visits!;
   assert.ok(Math.abs(recomputed - google.conversionRate) < 1e-4);
 });
 
@@ -302,4 +302,115 @@ test('an unrelated spreadsheet is refused rather than parsed into nonsense', () 
   const payroll = 'Employee,Department,Salary\nA. Person,News,90000\n';
   const r = parseAdobeFreeform(payroll);
   assert.equal(r.ok, false);
+});
+
+/* ------------------------------------------- cross-suite contamination */
+
+/**
+ * A real Boston.com export carried a table whose 401 rows were byte-identical
+ * to the Globe's, headed "BG Logged Out Visits" under a "Report suite:
+ * Boston.com" file header. Because that table is the one with a conversion
+ * rate, it is the table this parser prefers. Every number in it is plausible,
+ * so nothing downstream would have caught it.
+ */
+const CONTAMINATED = '﻿'
+  + '# Report suite: Boston.com\n'
+  + '"# Date: Jul 27, 2026 - Aug 2, 2026"\n'
+  + '\n'
+  + '##############################################\n'
+  + '# Freeform table\n'
+  + '##############################################\n'
+  + ',Visits,Visits,Bcom Digital Subscriptions\n'
+  + ',Visits,Mobile Phone,Bcom Digital Subscriptions\n'
+  + 'Referring Domain,1395476,830133,4\n'
+  + 'Typed/Bookmarked,923955,471001,1\n'
+  + 'google.com,269960,199837,0\n'
+  + 'reddit.com,8073,6936,0\n'
+  + '\n'
+  + '##############################################\n'
+  + '# Freeform table (9)\n'
+  + '##############################################\n'
+  + ',BG Logged Out Visits,BG Digital Subscriptions (Visit),Conversion Rate of Site\n'
+  + ',Visits,BG Digital Subscriptions (Visit),Conversion Rate of Site\n'
+  + 'Referring Domain,1391557,1865,0.00134022537344859\n'
+  + 'Typed/Bookmarked,623127,795,0.0012758233875277431\n'
+  + 'google.com,599603,761,0.0012691731028697322\n'
+  + 'reddit.com,8246,8,0.0009701673538685423\n';
+
+test("a table measuring another property is refused, not preferred", () => {
+  const r = parseAdobeFreeform(CONTAMINATED, { requireSubscriptions: false });
+  assert.equal(r.ok, true);
+  const reddit = r.rows.find((x) => x.domain === 'reddit.com');
+  assert.equal(reddit?.visits, 8073,
+    'must read Boston.com\'s own 8,073, never the Globe\'s 8,246');
+});
+
+test('the cross-suite mismatch is reported rather than silently handled', () => {
+  const r = parseAdobeFreeform(CONTAMINATED, { requireSubscriptions: false });
+  assert.ok(r.problems.some((p) => /different report suite/i.test(p)),
+    'the reader has to be told a table was thrown away and why');
+});
+
+test('the guard holds even when subscriptions are demanded', () => {
+  // The old build would have taken the BG table here, since it is the only one
+  // with a conversion rate, and labelled Globe figures as Boston.com.
+  const r = parseAdobeFreeform(CONTAMINATED, { requireSubscriptions: true });
+  if (r.ok) {
+    const reddit = r.rows.find((x) => x.domain === 'reddit.com');
+    assert.notEqual(reddit?.visits, 8246, 'Globe figures must never surface here');
+  }
+});
+
+test("a file's own prefixed metrics are not mistaken for a foreign suite", () => {
+  // The Globe export is full of "BG" metrics and its suite IS the Globe.
+  const r = parseAdobeFreeform(FIXTURE);
+  assert.ok(!r.problems.some((p) => /different report suite/i.test(p)));
+  assert.equal(r.rows.find((x) => x.domain === 'google.com')?.visits, 599603);
+});
+
+/* --------------------------------------------------- visits-ranked mode */
+
+test('a traffic-only export is accepted when subscriptions are not required', () => {
+  const trafficOnly = '# Report suite: Boston.com\n'
+    + '\n'
+    + '# Freeform table\n'
+    + ',Visits,Visits\n'
+    + ',Visits,Mobile Phone\n'
+    + 'Referring Domain,1395476,830133\n'
+    + 'google.com,269960,199837\n'
+    + 'reddit.com,8073,6936\n';
+  const strict = parseAdobeFreeform(trafficOnly, { requireSubscriptions: true });
+  assert.equal(strict.ok, false, 'the Globe section must still demand subscriptions');
+  const loose = parseAdobeFreeform(trafficOnly, { requireSubscriptions: false });
+  assert.equal(loose.ok, true);
+  assert.equal(loose.hasSubscriptions, false);
+  assert.equal(loose.rows.find((x) => x.domain === 'reddit.com')?.visits, 8073);
+});
+
+test('visits mode ranks by traffic and reports share of the whole', () => {
+  const r = importAdobeFreeform(CONTAMINATED, 'visits');
+  assert.ok(r.ok);
+  assert.equal(r.table.rows[0][0], 'Google');
+  // Share divides by all referred traffic including direct, not by the visible
+  // rows, so it must not sum to 100 across the ranked subset.
+  const google = r.table.rows[0];
+  assert.match(google[2], /^\d+\.\d%$/);
+  assert.ok(!r.table.rows.some((row) => row.length > 3),
+    'visits mode has three columns, with no subscriptions or conversion');
+});
+
+test('paid and internal traffic leave the platform ranking but stay in the table', () => {
+  const withPaid = CONTAMINATED.replace(
+    'reddit.com,8073,6936,0\n',
+    'reddit.com,8073,6936,0\noutbrain.com,1262,900,0\nbostonglobe.com,1939,1400,3\n',
+  );
+  const r = importAdobeFreeform(withPaid, 'visits');
+  assert.ok(r.ok);
+  const labels = r.table.rows.map((x) => x[0]);
+  assert.ok(labels.some((l) => /Outbrain \(paid distribution\)/.test(l)));
+  assert.ok(labels.some((l) => /BostonGlobe\.com \(internal cross-promotion\)/.test(l)));
+  // And they rank below every earned platform rather than competing with them.
+  const firstNonPlatform = labels.findIndex((l) => /\(paid|\(internal/.test(l));
+  const lastPlatform = labels.map((l) => /\(paid|\(internal/.test(l)).lastIndexOf(false);
+  assert.ok(firstNonPlatform > lastPlatform);
 });

@@ -146,6 +146,13 @@ export type ManualSectionSpec = {
   columns: ManualColumnSpec[];
   /** When set, the section also accepts a dropped file of this format. */
   importer?: ManualImporter;
+  /**
+   * What the imported table ranks on. Defaults to subscriptions.
+   *
+   * Properties without a meaningful subscription metric rank by traffic
+   * instead, and their import refuses to require a subscriptions column.
+   */
+  importRank?: 'subscriptions' | 'visits';
   /** Shown next to the drop zone so the expected export is unambiguous. */
   importHint?: string;
 };
@@ -214,19 +221,33 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'bostonReferral',
     title: 'Boston.com Platform Referral Traffic Sorted By Visits',
-    hint: 'Analytics referral report for Boston.com, sorted by visits.',
+    hint: 'Adobe Analytics, Top referrals for the Boston.com report suite. '
+      + 'Drop the export below rather than pasting it.',
+    importer: 'adobeFreeform',
+    // Boston.com is not a subscription product. Its "Bcom Digital
+    // Subscriptions" metric recorded four for the whole week, three of them
+    // arriving from a bostonglobe.com link, so the section reports traffic.
+    importRank: 'visits',
+    importHint: 'CSV or Excel, straight from Adobe. Subscriptions are not reported for '
+      + 'Boston.com; the section ranks referral traffic.',
     columns: [
-      { key: 'domain', label: 'Referring Domain' },
+      { key: 'platform', label: 'Platform' },
       { key: 'visits', label: 'Visits', numeric: true },
+      { key: 'share', label: 'Share of referred', numeric: true },
     ],
   },
   {
     id: 'statReferral',
     title: 'STATNews.com Platform Referral Traffic Sorted By Visits',
-    hint: 'Analytics referral report for STAT, sorted by visits.',
+    hint: 'Adobe Analytics, Top referrals for the STAT report suite. '
+      + 'Drop the export below rather than pasting it.',
+    importer: 'adobeFreeform',
+    importRank: 'visits',
+    importHint: 'CSV or Excel, straight from Adobe. The section ranks referral traffic.',
     columns: [
-      { key: 'domain', label: 'Referring Domain' },
+      { key: 'platform', label: 'Platform' },
       { key: 'visits', label: 'Visits', numeric: true },
+      { key: 'share', label: 'Share of referred', numeric: true },
     ],
   },
 ];

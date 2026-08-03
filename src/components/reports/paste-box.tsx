@@ -70,7 +70,7 @@ export function PasteBox({
         setImportState({ status: 'error', problems: read.problems, fileName: file.name });
         return;
       }
-      const result = importAdobeFreeform(read.text);
+      const result = importAdobeFreeform(read.text, spec.importRank ?? 'subscriptions');
       if (!result.ok) {
         setImportState({
           status: 'error',
@@ -188,7 +188,7 @@ export function PasteBox({
         <div>
           {spec.importer && rowCount > 0 ? (
             <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
-              <ReferralChart rows={table.rows} />
+              <ReferralChart rows={table.rows} rank={spec.importRank ?? 'subscriptions'} />
             </div>
           ) : null}
           <div className="overflow-x-auto">

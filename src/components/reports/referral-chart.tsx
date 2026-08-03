@@ -42,19 +42,29 @@ function num(cell: string | undefined): number {
 }
 
 /**
+ * Rows that are real traffic but not an earned platform.
+ *
+ * The import labels them, so the chart can leave them out of a ranking that
+ * readers take as a scoreboard without having to re-derive the categories.
+ */
+const NOT_A_PLATFORM = /^All other referrers|\((paid distribution|internal cross-promotion)\)$/i;
+
+/**
  * Read the saved table rather than the import result.
  *
  * The rows are what persists, so deriving from them is what makes the chart
  * survive a reload. It also means a figure corrected by hand in the grid is
  * reflected here instead of the chart and the table quietly disagreeing.
  */
-function toPoints(rows: string[][]): Point[] {
+function toPoints(rows: string[][], rank: Rank): Point[] {
   return rows
-    .filter((r) => r[0] && !/^All other referrers/i.test(r[0]))
+    .filter((r) => r[0] && !NOT_A_PLATFORM.test(r[0]))
     .map((r) => {
       const visits = num(r[1]);
-      const subs = num(r[2]);
-      const shown = (r[3] ?? '').trim();
+      // In visits mode column 2 is a share, not a subscription count, and there
+      // is no rate column at all.
+      const subs = rank === 'subscriptions' ? num(r[2]) : 0;
+      const shown = rank === 'subscriptions' ? (r[3] ?? '').trim() : '';
       return {
         label: r[0],
         subs,
@@ -66,13 +76,21 @@ function toPoints(rows: string[][]): Point[] {
     });
 }
 
-export function ReferralChart({ rows }: { rows: string[][] }) {
+export type Rank = 'subscriptions' | 'visits';
+
+export function ReferralChart({ rows, rank = 'subscriptions' }: {
+  rows: string[][];
+  rank?: Rank;
+}) {
+  const bySubs = rank === 'subscriptions';
   const [view, setView] = React.useState<View>('volume');
-  const points = React.useMemo(() => toPoints(rows), [rows]);
+  const points = React.useMemo(() => toPoints(rows, rank), [rows, rank]);
 
   const volume = React.useMemo(
-    () => [...points].sort((a, b) => b.subs - a.subs).slice(0, 10),
-    [points],
+    () => [...points]
+      .sort((a, b) => (bySubs ? b.subs - a.subs : b.visits - a.visits))
+      .slice(0, 10),
+    [points, bySubs],
   );
 
   /**
@@ -89,22 +107,29 @@ export function ReferralChart({ rows }: { rows: string[][] }) {
     [points],
   );
 
-  const data = view === 'volume' ? volume : efficiency;
+  // Without subscriptions there is only one view, so the toggle is not shown.
+  const effective: View = bySubs ? view : 'volume';
+  const data = effective === 'volume' ? volume : efficiency;
   const isEmpty = data.length === 0;
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-          {view === 'volume'
-            ? 'New subscriptions by platform, largest first.'
-            : `Subscriptions per logged-out visit. Platforms under ${MIN_CONVERSIONS_FOR_RATE} `
-              + 'conversions are excluded, since a rate built on one or two is noise.'}
+          {!bySubs
+            ? 'Referral visits by platform, largest first. Paid placement and internal '
+              + 'cross-promotion are listed in the table but left out of this ranking.'
+            : effective === 'volume'
+              ? 'New subscriptions by platform, largest first.'
+              : `Subscriptions per logged-out visit. Platforms under ${MIN_CONVERSIONS_FOR_RATE} `
+                + 'conversions are excluded, since a rate built on one or two is noise.'}
         </p>
         <div
           role="tablist"
           aria-label="Chart view"
-          className="flex shrink-0 items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800"
+          hidden={!bySubs}
+          className="flex shrink-0 items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 data-[hidden=true]:hidden dark:bg-zinc-800"
+          data-hidden={!bySubs}
         >
           {(['volume', 'efficiency'] as const).map((v) => (
             <button
@@ -155,20 +180,22 @@ export function ReferralChart({ rows }: { rows: string[][] }) {
                 return (
                   <ChartTooltipCard
                     title={d.label}
-                    rows={[
+                    rows={bySubs ? [
                       { label: 'New subscriptions', value: fmtInt(d.subs) },
                       { label: 'Logged-out visits', value: fmtInt(d.visits) },
                       {
                         label: 'Conversion',
                         value: d.subs >= MIN_CONVERSIONS_FOR_RATE ? fmtPct(d.rate) : '—',
                       },
+                    ] : [
+                      { label: 'Visits', value: fmtInt(d.visits) },
                     ]}
                   />
                 );
               }}
             />
             <Bar
-              dataKey={view === 'volume' ? 'subs' : 'rate'}
+              dataKey={effective === 'volume' ? (bySubs ? 'subs' : 'visits') : 'rate'}
               radius={[0, 3, 3, 0]}
               isAnimationActive={false}
             >
@@ -177,11 +204,11 @@ export function ReferralChart({ rows }: { rows: string[][] }) {
                 // they are the finding it exists to make visible.
                 <Cell
                   key={d.label}
-                  fill={view === 'efficiency' && d.isAi ? ACCENT : CHART_MUTED}
+                  fill={effective === 'efficiency' && d.isAi ? ACCENT : CHART_MUTED}
                 />
               ))}
               <LabelList
-                dataKey={view === 'volume' ? 'subs' : 'rate'}
+                dataKey={effective === 'volume' ? (bySubs ? 'subs' : 'visits') : 'rate'}
                 position="right"
                 className="pb-num"
                 fill="var(--pb-label)"
@@ -189,7 +216,7 @@ export function ReferralChart({ rows }: { rows: string[][] }) {
                 formatter={(v) => {
                   const n = Number(v);
                   if (!Number.isFinite(n)) return '';
-                  return view === 'volume' ? fmtInt(n) : (n * 100).toFixed(2) + '%';
+                  return effective === 'volume' ? fmtInt(n) : (n * 100).toFixed(2) + '%';
                 }}
               />
             </Bar>

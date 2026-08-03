@@ -6,7 +6,7 @@
  * traffic is treated, and what the reader is told about everything left out.
  */
 import { parseAdobeFreeform } from './adobe-freeform';
-import { rollUpReferrals, type ReferralGroup } from './referral-platforms';
+import { rollUpReferrals, CATEGORY_LABELS, type ReferralGroup } from './referral-platforms';
 import { rowsToTsv } from './tsv';
 import type { ManualTable } from './types';
 
@@ -18,7 +18,7 @@ export type ImportSummary = {
   /** Platforms remaining after rollup that drove at least one subscription. */
   platformsRanked: number;
   newSubscriptions: number;
-  loggedOutVisits: number;
+  visits: number;
   /** Platforms whose conversion rate was withheld as too small to be meaningful. */
   ratesWithheld: number;
   minConversionsForRate: number;
@@ -91,34 +91,70 @@ const RANK_LIMIT = 12;
  */
 const MIN_CONVERSIONS_FOR_RATE = 5;
 
-export function importAdobeFreeform(text: string): ImportResult {
-  const parsed = parseAdobeFreeform(text);
+/**
+ * What the section ranks on.
+ *
+ * The Globe ranks by subscriptions driven, because that is what its referral
+ * section is for. Boston.com and STAT have no meaningful subscription metric
+ * (Boston.com recorded four in the whole week, three of them arriving from a
+ * Globe link), so ranking on it would be sorting noise. They rank by traffic.
+ */
+export type ImportRank = 'subscriptions' | 'visits';
+
+export function importAdobeFreeform(
+  text: string,
+  rank: ImportRank = 'subscriptions',
+): ImportResult {
+  const bySubs = rank === 'subscriptions';
+  const parsed = parseAdobeFreeform(text, { requireSubscriptions: bySubs });
   if (!parsed.ok) return { ok: false, problems: parsed.problems };
 
   const roll = rollUpReferrals(parsed.rows);
-  const earning = roll.platforms.filter((g) => g.newSubscriptions > 0);
+  const earning = bySubs
+    ? roll.platforms.filter((g) => g.newSubscriptions > 0)
+    : roll.platforms.filter((g) => g.visits > 0).sort((a, b) => b.visits - a.visits);
   const ranked = earning.slice(0, RANK_LIMIT);
   const tail = earning.slice(RANK_LIMIT);
 
   const rate = (g: { newSubscriptions: number; conversionRate: number | null }) =>
     (g.newSubscriptions >= MIN_CONVERSIONS_FOR_RATE ? pct(g.conversionRate) : '—');
 
-  const rows = ranked.map((g) => [
-    g.label,
-    int(g.loggedOutVisits),
-    int(g.newSubscriptions),
-    rate(g),
-  ]);
+  /*
+   * Share is of the property's whole referred traffic, not of the visible rows.
+   *
+   * Dividing by the ranked subset would make the column sum to 100% and mean
+   * nothing, and would inflate Google precisely because the tail was cut. The
+   * denominator is every referring domain in the file, direct included, so
+   * 19.3% stays 19.3% however many rows are shown.
+   */
+  const shareBase = (roll.direct?.visits ?? 0)
+    + roll.platforms.reduce((s, g) => s + g.visits, 0)
+    + roll.nonPlatform.reduce((s, g) => s + g.visits, 0);
+  const share = (v: number) => (shareBase > 0 ? (v / shareBase * 100).toFixed(1) + '%' : '—');
+
+  const rows = bySubs
+    ? ranked.map((g) => [g.label, int(g.visits), int(g.newSubscriptions), rate(g)])
+    : ranked.map((g) => [g.label, int(g.visits), share(g.visits)]);
 
   if (tail.length > 0) {
-    const visits = tail.reduce((s, g) => s + g.loggedOutVisits, 0);
+    const visits = tail.reduce((s, g) => s + g.visits, 0);
     const subs = tail.reduce((s, g) => s + g.newSubscriptions, 0);
-    rows.push([
-      `All other referrers (${tail.length})`,
-      int(visits),
-      int(subs),
-      subs >= MIN_CONVERSIONS_FOR_RATE && visits > 0 ? pct(subs / visits) : '—',
-    ]);
+    rows.push(bySubs
+      ? [
+        `All other referrers (${tail.length})`,
+        int(visits), int(subs),
+        subs >= MIN_CONVERSIONS_FOR_RATE && visits > 0 ? pct(subs / visits) : '—',
+      ]
+      : [`All other referrers (${tail.length})`, int(visits), share(visits)]);
+  }
+
+  // Paid placement and owned-to-owned traffic on their own labelled lines, so
+  // the totals still tie without either competing for a platform rank.
+  for (const g of roll.nonPlatform) {
+    const label = `${g.label} (${CATEGORY_LABELS[g.category].toLowerCase()})`;
+    rows.push(bySubs
+      ? [label, int(g.visits), int(g.newSubscriptions), rate(g)]
+      : [label, int(g.visits), share(g.visits)]);
   }
 
   const itemised = parsed.rows.reduce((s, r) => s + (r.newSubscriptions ?? 0), 0);
@@ -132,12 +168,12 @@ export function importAdobeFreeform(text: string): ImportResult {
     // Totals span every earning platform, including the collapsed tail, so the
     // footer never disagrees with the last row of the table.
     newSubscriptions: earning.reduce((s, g) => s + g.newSubscriptions, 0),
-    loggedOutVisits: earning.reduce((s, g) => s + g.loggedOutVisits, 0),
+    visits: earning.reduce((s, g) => s + g.visits, 0),
     ratesWithheld: earning.filter((g) => g.newSubscriptions < MIN_CONVERSIONS_FOR_RATE).length,
     minConversionsForRate: MIN_CONVERSIONS_FOR_RATE,
     direct: roll.direct
       ? {
-        visits: roll.direct.loggedOutVisits,
+        visits: roll.direct.visits,
         subscriptions: roll.direct.newSubscriptions,
         conversionRate: roll.direct.conversionRate,
       }

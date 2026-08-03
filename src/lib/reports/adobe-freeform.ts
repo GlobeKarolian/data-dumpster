@@ -25,11 +25,19 @@
 /** One referring domain, as Adobe reports it. */
 export type FreeformDomainRow = {
   domain: string;
-  /** Visits by users who were not logged in, the denominator Adobe converts on. */
-  loggedOutVisits: number | null;
+  /**
+   * The visits figure this row is measured on.
+   *
+   * Which metric that is depends on the property, so it is NOT named for one of
+   * them. The Globe export carries "BG Logged Out Visits", the denominator
+   * Adobe converts on; Boston.com carries plain "Visits" and has no logged-out
+   * split at all. `visitsMetric` on the parse records which was read, so the UI
+   * can label the column with the truth rather than an assumption.
+   */
+  visits: number | null;
   /** All visits, logged in and out. Present only in the device-split table. */
   totalVisits: number | null;
-  /** NEW subscriptions started, attributed at visit scope. */
+  /** NEW subscriptions started, attributed at visit scope. Null when absent. */
   newSubscriptions: number | null;
   /** As reported by Adobe. Recomputed only when Adobe omitted it. */
   conversionRate: number | null;
@@ -47,6 +55,22 @@ export type FreeformParse = {
   total: FreeformDomainRow | null;
   /** How many `# Freeform table` blocks the file contained. */
   tablesFound: number;
+  /** The merged header of the column `visits` was read from. */
+  visitsMetric: string;
+  /** Whether the table carried a subscriptions column at all. */
+  hasSubscriptions: boolean;
+};
+
+export type ParseOptions = {
+  /**
+   * Reject a file with no subscriptions column.
+   *
+   * True for the Globe, whose section ranks by subscriptions driven. False for
+   * Boston.com and STAT, which are not subscription products: their referral
+   * export is traffic only, and demanding a subscriptions column there would
+   * refuse a perfectly good file.
+   */
+  requireSubscriptions?: boolean;
 };
 
 type Block = { label: string; header: string[]; rows: string[][] };
@@ -149,6 +173,7 @@ const SUBSCRIPTIONS = /BG Digital Subscriptions|subscription|\bsubs\b|starts/i;
 const LOGGED_OUT = /BG Logged Out Visits|logged.?out/i;
 const CONVERSION = /Conversion Rate|conversion/i;
 const DOMAIN_LIKE = /referr|domain|source|platform|channel/i;
+const ANY_VISITS = /visits|sessions|clicks/i;
 
 /** Blank, or a run of empty cells. Used to find chunk boundaries. */
 function isBlankRow(r: string[]): boolean {
@@ -230,20 +255,80 @@ function isDomainBlock(b: Block): boolean {
  * against the source rather than recomputed and hoped over. Only if that block
  * is missing does the parser fall back to the widest domain block available.
  */
-function pickBlock(blocks: Block[]): { block: Block; kind: 'conversion' | 'fallback' } | null {
-  const domainBlocks = blocks.filter(isDomainBlock);
+/**
+ * Metric name prefixes that identify which property a panel is querying.
+ *
+ * Adobe namespaces custom metrics per property: the Globe's are prefixed "BG",
+ * Boston.com's "Bcom". The prefix travels with the column header, which makes
+ * it the only reliable way to tell whose numbers a table actually holds.
+ */
+const SUITE_PREFIXES: { suite: RegExp; prefix: RegExp; name: string }[] = [
+  { suite: /bostonglobe/i, prefix: /\bBG\b/, name: 'the Globe' },
+  { suite: /boston\.com|^bcom/i, prefix: /\bBcom\b/, name: 'Boston.com' },
+];
+
+/**
+ * Does this block's metrics belong to a property other than the file's own?
+ *
+ * A real Boston.com export was found to contain a table whose 401 rows were
+ * byte-identical to the Globe's, carrying "BG Logged Out Visits" under a
+ * "Report suite: Boston.com" header: a stale panel in the Workspace project
+ * pointed at the wrong suite. Because that table is the one with a conversion
+ * rate, it is exactly the table this parser prefers, and every number in it
+ * looks entirely plausible. Detecting the mismatch is the only thing standing
+ * between that file and a report that presents Globe figures as Boston.com's.
+ */
+function foreignSuite(block: Block, reportSuite: string | null): string | null {
+  if (!reportSuite) return null;
+  const own = SUITE_PREFIXES.find((s) => s.suite.test(reportSuite));
+  if (!own) return null;
+  const header = block.header.join(' | ');
+  for (const other of SUITE_PREFIXES) {
+    if (other === own) continue;
+    if (other.prefix.test(header) && !own.prefix.test(header)) return other.name;
+  }
+  return null;
+}
+
+function pickBlock(
+  blocks: Block[],
+  requireSubscriptions: boolean,
+  reportSuite: string | null,
+  problems: string[],
+): { block: Block; kind: 'conversion' | 'fallback' } | null {
+  const all = blocks.filter(isDomainBlock);
+  if (all.length === 0) return null;
+
+  const domainBlocks: Block[] = [];
+  for (const b of all) {
+    const foreign = foreignSuite(b, reportSuite);
+    if (foreign) {
+      problems.push(`A table measuring ${foreign} was ignored: its metrics are named for a `
+        + `different report suite than this file's "${reportSuite}". Check that panel in `
+        + 'Workspace, it is pointed at the wrong property.');
+      continue;
+    }
+    domainBlocks.push(b);
+  }
   if (domainBlocks.length === 0) return null;
+
+  const widest = (list: Block[]) =>
+    list.reduce<Block | null>((a, b) => (a === null || b.rows.length > a.rows.length ? b : a), null);
+
   const withConversion = domainBlocks.filter(
     (b) => findCol(b.header, LOGGED_OUT) >= 0 && findCol(b.header, SUBSCRIPTIONS) >= 0,
   );
-  if (withConversion.length > 0) {
-    const best = withConversion.reduce((a, b) => (b.rows.length > a.rows.length ? b : a));
-    return { block: best, kind: 'conversion' };
-  }
-  const best = domainBlocks
-    .filter((b) => findCol(b.header, SUBSCRIPTIONS) >= 0)
-    .reduce<Block | null>((a, b) => (a === null || b.rows.length > a.rows.length ? b : a), null);
-  return best ? { block: best, kind: 'fallback' } : null;
+  const best = widest(withConversion);
+  if (best) return { block: best, kind: 'conversion' };
+
+  const withSubs = widest(domainBlocks.filter((b) => findCol(b.header, SUBSCRIPTIONS) >= 0));
+  if (withSubs) return { block: withSubs, kind: 'fallback' };
+  if (requireSubscriptions) return null;
+
+  // Traffic-only properties. Widest wins because Adobe emits a short summary
+  // table alongside the full ranking and both match on a visits column.
+  const withVisits = widest(domainBlocks.filter((b) => findCol(b.header, ANY_VISITS) >= 0));
+  return withVisits ? { block: withVisits, kind: 'fallback' } : null;
 }
 
 /**
@@ -255,7 +340,8 @@ function pickBlock(blocks: Block[]): { block: Block; kind: 'conversion' | 'fallb
  */
 const NON_DOMAIN_LABELS = new Set(['Domain', 'Month', 'Segments', '']);
 
-export function parseAdobeFreeform(text: string): FreeformParse {
+export function parseAdobeFreeform(text: string, opts: ParseOptions = {}): FreeformParse {
+  const requireSubscriptions = opts.requireSubscriptions ?? true;
   const problems: string[] = [];
   const raw = parseCsv(text);
 
@@ -272,40 +358,47 @@ export function parseAdobeFreeform(text: string): FreeformParse {
   // Marker-based split first, then the anchor-based reconstruction that an XLSX
   // export needs because saving as a workbook drops the comment rows.
   let blocks = splitBlocks(raw);
-  let picked = pickBlock(blocks);
+  let picked = pickBlock(blocks, requireSubscriptions, reportSuite, problems);
   if (!picked) {
     const inferred = inferBlocks(raw);
-    const pickedInferred = pickBlock(inferred);
-    if (pickedInferred) { blocks = inferred; picked = pickedInferred; }
+    const retry: string[] = [];
+    const pickedInferred = pickBlock(inferred, requireSubscriptions, reportSuite, retry);
+    if (pickedInferred) { blocks = inferred; picked = pickedInferred; problems.push(...retry); }
   }
 
   if (!picked) {
     return {
       ok: false,
-      problems: [blocks.length === 0
-        ? 'No table with a referring-domain column and a subscriptions column was found. '
-          + 'Check that this is the Top Referrals export rather than another view.'
-        : `Found ${blocks.length} tables, but none had a referring-domain column alongside a `
-          + 'subscriptions column.'],
-      reportSuite, dateRange, rows: [], total: null, tablesFound: blocks.length,
+      problems: [
+        blocks.length === 0
+          ? 'No table with a referring-domain column was found. Check that this is the Top '
+            + 'Referrals export rather than another view.'
+          : `Found ${blocks.length} tables, but none usable`
+            + (requireSubscriptions
+              ? ' with both a referring-domain and a subscriptions column.'
+              : ' with a referring-domain and a visits column.'),
+        ...problems,
+      ],
+      reportSuite, dateRange, rows: [], total: null,
+      tablesFound: blocks.length, visitsMetric: '', hasSubscriptions: false,
     };
   }
 
-  const { block, kind } = picked;
+  const { block } = picked;
   const subCol = findCol(block.header, SUBSCRIPTIONS);
   const convCol = findCol(block.header, CONVERSION);
-  // Prefer logged-out visits, since that is the denominator Adobe divides by.
-  // Falling back to any visits column keeps a hand-built sheet usable, and the
-  // recomputed rate below stays consistent with whatever column was chosen.
+  // Logged-out visits first, since that is the denominator Adobe divides by
+  // where it exists. Boston.com has no such split and reports plain Visits.
   let visitCol = findCol(block.header, LOGGED_OUT);
   if (visitCol < 0) {
-    visitCol = findCol(block.header, /visits|sessions|clicks/i, new Set([subCol, convCol]));
+    visitCol = findCol(block.header, ANY_VISITS, new Set([subCol, convCol].filter((i) => i >= 0)));
   }
   if (visitCol < 0) visitCol = 1;
+  const visitsMetric = (block.header[visitCol] ?? 'Visits').replace(/\s*\/\s*Visits$/i, '');
 
-  if (kind === 'fallback') {
-    problems.push('The table with logged-out visits was not present, so the conversion rate is '
-      + 'computed here rather than read from Adobe.');
+  if (subCol >= 0 && convCol < 0) {
+    problems.push('Adobe did not supply a conversion rate column, so it is computed here from '
+      + `${visitsMetric.toLowerCase()}.`);
   }
 
   const parsedRows: FreeformDomainRow[] = [];
@@ -320,16 +413,16 @@ export function parseAdobeFreeform(text: string): FreeformParse {
     if (NON_DOMAIN_LABELS.has(label)) continue;
     if (/^\d{4}-\d{2}-\d{2}$/.test(label)) continue;
 
-    const loggedOutVisits = toNumber(r[visitCol]);
-    const newSubscriptions = toNumber(r[subCol]);
+    const visits = toNumber(r[visitCol]);
+    const newSubscriptions = subCol >= 0 ? toNumber(r[subCol]) : null;
     let conversionRate = convCol >= 0 ? toRate(r[convCol]) : null;
-    if (conversionRate === null && loggedOutVisits && newSubscriptions !== null) {
-      conversionRate = newSubscriptions / loggedOutVisits;
+    if (conversionRate === null && visits && newSubscriptions !== null) {
+      conversionRate = newSubscriptions / visits;
     }
 
     const row: FreeformDomainRow = {
       domain: label,
-      loggedOutVisits,
+      visits,
       totalVisits: null,
       newSubscriptions,
       conversionRate,
@@ -379,5 +472,7 @@ export function parseAdobeFreeform(text: string): FreeformParse {
     rows: parsedRows,
     total,
     tablesFound: blocks.length,
+    visitsMetric,
+    hasSubscriptions: subCol >= 0,
   };
 }

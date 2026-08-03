@@ -14,15 +14,28 @@
  */
 import type { FreeformDomainRow } from './adobe-freeform';
 
-export type ReferralCategory = 'direct' | 'search' | 'social' | 'ai' | 'other';
+export type ReferralCategory =
+  'direct' | 'search' | 'social' | 'ai' | 'paid' | 'internal' | 'other';
 
 export const CATEGORY_LABELS: Record<ReferralCategory, string> = {
   direct: 'Direct',
   search: 'Search',
   social: 'Social',
   ai: 'AI assistants',
+  paid: 'Paid distribution',
+  internal: 'Internal cross-promotion',
   other: 'Other referrers',
 };
+
+/**
+ * Categories that are real traffic but not earned platform referral.
+ *
+ * Paid distribution is bought, and internal cross-promotion is one owned
+ * property sending readers to another. Both belong in the totals and neither
+ * belongs in a ranking people read as a measure of how the platforms are
+ * performing, so they are shown on their own labelled lines instead.
+ */
+export const NON_PLATFORM_CATEGORIES: ReferralCategory[] = ['paid', 'internal'];
 
 type PlatformDef = {
   id: string;
@@ -84,6 +97,23 @@ const PLATFORMS: PlatformDef[] = [
   { id: 'gemini', label: 'Gemini', category: 'ai', domains: ['gemini.google.com'] },
   { id: 'duckai', label: 'Duck.ai', category: 'ai', domains: ['duck.ai'] },
   { id: 'kagi', label: 'Kagi', category: 'ai', domains: ['kagi.com'] },
+
+  // Bought placement. Reads as a referrer in Adobe and is not one.
+  { id: 'outbrain', label: 'Outbrain', category: 'paid', domains: ['outbrain.com'] },
+  { id: 'taboola', label: 'Taboola', category: 'paid', domains: ['taboola.com'] },
+  { id: 'amazonads', label: 'Amazon ads', category: 'paid',
+    domains: ['amazon-adsystem.com', 'googleadservices.com', 'googleapis.com',
+      'ampproject.org', 'dmanalytics2.com'] },
+  { id: 'newsbreak', label: 'NewsBreak', category: 'paid',
+    domains: ['newsbreakapp.com', 'newsbreak.com'] },
+
+  // Owned properties sending readers to each other.
+  { id: 'bostonglobe', label: 'BostonGlobe.com', category: 'internal',
+    domains: ['bostonglobe.com'] },
+  { id: 'bostoncom', label: 'Boston.com', category: 'internal', domains: ['boston.com'] },
+  { id: 'statnews', label: 'STAT', category: 'internal', domains: ['statnews.com'] },
+  { id: 'bgmedia', label: 'Boston Globe Media', category: 'internal',
+    domains: ['bostonglobemedia.com'] },
 ];
 
 const BY_DOMAIN = new Map<string, PlatformDef>();
@@ -107,7 +137,7 @@ export type ReferralGroup = {
   id: string;
   label: string;
   category: ReferralCategory;
-  loggedOutVisits: number;
+  visits: number;
   newSubscriptions: number;
   /** Null when there were no logged-out visits to divide by. */
   conversionRate: number | null;
@@ -116,12 +146,14 @@ export type ReferralGroup = {
 };
 
 export type ReferralRollup = {
-  /** Everything except direct, ranked by new subscriptions. */
+  /** Earned platform referral only, ranked by new subscriptions then visits. */
   platforms: ReferralGroup[];
+  /** Paid distribution and internal cross-promotion, largest first. */
+  nonPlatform: ReferralGroup[];
   /** Broken out because direct traffic is not a referrer and should not rank. */
   direct: ReferralGroup | null;
   /** Category totals, direct excluded. */
-  categories: { category: ReferralCategory; loggedOutVisits: number;
+  categories: { category: ReferralCategory; visits: number;
     newSubscriptions: number; conversionRate: number | null }[];
   /** Domains that drove no subscriptions at all. */
   zeroSubDomains: number;
@@ -145,46 +177,54 @@ export function rollUpReferrals(rows: FreeformDomainRow[]): ReferralRollup {
         id,
         label: def?.label ?? row.domain,
         category: def?.category ?? 'other',
-        loggedOutVisits: 0,
+        visits: 0,
         newSubscriptions: 0,
         conversionRate: null,
         members: [],
       };
       groups.set(id, g);
     }
-    g.loggedOutVisits += row.loggedOutVisits ?? 0;
+    g.visits += row.visits ?? 0;
     g.newSubscriptions += row.newSubscriptions ?? 0;
     g.members.push(row);
   }
 
   for (const g of groups.values()) {
-    g.conversionRate = rate(g.newSubscriptions, g.loggedOutVisits);
+    g.conversionRate = rate(g.newSubscriptions, g.visits);
     g.members.sort((a, b) => (b.newSubscriptions ?? 0) - (a.newSubscriptions ?? 0));
   }
 
   const all = [...groups.values()];
   const direct = all.find((g) => g.category === 'direct') ?? null;
+  const isNonPlatform = (g: ReferralGroup) =>
+    NON_PLATFORM_CATEGORIES.includes(g.category);
+
   const platforms = all
-    .filter((g) => g.category !== 'direct')
+    .filter((g) => g.category !== 'direct' && !isNonPlatform(g))
     .sort((a, b) => b.newSubscriptions - a.newSubscriptions
-      || b.loggedOutVisits - a.loggedOutVisits);
+      || b.visits - a.visits);
+
+  const nonPlatform = all
+    .filter(isNonPlatform)
+    .sort((a, b) => b.visits - a.visits);
 
   const catOrder: ReferralCategory[] = ['search', 'social', 'ai', 'other'];
   const categories = catOrder.map((category) => {
     const members = platforms.filter((g) => g.category === category);
-    const loggedOutVisits = members.reduce((s, g) => s + g.loggedOutVisits, 0);
+    const visits = members.reduce((s, g) => s + g.visits, 0);
     const newSubscriptions = members.reduce((s, g) => s + g.newSubscriptions, 0);
-    return { category, loggedOutVisits, newSubscriptions,
-      conversionRate: rate(newSubscriptions, loggedOutVisits) };
-  }).filter((c) => c.loggedOutVisits > 0 || c.newSubscriptions > 0);
+    return { category, visits, newSubscriptions,
+      conversionRate: rate(newSubscriptions, visits) };
+  }).filter((c) => c.visits > 0 || c.newSubscriptions > 0);
 
   const zero = rows.filter((r) => (r.newSubscriptions ?? 0) === 0);
 
   return {
     platforms,
+    nonPlatform,
     direct,
     categories,
     zeroSubDomains: zero.length,
-    zeroSubVisits: zero.reduce((s, r) => s + (r.loggedOutVisits ?? 0), 0),
+    zeroSubVisits: zero.reduce((s, r) => s + (r.visits ?? 0), 0),
   };
 }
