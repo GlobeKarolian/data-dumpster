@@ -89,6 +89,20 @@ const PLATFORMS: PlatformDef[] = [
 const BY_DOMAIN = new Map<string, PlatformDef>();
 for (const p of PLATFORMS) for (const d of p.domains) BY_DOMAIN.set(d.toLowerCase(), p);
 
+const BY_LABEL = new Map<string, PlatformDef>();
+for (const p of PLATFORMS) BY_LABEL.set(p.label.toLowerCase(), p);
+
+/**
+ * Recover a category from a rendered row label.
+ *
+ * The chart is drawn from the saved table rather than from the parse, so that
+ * it still renders after a reload when the import result is long gone. All the
+ * saved row carries is the display label, so the lookup runs backwards.
+ */
+export function categoryForLabel(label: string): ReferralCategory {
+  return BY_LABEL.get(label.trim().toLowerCase())?.category ?? 'other';
+}
+
 export type ReferralGroup = {
   id: string;
   label: string;

@@ -8,7 +8,9 @@ import { cn } from '@/lib/utils';
 import type { ManualSectionSpec, ManualTable } from '@/lib/reports/types';
 import { emptyTable, parseTable, rowsToTsv } from '@/lib/reports/tsv';
 import { importAdobeFreeform, describeImport, type ImportSummary } from '@/lib/reports/freeform-import';
+import { readTabularFile } from '@/lib/reports/tabular-file';
 import { SectionCard } from './ui';
+import { ReferralChart } from './referral-chart';
 
 const DELIMITER_LABEL: Record<string, string> = {
   tab: 'tab separated',
@@ -63,10 +65,22 @@ export function PasteBox({
   const importFile = async (file: File) => {
     setImportState({ status: 'reading' });
     try {
-      const text = await file.text();
-      const result = importAdobeFreeform(text);
+      const read = await readTabularFile(file);
+      if (!read.ok) {
+        setImportState({ status: 'error', problems: read.problems, fileName: file.name });
+        return;
+      }
+      const result = importAdobeFreeform(read.text);
       if (!result.ok) {
-        setImportState({ status: 'error', problems: result.problems, fileName: file.name });
+        setImportState({
+          status: 'error',
+          fileName: file.name,
+          problems: read.kind === 'excel' && read.sheetNames.length > 1
+            ? [...result.problems,
+              `All ${read.sheetNames.length} sheets were searched: `
+              + read.sheetNames.join(', ') + '.']
+            : result.problems,
+        });
         return;
       }
       onChange(result.table);
@@ -171,7 +185,13 @@ export function PasteBox({
           {rowCount > 0 ? <PreviewTable spec={spec} rows={table.rows} /> : null}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div>
+          {spec.importer && rowCount > 0 ? (
+            <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
+              <ReferralChart rows={table.rows} />
+            </div>
+          ) : null}
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead className="border-b border-zinc-200 dark:border-zinc-800">
               <tr>
@@ -221,6 +241,7 @@ export function PasteBox({
               ))}
             </tbody>
           </table>
+          </div>
           <div className="border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
             <Button
               size="sm"
@@ -295,7 +316,7 @@ function DropZone({
         <p className="text-xs text-zinc-600 dark:text-zinc-300">
           {state.status === 'reading' ? 'Reading the file…' : (
             <>
-              Drop the CSV here, or{' '}
+              Drop the CSV or Excel file here, or{' '}
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
@@ -313,7 +334,7 @@ function DropZone({
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,text/csv,text/plain"
+          accept=".csv,.tsv,.xlsx,.xlsm,.xlsb,.xls,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           className="sr-only"
           disabled={disabled}
           onChange={(e) => { take(e.target.files); e.target.value = ''; }}

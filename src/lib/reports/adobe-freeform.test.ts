@@ -112,10 +112,12 @@ test('period rows and segment labels never become domains', () => {
   }
 });
 
-test('rejects a file that is not a Freeform export', () => {
+test('rejects a domain table that has no subscriptions column', () => {
   const r = parseAdobeFreeform('domain,visits\ngoogle.com,100\n');
   assert.equal(r.ok, false);
-  assert.match(r.problems[0], /Freeform/);
+  // The message names what is missing rather than the file format, because the
+  // parser now accepts plain sheets as well as Freeform exports.
+  assert.match(r.problems[0], /subscriptions column/);
 });
 
 test('survives an empty file without throwing', () => {
@@ -236,4 +238,68 @@ test('a bad file leaves the caller able to keep existing rows', () => {
   const r = importAdobeFreeform('nonsense');
   assert.equal(r.ok, false);
   assert.ok(!('table' in r));
+});
+
+/* ------------------------------------------------- excel-shaped variants */
+
+/** Saving a Freeform view as a workbook drops every '#' comment row. */
+const NO_MARKERS = FIXTURE
+  .split('\n')
+  .filter((l) => !l.trimStart().startsWith('#') && !l.startsWith('"#'))
+  .join('\n');
+
+test('a file with no "# Freeform table" markers is still recovered', () => {
+  const r = parseAdobeFreeform(NO_MARKERS);
+  assert.equal(r.ok, true, 'the anchor-based fallback must find the table');
+  const google = r.rows.find((x) => x.domain === 'google.com');
+  assert.equal(google?.newSubscriptions, 761);
+  assert.equal(google?.loggedOutVisits, 599603);
+});
+
+test('the marker-less path still separates the total row', () => {
+  const r = parseAdobeFreeform(NO_MARKERS);
+  assert.equal(r.total?.newSubscriptions, 1865);
+  assert.ok(!r.rows.some((x) => x.domain === 'Referring Domain'));
+});
+
+test('the marker-less path still drops the ISP breakdown', () => {
+  const r = parseAdobeFreeform(NO_MARKERS);
+  assert.ok(!r.rows.some((x) => x.domain === 'comcast.net'));
+});
+
+test('a percent-formatted rate is read as a fraction, not multiplied by 100', () => {
+  // Excel writes the string it displays. Reading "0.127%" as 0.127 would report
+  // Google converting at 12.7%, which is wrong by two orders of magnitude and
+  // still looks like a real number.
+  const excelish = ',BG Logged Out Visits,BG Digital Subscriptions (Visit),Conversion Rate\n'
+    + ',Visits,BG Digital Subscriptions (Visit),Conversion Rate\n'
+    + 'Referring Domain,1391557,1865,0.134%\n'
+    + 'google.com,599603,761,0.127%\n'
+    + 'chatgpt.com,469,6,1.279%\n';
+  const r = parseAdobeFreeform(excelish);
+  assert.equal(r.ok, true);
+  const google = r.rows.find((x) => x.domain === 'google.com');
+  assert.ok(google);
+  assert.ok(google.conversionRate !== null && google.conversionRate < 0.002,
+    `expected ~0.00127, got ${google.conversionRate}`);
+  const recomputed = google.newSubscriptions! / google.loggedOutVisits!;
+  assert.ok(Math.abs(recomputed - google.conversionRate) < 1e-4);
+});
+
+test('a plain hand-built sheet with named columns is accepted', () => {
+  const sheet = 'Referring Domain,Visits,New Subscriptions\n'
+    + 'google.com,599603,761\n'
+    + 'chatgpt.com,469,6\n';
+  const r = parseAdobeFreeform(sheet);
+  assert.equal(r.ok, true);
+  assert.equal(r.rows.length, 2);
+  // No rate column, so it is derived and must still tie.
+  const chatgpt = r.rows.find((x) => x.domain === 'chatgpt.com');
+  assert.ok(Math.abs((chatgpt?.conversionRate ?? 0) - 6 / 469) < 1e-12);
+});
+
+test('an unrelated spreadsheet is refused rather than parsed into nonsense', () => {
+  const payroll = 'Employee,Department,Salary\nA. Person,News,90000\n';
+  const r = parseAdobeFreeform(payroll);
+  assert.equal(r.ok, false);
 });

@@ -196,10 +196,10 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
     id: 'globeReferral',
     title: 'Globe.com Platform Referral Traffic Sorted By Subscriptions Driven',
     hint: 'Adobe Analytics, Top referrals for the Bostonglobe.com report suite. '
-      + 'Drop the exported CSV below rather than pasting it.',
+      + 'Drop the export below rather than pasting it.',
     importer: 'adobeFreeform',
-    importHint: 'Adobe Freeform CSV export. Several stacked tables in one file is expected; '
-      + 'the referring-domain table is found automatically.',
+    importHint: 'CSV or Excel, straight from Adobe. Several stacked tables in one file is '
+      + 'expected, and every sheet is searched; the referring-domain table is found for you.',
     columns: [
       { key: 'platform', label: 'Platform' },
       { key: 'visits', label: 'Logged-out visits', numeric: true },

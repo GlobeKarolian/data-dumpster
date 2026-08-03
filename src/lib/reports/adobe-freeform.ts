@@ -88,6 +88,21 @@ function toNumber(raw: string | undefined): number | null {
 }
 
 /**
+ * A rate, always as a fraction.
+ *
+ * The CSV download writes a bare decimal (0.00127). Excel writes the formatted
+ * string it displays ("0.127%"). Stripping the sign off the second and stopping
+ * there yields 0.127, a hundredfold overstatement that would survive every
+ * other check in this file because it is still a plausible-looking number.
+ */
+function toRate(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const n = toNumber(raw);
+  if (n === null) return null;
+  return raw.includes('%') ? n / 100 : n;
+}
+
+/**
  * Split the file into blocks.
  *
  * The two header rows are merged into one label per column. Adobe repeats the
@@ -130,9 +145,68 @@ function splitBlocks(rows: string[][]): Block[] {
   return blocks;
 }
 
-const SUBSCRIPTIONS = /BG Digital Subscriptions/i;
-const LOGGED_OUT = /BG Logged Out Visits/i;
-const CONVERSION = /Conversion Rate/i;
+const SUBSCRIPTIONS = /BG Digital Subscriptions|subscription|\bsubs\b|starts/i;
+const LOGGED_OUT = /BG Logged Out Visits|logged.?out/i;
+const CONVERSION = /Conversion Rate|conversion/i;
+const DOMAIN_LIKE = /referr|domain|source|platform|channel/i;
+
+/** Blank, or a run of empty cells. Used to find chunk boundaries. */
+function isBlankRow(r: string[]): boolean {
+  return r.every((c) => c.trim() === '');
+}
+
+/**
+ * Recover tables from a file that has no `# Freeform table` markers.
+ *
+ * Saving a Freeform view as XLSX drops the comment rows the CSV download
+ * includes, so the marker-based split finds nothing at all. The structure
+ * survives, though: a two-row header followed by a row labelled "Referring
+ * Domain". Anchoring on that label reconstructs the same blocks, and lets the
+ * field accept a plain spreadsheet somebody assembled by hand as well.
+ */
+function inferBlocks(rows: string[][]): Block[] {
+  const chunks: string[][][] = [];
+  let chunk: string[][] = [];
+  for (const r of rows) {
+    if ((r[0] ?? '').trim().startsWith('#')) continue;
+    if (isBlankRow(r)) {
+      if (chunk.length) { chunks.push(chunk); chunk = []; }
+      continue;
+    }
+    chunk.push(r);
+  }
+  if (chunk.length) chunks.push(chunk);
+
+  const mergeHeader = (parts: string[][]): string[] => {
+    const width = Math.max(...parts.map((p) => p.length), 0);
+    const out: string[] = [];
+    for (let i = 0; i < width; i += 1) {
+      const cells = parts.map((p) => (p[i] ?? '').trim()).filter(Boolean);
+      const unique = [...new Set(cells)];
+      out.push(unique.join(' / '));
+    }
+    return out;
+  };
+
+  const blocks: Block[] = [];
+  for (const c of chunks) {
+    const anchor = c.findIndex((r) => (r[0] ?? '').trim() === 'Referring Domain');
+    if (anchor > 0) {
+      const header = mergeHeader(c.slice(Math.max(0, anchor - 2), anchor));
+      blocks.push({ label: 'inferred', header, rows: c.slice(anchor) });
+      continue;
+    }
+    // No anchor: accept a plain one-header-row table if it names the columns
+    // this section needs. Anything else is left alone rather than guessed at.
+    if (c.length >= 2) {
+      const header = c[0].map((h) => h.trim());
+      const looksRight = header.some((h) => DOMAIN_LIKE.test(h))
+        && header.some((h) => SUBSCRIPTIONS.test(h));
+      if (looksRight) blocks.push({ label: 'inferred', header, rows: c.slice(1) });
+    }
+  }
+  return blocks;
+}
 
 /** Index of the first column whose merged header matches, or -1. */
 function findCol(header: string[], re: RegExp, skip = new Set<number>()): number {
@@ -143,7 +217,8 @@ function findCol(header: string[], re: RegExp, skip = new Set<number>()): number
 }
 
 function isDomainBlock(b: Block): boolean {
-  return b.rows.some((r) => (r[0] ?? '').trim() === 'Referring Domain');
+  return b.rows.some((r) => (r[0] ?? '').trim() === 'Referring Domain')
+    || DOMAIN_LIKE.test(b.header[0] ?? '');
 }
 
 /**
@@ -194,30 +269,39 @@ export function parseAdobeFreeform(text: string): FreeformParse {
     if (date) dateRange = date[1].trim();
   }
 
-  const blocks = splitBlocks(raw);
-  if (blocks.length === 0) {
-    return {
-      ok: false,
-      problems: ['No "# Freeform table" blocks found. This does not look like an Adobe '
-        + 'Analytics Freeform export.'],
-      reportSuite, dateRange, rows: [], total: null, tablesFound: 0,
-    };
+  // Marker-based split first, then the anchor-based reconstruction that an XLSX
+  // export needs because saving as a workbook drops the comment rows.
+  let blocks = splitBlocks(raw);
+  let picked = pickBlock(blocks);
+  if (!picked) {
+    const inferred = inferBlocks(raw);
+    const pickedInferred = pickBlock(inferred);
+    if (pickedInferred) { blocks = inferred; picked = pickedInferred; }
   }
 
-  const picked = pickBlock(blocks);
   if (!picked) {
     return {
       ok: false,
-      problems: [`Found ${blocks.length} tables but none had a "Referring Domain" row with a `
-        + 'subscriptions column.'],
+      problems: [blocks.length === 0
+        ? 'No table with a referring-domain column and a subscriptions column was found. '
+          + 'Check that this is the Top Referrals export rather than another view.'
+        : `Found ${blocks.length} tables, but none had a referring-domain column alongside a `
+          + 'subscriptions column.'],
       reportSuite, dateRange, rows: [], total: null, tablesFound: blocks.length,
     };
   }
 
   const { block, kind } = picked;
   const subCol = findCol(block.header, SUBSCRIPTIONS);
-  const visitCol = kind === 'conversion' ? findCol(block.header, LOGGED_OUT) : 1;
   const convCol = findCol(block.header, CONVERSION);
+  // Prefer logged-out visits, since that is the denominator Adobe divides by.
+  // Falling back to any visits column keeps a hand-built sheet usable, and the
+  // recomputed rate below stays consistent with whatever column was chosen.
+  let visitCol = findCol(block.header, LOGGED_OUT);
+  if (visitCol < 0) {
+    visitCol = findCol(block.header, /visits|sessions|clicks/i, new Set([subCol, convCol]));
+  }
+  if (visitCol < 0) visitCol = 1;
 
   if (kind === 'fallback') {
     problems.push('The table with logged-out visits was not present, so the conversion rate is '
@@ -238,7 +322,7 @@ export function parseAdobeFreeform(text: string): FreeformParse {
 
     const loggedOutVisits = toNumber(r[visitCol]);
     const newSubscriptions = toNumber(r[subCol]);
-    let conversionRate = convCol >= 0 ? toNumber(r[convCol]) : null;
+    let conversionRate = convCol >= 0 ? toRate(r[convCol]) : null;
     if (conversionRate === null && loggedOutVisits && newSubscriptions !== null) {
       conversionRate = newSubscriptions / loggedOutVisits;
     }
