@@ -94,6 +94,13 @@ export function addZoneDays(d: Date, days: number): Date {
   return fromZoneWallClock(p.year, p.month, p.day + days, p.hour, p.minute, p.second);
 }
 
+/** Last day of the report-zone month containing this instant. */
+export function endOfZoneMonth(d: Date): Date {
+  const p = zoneParts(d);
+  // Day 0 of the following month is the last day of this one, leap years included.
+  return endOfZoneDay(fromZoneWallClock(p.year, p.month + 1, 0, 12));
+}
+
 /** Calendar days between two instants, counted in the report zone. */
 function zoneDayNumber(d: Date): number {
   const p = zoneParts(d);

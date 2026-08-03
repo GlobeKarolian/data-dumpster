@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { apiHandler, requireOrg, requireRole, HttpError } from '@/lib/session';
+import { roleAtLeast } from '@/lib/roles';
 import { db } from '@/db';
 import { modelConnections, modelProviderEnum } from '@/db/schema';
 import { encrypt, decrypt, maskSecret } from '@/lib/crypto';
@@ -36,13 +37,22 @@ type ConnectionRow = typeof modelConnections.$inferSelect;
  * table later cannot become part of an API response by accident -- which is
  * exactly how encrypted_api_key would otherwise escape one day.
  */
-function present(row: ConnectionRow) {
+function present(row: ConnectionRow, opts: { includeSecrets: boolean }) {
   let keyMask: string | null = null;
   if (row.encryptedApiKey) {
-    try {
-      keyMask = maskSecret(decrypt(row.encryptedApiKey));
-    } catch {
-      keyMask = 'unreadable - check ENCRYPTION_KEY';
+    if (!opts.includeSecrets) {
+      // Presence, not shape. maskSecret emits the first and last four
+      // characters in PLAINTEXT, which is enough to identify a key and to
+      // narrow a guess. Writing a connection is admin-only; reading one was
+      // open to any member, so the least privileged role in the org could see
+      // eight real characters of a key an owner had entered.
+      keyMask = 'set';
+    } else {
+      try {
+        keyMask = maskSecret(decrypt(row.encryptedApiKey));
+      } catch {
+        keyMask = 'unreadable - check ENCRYPTION_KEY';
+      }
     }
   }
   return {
@@ -81,7 +91,10 @@ const createConnectionSchema = z.object({
 });
 
 export const GET = apiHandler(async () => {
-  const { orgId } = await requireOrg();
+  const { orgId, role } = await requireOrg();
+  // baseUrl and lastCheckError are admin-only for the same reason: a provider
+  // error body can carry up to 400 bytes of whatever the endpoint returned.
+  const includeSecrets = roleAtLeast(role, 'admin');
 
   const rows = await db
     .select()
@@ -90,7 +103,7 @@ export const GET = apiHandler(async () => {
     .orderBy(desc(modelConnections.isDefault), asc(modelConnections.createdAt));
 
   return Response.json(
-    { items: rows.map(present) },
+    { items: rows.map((row) => present(row, { includeSecrets })) },
     { headers: { 'cache-control': 'private, no-store' } },
   );
 });
@@ -162,5 +175,6 @@ export const POST = apiHandler(async (req: NextRequest) => {
     })
     .returning();
 
-  return Response.json(present(created), { status: 201 });
+  // POST is admin-only, so the full mask is appropriate here.
+  return Response.json(present(created, { includeSecrets: true }), { status: 201 });
 });

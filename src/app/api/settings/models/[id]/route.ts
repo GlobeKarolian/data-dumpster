@@ -32,6 +32,9 @@ export const dynamic = 'force-dynamic';
 type ConnectionRow = typeof modelConnections.$inferSelect;
 
 /** Identical projection to the collection endpoint; see the note there. */
+// This route is admin-only on every verb, so the full mask is appropriate.
+// The list route at ../route.ts gates the same fields, because its GET is
+// open to any member.
 function present(row: ConnectionRow) {
   let keyMask: string | null = null;
   if (row.encryptedApiKey) {

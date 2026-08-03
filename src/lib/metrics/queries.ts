@@ -43,7 +43,7 @@ import {
   type PostType,
   type TimeSeriesPoint,
 } from '@/lib/types';
-import { autoGranularity, daysIn, parseLocalDay, previousRange, toDayString } from '@/lib/dates';
+import { autoGranularity, daysIn, parseLocalDay, previousRange, toDayString, addZoneDays, endOfZoneMonth, startOfZoneDay } from '@/lib/dates';
 import type {
   FactSheet,
   HeadlineStat,
@@ -103,7 +103,18 @@ type ScopeRow = {
  * to belong to the caller's org.
  */
 async function resolveScope(q: Scoped<AnalyticsQuery>): Promise<Scope> {
-  const orgGuard = q.orgId ? sql` AND l.org_id = ${q.orgId}::uuid` : sql``;
+  /*
+   * The org guard is mandatory. It used to be conditional on q.orgId being
+   * present, which meant a caller who forgot it got a query scoped by nothing
+   * but a landscape id from a URL. Every call site does pass it today, and one
+   * of them had to be fixed once already; a tenancy check that silently
+   * degrades to no check is a footgun aimed at the next person.
+   */
+  if (!q.orgId) {
+    throw new Error('resolveScope requires an orgId. Scoping a landscape by id alone is '
+      + 'not a tenancy boundary.');
+  }
+  const orgGuard = sql` AND l.org_id = ${q.orgId}::uuid`;
   // The guarded landscape and its membership rows are the tenancy boundary.
   // companies.org_id records who added a pooled company and must not filter it.
   const { rows } = await db.execute<ScopeRow>(sql`
@@ -430,9 +441,13 @@ function postWhere(scope: Scope, range: DateRange, f: PostFilters): SQL {
   if (f.platforms?.length) parts.push(sql`p.platform IN (${platformList(f.platforms)})`);
   if (f.postTypes?.length) parts.push(sql`p.type IN (${postTypeList(f.postTypes)})`);
   if (f.tagIds?.length) {
+    // Scoped to the org. post_tags is org-private, but the assignment table is
+    // keyed on pooled posts, so an unscoped tag id let a caller filter their
+    // own posts by ANOTHER org's tag and learn what that org had tagged.
     // EXISTS rather than a JOIN: a post with three matching tags must still count once.
     parts.push(sql`EXISTS (
       SELECT 1 FROM post_tag_assignments pta
+       JOIN post_tags pt ON pt.id = pta.tag_id AND pt.org_id = ${scope.orgId}::uuid
        WHERE pta.post_id = p.id AND pta.tag_id IN (${idList(f.tagIds)})
     )`);
   }
@@ -815,6 +830,29 @@ function totalsOf(aggs: Iterable<CompanyAgg>): LandscapeTotals {
 }
 
 /**
+ * A scope covering the whole landscape, ignoring any company filter.
+ *
+ * Share of voice is defined against every company in the landscape. It was
+ * being divided by the totals of whatever subset the user had filtered to, so
+ * selecting three companies pushed each one toward 33% and the number silently
+ * changed meaning: not "share of the market" but "share of the three you
+ * happened to tick". `allCompanyIds` had been captured on the scope for exactly
+ * this and was never read anywhere in the codebase.
+ *
+ * Both share metrics also reach the AI fact sheet, where a shrunken denominator
+ * would have been unmarked.
+ */
+function landscapeWideScope(scope: Scope): Scope {
+  if (scope.companyIds.length === scope.allCompanyIds.length) return scope;
+  return { ...scope, companyIds: scope.allCompanyIds };
+}
+
+/** True when this metric's denominator is the landscape rather than the filter. */
+function usesLandscapeDenominator(key: MetricKey): boolean {
+  return key === 'shareOfVoice' || key === 'shareOfEngagement';
+}
+
+/**
  * Turn a rolled-up aggregate into one metric. This is the single definition of
  * every metric in the product; `definitions.ts` describes these formulas in prose
  * and the two must always agree.
@@ -832,6 +870,16 @@ function metricAvailable(a: CompanyAgg, key: MetricKey): boolean {
 
   if (!platformHasCompleteFlow(a.trackedChannels, a.ingestedChannels)) return false;
   if (key === 'engagementRateByFollower') return followerRateAvailable(a.erfPosts);
+  /*
+   * A rate needs a denominator.
+   *
+   * engagementRateByView fell through to the audience-only availability check,
+   * which returns true for every non-audience key, so a company with no video
+   * anywhere rendered a confident "0.00%" instead of a blank. definitions.ts
+   * promises the opposite in as many words: it "goes blank for them rather than
+   * reporting a misleading zero".
+   */
+  if (key === 'engagementRateByView') return a.views > 0;
   return metricAvailabilityForCoverage(
     key,
     a.applicablePlatforms,
@@ -965,13 +1013,24 @@ export async function getLeaderboard(
   // Two independent aggregates run concurrently; the previous window is only paid
   // for when the caller actually asked to compare.
   const prev = q.compare ? previousRange(range) : null;
-  const [current, previousAgg] = await Promise.all([
+
+  // Share metrics divide by the whole landscape, so when a company filter is
+  // active their denominator needs its own aggregate. Paid for only when the
+  // requested metric actually needs it.
+  const wide = landscapeWideScope(scope);
+  const needsWide = usesLandscapeDenominator(q.metric) && wide !== scope;
+
+  const [current, previousAgg, wideCurrent, widePrevious] = await Promise.all([
     companyPlatformAgg(scope, range, f),
     prev ? companyPlatformAgg(scope, prev, f) : Promise.resolve(null),
+    needsWide ? companyPlatformAgg(wide, range, f) : Promise.resolve(null),
+    needsWide && prev ? companyPlatformAgg(wide, prev, f) : Promise.resolve(null),
   ]);
 
-  const totals = totalsOf(current.values());
-  const prevTotals = previousAgg ? totalsOf(previousAgg.values()) : null;
+  const totals = totalsOf((wideCurrent ?? current).values());
+  const prevTotals = previousAgg
+    ? totalsOf((widePrevious ?? previousAgg).values())
+    : null;
   const prevDays = prev ? daysIn(prev) : days;
 
   const rows: MetricRow[] = [];
@@ -1247,7 +1306,29 @@ export async function getTimeSeries(
   }
 
   // One "day" of the bucket for per-day style metrics; a week bucket is 7 days.
-  const bucketDays = g === 'day' ? 1 : g === 'week' ? 7 : 30;
+  /*
+   * Days actually covered by a bucket, clipped to the window.
+   *
+   * This was a fixed 1, 7 or 30. Two errors followed. February was divided by
+   * 30 and overstated by 7%, and every window's FIRST and LAST bucket is
+   * partial but was still divided by a whole week or month, so the endpoints of
+   * every Posts/Day line were systematically depressed. The endpoints are
+   * exactly what a reader looks at to spot that a competitor has quietly
+   * doubled their output.
+   */
+  const bucketDayCount = (bucket: string): number => {
+    const start = parseLocalDay(bucket);
+    if (!start) return g === 'day' ? 1 : g === 'week' ? 7 : 30;
+    const nominalEnd = g === 'day'
+      ? start
+      : g === 'week'
+        ? addZoneDays(start, 6)
+        : endOfZoneMonth(start);
+    // Clip to the requested window on both sides.
+    const from = start < range.start ? range.start : start;
+    const to = nominalEnd > range.end ? range.end : nominalEnd;
+    return Math.max(1, daysIn({ start: from, end: to }));
+  };
   const series: TimeSeriesPoint[] = [];
   for (const bucket of bucketsFor(range, g)) {
     const point: TimeSeriesPoint = { date: bucket };
@@ -1265,7 +1346,7 @@ export async function getTimeSeries(
       }
       const agg = bucketAgg(r);
       point[company.id] = metricAvailable(agg, q.metric)
-        ? metricValue(agg, q.metric, bucketDays, t)
+        ? metricValue(agg, q.metric, bucketDayCount(bucket), t)
         : null;
     }
     series.push(point);
@@ -2437,9 +2518,23 @@ function buildAnomalies(scope: Scope, rows: AnomalyRow[]): FactSheet['anomalies'
       { metric: 'posts', value: num(r.cur_posts), mean: num(r.mean_posts), sd: num(r.sd_posts), noun: 'daily posting volume' },
     ];
 
+    /*
+     * The standard error of a MEAN, not the standard deviation of one day.
+     *
+     * `cur_eng` is an average over the window's active days, but it was being
+     * divided by the standard deviation of a single day. Comparing a mean of n
+     * observations against the spread of one understates z by a factor of √n,
+     * roughly 5.3 on a 28-day window. It errs conservative, so nothing false
+     * was published, but real movements were being dropped below the threshold
+     * and the printed figure is quoted verbatim in the brief and used by the
+     * prompt to tell the model how confident to sound.
+     */
+    const curDays = Math.max(1, num(r.cur_days));
+
     for (const c of checks) {
       if (c.sd <= 0) continue;
-      const z = (c.value - c.mean) / c.sd;
+      const standardError = c.sd / Math.sqrt(curDays);
+      const z = (c.value - c.mean) / standardError;
       if (!Number.isFinite(z) || Math.abs(z) <= 2) continue;
       const up = z > 0;
       out.push({
@@ -2535,6 +2630,27 @@ function buildCaveats(
       `This window is only ${days} day${days === 1 ? '' : 's'} long, so day-of-week effects ` +
       'are not averaged out and every comparison here is noisier than a weekly view.',
     );
+  }
+
+  /*
+   * A window ending today is short by however much of today has not happened.
+   *
+   * Every preset runs to endOfDay(now), so "last 7 days" is really six full
+   * days plus however far into the seventh we are, compared against seven
+   * complete days. At 9am that is roughly a 9% negative bias on every flow
+   * metric's change, applied to every company at once, and nothing said so.
+   */
+  const nowMs = Date.now();
+  if (range.end.getTime() > nowMs) {
+    const elapsedToday = (nowMs - startOfZoneDay(new Date(nowMs)).getTime()) / 86_400_000;
+    const shortfall = Math.round((1 - elapsedToday) / days * 100);
+    if (shortfall >= 3) {
+      out.push(
+        `This window includes today, which is only ${Math.round(elapsedToday * 100)}% elapsed. ` +
+        `It therefore holds about ${shortfall}% less time than the complete window it is ` +
+        'compared against, so posting and engagement changes read low for that reason alone.',
+      );
+    }
   }
 
   for (const company of scope.companies) {

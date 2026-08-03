@@ -237,3 +237,29 @@ describe('source-scoped outlier medians', () => {
     assert.equal(medians.get('reddit:u/example'), 20);
   });
 });
+
+describe('changePct sign convention', () => {
+  it('reads improvement as positive even from a negative baseline', () => {
+    // audienceNetChange goes negative whenever a platform purges bots. Going
+    // from -1,000 to -200 is an improvement and must not render red.
+    const pct = changePct(-200, -1000);
+    assert.ok(pct !== null && pct > 0, `expected positive, got ${pct}`);
+    assert.ok(Math.abs((pct ?? 0) - 0.8) < 1e-12);
+  });
+
+  it('reads deterioration as negative from a negative baseline', () => {
+    const pct = changePct(-1800, -1000);
+    assert.ok(pct !== null && pct < 0);
+    assert.ok(Math.abs((pct ?? 0) + 0.8) < 1e-12);
+  });
+
+  it('is unchanged for the non-negative metrics, which is everything else', () => {
+    assert.equal(changePct(150, 100), 0.5);
+    assert.equal(changePct(50, 100), -0.5);
+  });
+
+  it('still refuses a zero baseline', () => {
+    assert.equal(changePct(500, 0), null);
+    assert.equal(changePct(500, null), null);
+  });
+});

@@ -249,10 +249,23 @@ function tally(
       focusUsed: e.focusPosts > 0,
       focusPosts: e.focusPosts,
     }))
-    // Unmeasured rows sort last rather than acting like a zero rate.
-    .sort((a, b) => b.companies - a.companies
-      || (b.engagementRateByFollower ?? -1) - (a.engagementRateByFollower ?? -1))
-    .slice(0, limit);
+    /*
+     * Selected by adoption, then RANKED by rate.
+     *
+     * The doc comment on DimensionRow calls the rate "the ranking metric" and
+     * the screen is read that way, but the sort put company count first and let
+     * rate break ties only. The top hashtags were the most widely used ones,
+     * which is a different and much less useful question.
+     *
+     * Adoption still decides which rows are worth showing, because a term one
+     * company used twice is noise however well it happened to do. So the cut is
+     * by breadth and the order inside it is by performance, which is what the
+     * card claims to answer. Unmeasured rows sort last, never as a zero rate.
+     */
+    .sort((a, b) => b.companies - a.companies || b.posts - a.posts)
+    .slice(0, limit)
+    .sort((a, b) => (b.engagementRateByFollower ?? -1) - (a.engagementRateByFollower ?? -1)
+      || b.companies - a.companies);
 }
 
 /** Focus against landscape for a time bucket, which is the shape both charts need. */
@@ -575,11 +588,28 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
 
   // Days in window, used for every per-day figure.
   const days = daysIn({ start: q.start, end: q.end });
+  /*
+   * Divide the market by the companies that actually published, not by everyone
+   * on the roster.
+   *
+   * This used the member count, so every company with no ingested posts still
+   * took a full share of the denominator and dragged the market cadence down.
+   * With Twitter's channels never having run, that understated the market by
+   * roughly 1.57x and made the focus brand look 57% more prolific than its
+   * peers while it was in fact at parity. The whole point of the screen is that
+   * comparison.
+   *
+   * Falling back to the roster when nothing published at all keeps the figure
+   * at zero rather than dividing by zero.
+   */
+  const publishingCompanies = new Set(rows.map((r) => r.companyId));
   const companyCount = Math.max(
     1,
-    scopedCompanyIds && scopedCompanyIds.length > 0
-      ? scopedCompanyIds.length
-      : memberIds.length,
+    publishingCompanies.size > 0
+      ? publishingCompanies.size
+      : (scopedCompanyIds && scopedCompanyIds.length > 0
+        ? scopedCompanyIds.length
+        : memberIds.length),
   );
 
   const rate = (list: Row[]) => followerRate(list).rate;

@@ -706,6 +706,29 @@ async function replacePostedUrls(
 }
 
 /**
+ * Every org whose landscapes include this company.
+ *
+ * Companies and posts are pooled, so one collection run produces rows that
+ * several tenants read. Anything derived per-org from those rows has to be
+ * derived for all of them, or it becomes a race decided by who refreshed last.
+ */
+async function orgsTrackingCompany(
+  companyId: string,
+  fallbackOrgId: string | null,
+): Promise<string[]> {
+  const { rows } = await db.execute<{ org_id: string }>(sql`
+    SELECT DISTINCT l.org_id
+      FROM landscape_companies lc
+      JOIN landscapes l ON l.id = lc.landscape_id
+     WHERE lc.company_id = ${companyId}::uuid
+  `);
+  const ids = rows.map((r) => r.org_id).filter(Boolean);
+  if (ids.length > 0) return ids;
+  // A company in no landscape yet: fall back to whoever asked for the run.
+  return fallbackOrgId ? [fallbackOrgId] : [];
+}
+
+/**
  * Evaluate every rule-bearing tag in the org against this run's posts.
  *
  * Rules are re-evaluated on every run rather than only for new posts, because a
@@ -1012,9 +1035,24 @@ export async function runChannelIngest(
 
       snapshotsUpserted += await insertMetricSnapshots(rows, ids, startedAt);
       urlsRecorded = await replacePostedUrls(fetched.posts, ids, channel.companyId);
-      tagsAssigned = runOrgId
-        ? await applyTagRules(runOrgId, channel.platform, fetched.posts, ids)
-        : 0;
+      /*
+       * Tag rules run for EVERY org that tracks this channel, not just the one
+       * whose refresh happened to trigger the run.
+       *
+       * channel_collection_state is keyed on channel_id alone, one row per
+       * pooled channel globally, and requested_by_org_id is last-writer-wins.
+       * So whichever org pressed Refresh most recently decided whose rules
+       * fired, and every other org tracking the same competitor silently
+       * stopped being tagged. Nothing errored and nothing was logged; their
+       * tagged-post counts just quietly stopped moving.
+       *
+       * Posts are pooled, so this is a fan-out over org-private rules against
+       * shared rows: each org gets its own assignments and sees only its own.
+       */
+      const trackingOrgs = await orgsTrackingCompany(channel.companyId, runOrgId);
+      for (const org of trackingOrgs) {
+        tagsAssigned += await applyTagRules(org, channel.platform, fetched.posts, ids);
+      }
     }
   } catch (err) {
     // Some writes may have landed. The run is marked partial rather than
