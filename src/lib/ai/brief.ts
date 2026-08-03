@@ -15,6 +15,7 @@
  *      it, it is a document someone can audit a year later.
  */
 import { db } from '@/db';
+import { toDayString } from '@/lib/dates';
 import { briefs } from '@/db/schema';
 import { getFactSheet } from '@/lib/metrics/queries';
 import type { FactSheet } from '@/lib/metrics/contract';
@@ -49,9 +50,16 @@ export interface GeneratedBrief {
   periodEnd: string;
 }
 
-/** ISO date (no time) — the briefs table stores period bounds as dates. */
+/**
+ * ISO date (no time) — the briefs table stores period bounds as dates.
+ *
+ * Formatted in the server's zone, not via toISOString. The argument is an
+ * endOfDay in local time, so with the server on Eastern, 2026-07-28T23:59:59
+ * is 2026-07-29T03:59Z and toISOString would store the wrong day. The brief
+ * header read one date while the fact sheet it was generated from read another.
+ */
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return toDayString(d);
 }
 
 /** Models occasionally wrap markdown in a fence despite being told not to. */
