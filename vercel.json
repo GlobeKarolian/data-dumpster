@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/ingest?limit=60&postLimit=500",
       "schedule": "0 */3 * * *"
+    },
+    {
+      "path": "/api/cron/coverage",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/coverage",
+      "schedule": "0 3 * * *"
     }
   ]
 }

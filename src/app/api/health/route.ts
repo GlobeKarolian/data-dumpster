@@ -17,6 +17,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { apiHandler } from '@/lib/session';
+import { recentCoverage, type DayCoverage } from '@/lib/metrics/daily-coverage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,7 @@ export const GET = apiHandler(async () => {
   let platforms: PlatformRow[] = [];
   let overdue = 0;
   let activeChannels = 0;
+  let coverage: DayCoverage[] = [];
 
   try {
     await db.execute(sql`select 1`);
@@ -67,6 +69,9 @@ export const GET = apiHandler(async () => {
     `);
     overdue = stale.rows[0]?.overdue ?? 0;
     activeChannels = stale.rows[0]?.total ?? 0;
+    // Audience is the metric with no second chance, so day-level coverage is
+    // the thing worth monitoring rather than whether a job recently ran.
+    coverage = await recentCoverage(14);
   } catch (err) {
     // Swallowed on purpose: an unreachable database is the single most useful
     // thing this endpoint can report, and it can only report it by answering.
@@ -74,7 +79,19 @@ export const GET = apiHandler(async () => {
   }
 
   const configured = Object.values(config).every(Boolean);
-  const status = !database ? 'down' : !configured || overdue > 0 ? 'degraded' : 'ok';
+  /*
+   * A closed day that was never fully collected is the failure worth paging on.
+   *
+   * Today is excluded: it is still open and the coverage sweep has until
+   * midnight Eastern to finish it. Yesterday and earlier are final, and a gap
+   * there is permanent, so it degrades the service status rather than being
+   * left as a line in a log nobody reads.
+   */
+  const closedDays = coverage.slice(1);
+  const incompleteClosedDays = closedDays.filter((d) => !d.complete).length;
+  const status = !database
+    ? 'down'
+    : (!configured || overdue > 0 || incompleteClosedDays > 0) ? 'degraded' : 'ok';
 
   return Response.json(
     {
@@ -90,6 +107,13 @@ export const GET = apiHandler(async () => {
           channels: p.channels,
           lastSuccessfulIngestAt: p.last_success,
         })),
+      },
+      coverage: {
+        // Audience cannot be backfilled, so this is the only ingest number
+        // that describes permanent loss rather than temporary lateness.
+        today: coverage[0] ?? null,
+        incompleteClosedDays,
+        days: coverage,
       },
       checkedAt: new Date().toISOString(),
     },

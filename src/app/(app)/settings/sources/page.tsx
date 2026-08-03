@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import type { Platform } from '@/lib/types';
 import { SourcesManager, type CompanySources } from '@/components/settings/sources-manager';
+import { CoverageStrip } from '@/components/settings/coverage-strip';
+import { recentCoverage, type DayCoverage } from '@/lib/metrics/daily-coverage';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { query, type SearchParamsInput } from '../../_lib/data';
 import { resolveContext } from '../../_lib/context';
@@ -42,6 +44,15 @@ export default async function SourcesPage({
   const ctx = await resolveContext(await searchParams);
   const landscape = ctx.landscape;
   if (!landscape) return <NoLandscape reason={ctx.error} />;
+
+  // Never let a coverage-panel failure take the whole page down: the profile
+  // list is the reason someone came here.
+  let coverage: DayCoverage[] = [];
+  try {
+    coverage = await recentCoverage(14);
+  } catch {
+    coverage = [];
+  }
 
   const rows = await query<SourceRow>(({ sql }) => sql`
     SELECT c.id   AS company_id,
@@ -140,6 +151,8 @@ export default async function SourcesPage({
           {'Channels could not be read: ' + (rows.error ?? ctx.error)}
         </p>
       ) : null}
+
+      <CoverageStrip days={coverage} />
 
       <SourcesManager companies={[...byCompany.values()]} landscapeName={landscape.name} />
     </div>
