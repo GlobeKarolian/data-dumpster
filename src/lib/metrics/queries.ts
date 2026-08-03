@@ -212,7 +212,20 @@ function safeDivNull(numerator: number, denominator: number): number | null {
 export function changePct(current: number, previous: number | null | undefined): number | null {
   if (previous === null || previous === undefined) return null;
   if (previous === 0) return null;
-  const pct = (current - previous) / previous;
+  /*
+   * Divided by the MAGNITUDE of the baseline, so the sign always means
+   * direction of travel.
+   *
+   * This divided by the raw baseline, which is identical for every
+   * non-negative metric and inverted for the one metric that is routinely
+   * negative. audienceNetChange goes negative whenever a platform purges bots.
+   * A brand improving from -1,000 net followers to -200 produced
+   * (-200 - -1000) / -1000 = -0.8, rendered as "-80%" in red: an improvement
+   * displayed as a decline. The report's own movement() already used the
+   * magnitude, so the same document disagreed with itself depending on which
+   * table you read.
+   */
+  const pct = (current - previous) / Math.abs(previous);
   return Number.isFinite(pct) ? pct : null;
 }
 
@@ -1919,7 +1932,10 @@ export async function getTagPerformance(q: Scoped<AnalyticsQuery>): Promise<TagR
 
   const { rows } = await db.execute<TagQueryRow>(sql`
     WITH filtered AS (
-      SELECT p.id, p.company_id, p.engagement_total, p.engagement_rate_by_follower
+      -- followers_at_post is carried so the rate can be filtered on whether a
+      -- post HAD a denominator, not on whether it earned anything.
+      SELECT p.id, p.company_id, p.engagement_total, p.engagement_rate_by_follower,
+             p.followers_at_post
         FROM posts p
        WHERE ${postWhere(scope, rangeOf(q), filtersOf(q))}
     ),
@@ -1934,9 +1950,15 @@ export async function getTagPerformance(q: Scoped<AnalyticsQuery>): Promise<TagR
              f.company_id,
              count(*)::int                       AS post_count,
              coalesce(sum(f.engagement_total), 0) AS engagement_total,
+             -- A post with a follower reading that earned nothing is a real
+             -- zero and belongs in the average. Filtering on the RATE being
+             -- positive dropped exactly the posts that should pull a tag down,
+             -- so a tag on 100 posts where 60 flopped was scored on the 40 that
+             -- did not. Lift compounded it, dividing one inflated rate by
+             -- another inflated by a different amount.
              coalesce(avg(f.engagement_rate_by_follower)
-                      FILTER (WHERE f.engagement_rate_by_follower > 0), 0) AS erf,
-             count(*) FILTER (WHERE f.engagement_rate_by_follower > 0)::int AS rated_posts
+                      FILTER (WHERE f.followers_at_post > 0), 0) AS erf,
+             count(*) FILTER (WHERE f.followers_at_post > 0)::int AS rated_posts
         FROM post_tag_assignments pta
         JOIN filtered f  ON f.id = pta.post_id
         JOIN post_tags t ON t.id = pta.tag_id AND t.org_id = ${scope.orgId}::uuid
@@ -1947,7 +1969,7 @@ export async function getTagPerformance(q: Scoped<AnalyticsQuery>): Promise<TagR
              tc.company_id,
              avg(f.engagement_rate_by_follower)
                FILTER (
-                 WHERE f.engagement_rate_by_follower > 0
+                 WHERE f.followers_at_post > 0
                    AND NOT EXISTS (
                      SELECT 1
                        FROM post_tag_assignments baseline_pta
@@ -1988,8 +2010,11 @@ export async function getPostTypePerformance(q: Scoped<AnalyticsQuery>): Promise
     SELECT p.type,
            count(*)::int                        AS post_count,
            coalesce(sum(p.engagement_total), 0) AS engagement_total,
+           -- See the tag query: filter on having a denominator, not on having
+           -- earned something, or every format's rate is inflated by the share
+           -- of its posts that flopped.
            coalesce(avg(p.engagement_rate_by_follower)
-                    FILTER (WHERE p.engagement_rate_by_follower > 0), 0) AS erf
+                    FILTER (WHERE p.followers_at_post > 0), 0) AS erf
       FROM posts p
      WHERE ${postWhere(scope, rangeOf(q), filtersOf(q))}
      GROUP BY p.type

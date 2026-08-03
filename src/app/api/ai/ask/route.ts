@@ -28,6 +28,7 @@
 import { z } from 'zod';
 import type { NextRequest } from 'next/server';
 import { apiHandler, assertLandscapeInOrg, requireOrg, HttpError } from '@/lib/session';
+import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { getFactSheet } from '@/lib/metrics/queries';
 import { complete } from '@/lib/ai/client';
 import { askDataPrompt } from '@/lib/ai/prompts';
@@ -62,6 +63,9 @@ const askSchema = z.object({
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const { orgId } = await requireOrg();
+  // Available to a viewer, and every call bills the org's own model.
+  const gate = checkRateLimit(orgId, LIMITS.ai);
+  if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
   const body = await readJson(req, askSchema);
 
   // The landscape id is a claim until this line; after it, it is a fact.

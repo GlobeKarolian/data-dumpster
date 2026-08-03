@@ -13,9 +13,11 @@
  * screen are the same arithmetic and cannot drift apart.
  */
 import 'server-only';
-import { endOfDay, startOfDay } from 'date-fns';
 import type { AnalyticsQuery, MetricRow } from '@/lib/types';
-import { getFactSheet, getLeaderboard, getPosts, getSummary } from '@/lib/metrics/queries';
+import {
+  changePct, getFactSheet, getLeaderboard, getPosts, getSummary,
+} from '@/lib/metrics/queries';
+import { endOfZoneDay, parseLocalDay, startOfZoneDay } from '@/lib/dates';
 import type { PostDto } from '@/lib/metrics/contract';
 import {
   REPORT_PLATFORMS,
@@ -36,9 +38,9 @@ import {
  * subtle, permanent, invisible error, so the parts are split by hand.
  */
 function localDay(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number);
-  if (!y || !m || !d) throw new Error('Report periods must be yyyy-mm-dd days. Got: ' + iso);
-  return new Date(y, m - 1, d);
+  const parsed = parseLocalDay(iso);
+  if (!parsed) throw new Error('Report periods must be yyyy-mm-dd days. Got: ' + iso);
+  return parsed;
 }
 
 /** Anything inside half a percent is reported as flat, not as a trend. */
@@ -55,14 +57,10 @@ function directionOf(changePct: number | null): Direction {
  * nothing" is a sentence, not a percentage.
  */
 function changePctOf(value: number | null, previousValue: number | null): number | null {
-  if (
-    value === null
-    || previousValue === null
-    || previousValue === 0
-    || !Number.isFinite(previousValue)
-  ) return null;
-  const pct = (value - previousValue) / Math.abs(previousValue);
-  return Number.isFinite(pct) ? pct : null;
+  // Delegates rather than reimplementing. The two used to differ on the sign
+  // convention for a negative baseline, and both appeared in one report.
+  if (value === null || previousValue === null || !Number.isFinite(previousValue)) return null;
+  return changePct(value, previousValue);
 }
 
 function movement(value: number | null, previousValue: number | null): Movement {
@@ -101,9 +99,11 @@ function sumCompletePrevious(rows: MetricRow[]): number | null {
 
 function perPost(engagement: number | null, posts: number | null): number | null {
   if (engagement === null || posts === null) return null;
-  if (!posts) return 0;
+  // A brand that published nothing has no engagement-per-post. Returning 0 put
+  // "Engagement / post: 0.0" on a KPI card beside n/a for every other figure.
+  if (!posts) return null;
   const v = engagement / posts;
-  return Number.isFinite(v) ? v : 0;
+  return Number.isFinite(v) ? v : null;
 }
 
 const REPORT_PLATFORM_SET = new Set<string>(REPORT_PLATFORMS);
@@ -147,8 +147,11 @@ export async function computeWeeklyReport(
   periodStart: string,
   periodEnd: string,
 ): Promise<ComputedBlock> {
-  const start = startOfDay(localDay(periodStart));
-  const end = endOfDay(localDay(periodEnd));
+  // Report-zone boundaries, not the server's. The schedule computes an Eastern
+  // Monday-to-Sunday; re-parsing it in server time shifted the whole window
+  // four hours, so a "week" ran Sunday 20:00 to Sunday 19:59.
+  const start = startOfZoneDay(localDay(periodStart));
+  const end = endOfZoneDay(localDay(periodEnd));
   if (start > end) {
     throw new Error('The report period ends before it starts.');
   }

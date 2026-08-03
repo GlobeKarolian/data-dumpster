@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, HttpError } from '@/lib/session';
+import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { db } from '@/db';
 import { briefs } from '@/db/schema';
 import { generateBrief, type GeneratedBrief } from '@/lib/ai/brief';
@@ -64,6 +65,9 @@ function rangeFromBody(body: { start?: string; end?: string; range?: string }) {
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const { orgId, userId } = await requireRole('editor');
+  // Brief generation runs inference and can take five minutes per call.
+  const gate = checkRateLimit(orgId, LIMITS.generate);
+  if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
   const body = await readJson(req, generateSchema);
 
   const landscape = await assertLandscapeInOrg(body.landscapeId, orgId);

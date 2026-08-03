@@ -81,6 +81,39 @@ export default async function BriefDetailPage({ params }: { params: Promise<{ id
                 </Badge>
               ) : null}
             </CardHeader>
+            {verification && !verification.ok ? (
+              /*
+               * Attached to the prose, not filed beside it.
+               *
+               * The verification panel already existed in the sidebar, which is
+               * a summary for someone who goes looking. A brief with a claim
+               * that could not be traced to the fact sheet has to say so where
+               * the claim is read, and has to survive being copied into an
+               * email, because the sidebar does not.
+               */
+              <div
+                role="alert"
+                className="mx-5 mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 dark:border-amber-800 dark:bg-amber-950/40"
+              >
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  {verification.unverified.length === 1
+                    ? 'One figure below could not be traced to the data.'
+                    : verification.unverified.length + ' figures below could not be traced '
+                      + 'to the data.'}
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {verification.unverified.slice(0, 5).map((u, i) => (
+                    <li key={i} className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                      {'— ' + u}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+                  Everything else was checked against the fact sheet. Treat the figures above as
+                  unconfirmed and do not forward them without checking.
+                </p>
+              </div>
+            ) : null}
             <CardBody className="px-5 py-4">
               <Markdown source={brief.body} />
             </CardBody>

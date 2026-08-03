@@ -14,6 +14,7 @@
  */
 import { z } from 'zod';
 import { apiHandler, requireRole, HttpError } from '@/lib/session';
+import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { PLATFORMS } from '@/lib/types';
 import { db } from '@/db';
 import { landscapes } from '@/db/schema';
@@ -41,6 +42,9 @@ const bodySchema = z.object({
 
 export const POST = apiHandler(async (req) => {
   const { orgId } = await requireRole('editor');
+  // A full refresh is up to 60 channels of paid vendor calls.
+  const gate = checkRateLimit(orgId, LIMITS.ingest);
+  if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
   const body = await readJson(req, bodySchema);
 
   const [landscape] = await db
@@ -74,9 +78,18 @@ export const POST = apiHandler(async (req) => {
     });
     return Response.json(result);
   } catch (err) {
+    /*
+     * The message is logged, not returned.
+     *
+     * This handed the raw error text to the client, deliberately bypassing the
+     * generic 500 in apiHandler whose own comment says Postgres errors leak
+     * table and column names and must never reach a response body. An editor
+     * could read the schema out of a failed refresh.
+     */
+    console.error('[pressbox:ingest/run] refresh failed', err);
     throw new HttpError(
       500,
-      err instanceof Error ? err.message : 'The refresh failed before it could start.',
+      'The refresh failed before it could start. The error has been logged.',
       'ingest_failed',
     );
   }

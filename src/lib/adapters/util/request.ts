@@ -1,8 +1,8 @@
 /**
  * The request function the adapters call.
  *
- * This is the one transport implementation adapters call. `util/http.ts` is a
- * compatibility barrel for older imports; it contains no second policy.
+ * This is the one transport implementation adapters call. The `util/http.ts`
+ * barrel that used to re-export it is gone; there is no second policy to drift.
  */
 import type { Platform } from '@/lib/types';
 import { AdapterError } from '../types';
