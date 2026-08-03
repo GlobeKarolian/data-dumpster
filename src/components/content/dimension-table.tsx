@@ -33,13 +33,27 @@ export function DimensionTable({
   usedLabel?: string;
   unusedLabel?: string;
 }) {
-  const performanceValue = (row: DimensionRow) => row[performanceMetric];
-  const formatPerformance = (value: number) => performanceMetric === 'engagementPerPost'
+  /*
+   * An unmeasured rate is a dash, not a zero-length bar labelled 0.00%.
+   *
+   * engagementRateByFollower is null when no post in the row carried a follower
+   * reading. Rendering that as 0% put "never measured" and "measured badly"
+   * side by side in the same column, indistinguishable, and sorted them
+   * together at the bottom.
+   */
+  const performanceValue = (row: DimensionRow): number | null => row[performanceMetric];
+  const barWidth = (row: DimensionRow, max: number) => {
+    const v = performanceValue(row);
+    return v === null ? 0 : Math.max(v > 0 ? 2 : 0, (v / max) * 100);
+  };
+  const formatPerformance = (value: number | null) => value === null
+    ? '—'
+    : performanceMetric === 'engagementPerPost'
     ? value.toLocaleString('en-US', { maximumFractionDigits: value < 10 ? 1 : 0 })
     : pct(value);
   const maxRate = Math.max(
     0.000001,
-    ...rows.map(performanceValue),
+    ...rows.map((r) => performanceValue(r) ?? 0),
   );
 
   if (rows.length === 0) {
@@ -107,10 +121,7 @@ export function DimensionTable({
                         <span
                           className="block h-full rounded-full bg-zinc-400 dark:bg-zinc-500"
                           style={{
-                            width: `${Math.max(
-                              performanceValue(row) > 0 ? 2 : 0,
-                              (performanceValue(row) / maxRate) * 100,
-                            )}%`,
+                            width: `${barWidth(row, maxRate)}%`,
                           }}
                         />
                       </span>

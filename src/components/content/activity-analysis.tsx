@@ -19,7 +19,12 @@ function compact(value: number): string {
 
 type PerformanceMetric = 'engagementRateByFollower' | 'engagementPerPost';
 
-function formatPerformance(value: number, metric: PerformanceMetric): string {
+/**
+ * Null is an em dash. It means no post carried a follower reading, which is a
+ * different statement from a rate that was measured and came out at zero.
+ */
+function formatPerformance(value: number | null, metric: PerformanceMetric): string {
+  if (value === null) return '—';
   return metric === 'engagementPerPost' ? compact(value) : pct(value);
 }
 
@@ -108,8 +113,8 @@ export function ActivityTable({
   rateLabel?: string;
   performanceMetric?: PerformanceMetric;
 }) {
-  const performanceValue = (row: CompanyActivityRow) => row[performanceMetric];
-  const maxRate = Math.max(0.000001, ...rows.map(performanceValue));
+  const performanceValue = (row: CompanyActivityRow): number | null => row[performanceMetric];
+  const maxRate = Math.max(0.000001, ...rows.map((r) => performanceValue(r) ?? 0));
 
   if (rows.length === 0) {
     return (
@@ -164,10 +169,10 @@ export function ActivityTable({
                         row.focus ? 'bg-accent-600' : 'bg-zinc-400 dark:bg-zinc-500',
                       )}
                       style={{
-                        width: `${Math.max(
-                          performanceValue(row) > 0 ? 2 : 0,
-                          (performanceValue(row) / maxRate) * 100,
-                        )}%`,
+                        width: `${(() => {
+                          const v = performanceValue(row);
+                          return v === null ? 0 : Math.max(v > 0 ? 2 : 0, (v / maxRate) * 100);
+                        })()}%`,
                       }}
                     />
                   </span>

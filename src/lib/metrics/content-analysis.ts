@@ -30,6 +30,9 @@ import {
 } from '@/db/schema';
 import type { Platform, PostType } from '@/lib/types';
 import { daysIn, dayStrings } from '@/lib/dates';
+import {
+  addToFollowerRate, finishFollowerRate, followerRate, newFollowerRateAcc,
+} from './follower-rate';
 
 export interface DimensionRow {
   /** The hashtag, topic, post type, platform or hour label. */
@@ -38,8 +41,11 @@ export interface DimensionRow {
   companies: number;
   /** Posts using it, across the landscape. */
   posts: number;
-  /** Engagement rate by follower across those posts. The ranking metric. */
-  engagementRateByFollower: number;
+  /**
+   * Mean of per-post engagement rates. Null when no post carried a follower
+   * reading, which is not the same as a measured zero.
+   */
+  engagementRateByFollower: number | null;
   engagementPerPost: number;
   /** True when the focus company used it at all. Drives the "you used" copy. */
   focusUsed: boolean;
@@ -50,18 +56,19 @@ export interface DimensionRow {
 export interface RateByBucket {
   bucket: number;
   focusPosts: number;
-  focusRate: number;
+  /** Null when no post in the bucket carried a follower reading. */
+  focusRate: number | null;
   focusEngagementPerPost: number;
   landscapePosts: number;
-  landscapeRate: number;
+  landscapeRate: number | null;
   landscapeEngagementPerPost: number;
 }
 
 export interface AtAGlance {
   postsPerDay: number;
   landscapePostsPerDay: number;
-  engagementRateByFollower: number;
-  landscapeEngagementRate: number;
+  engagementRateByFollower: number | null;
+  landscapeEngagementRate: number | null;
   engagementPerPost: number;
   landscapeEngagementPerPost: number;
   pctWithHashtags: number;
@@ -76,7 +83,8 @@ export interface CompanyActivityRow {
   companyName: string;
   posts: number;
   postsPerDay: number;
-  engagementRateByFollower: number;
+  /** Null when no post carried a follower reading. Never a measured zero. */
+  engagementRateByFollower: number | null;
   engagementPerPost: number;
   focus: boolean;
 }
@@ -195,7 +203,8 @@ function tally(
   minCompanies: number,
 ): DimensionRow[] {
   const acc = new Map<string, {
-    companies: Set<string>; posts: number; eng: number; ratedEng: number; reach: number;
+    companies: Set<string>; posts: number; eng: number;
+    rate: ReturnType<typeof newFollowerRateAcc>;
     focusPosts: number;
   }>();
 
@@ -207,8 +216,7 @@ function tally(
           companies: new Set(),
           posts: 0,
           eng: 0,
-          ratedEng: 0,
-          reach: 0,
+          rate: newFollowerRateAcc(),
           focusPosts: 0,
         };
         acc.set(key, e);
@@ -216,12 +224,9 @@ function tally(
       e.companies.add(r.companyId);
       e.posts += 1;
       e.eng += r.engagementTotal;
-      // Rate by follower needs a denominator per post. Posts with no follower
-      // reading are excluded from both sides of the rate.
-      if (r.followersAtPost && r.followersAtPost > 0) {
-        e.ratedEng += r.engagementTotal;
-        e.reach += r.followersAtPost;
-      }
+      // Rate by follower is the mean of per-post rates, not pooled engagement
+      // over pooled reach. See lib/metrics/follower-rate.ts.
+      addToFollowerRate(e.rate, r);
       if (focusId && r.companyId === focusId) e.focusPosts += 1;
     }
   }
@@ -239,12 +244,14 @@ function tally(
       key,
       companies: e.companies.size,
       posts: e.posts,
-      engagementRateByFollower: e.reach > 0 ? e.ratedEng / e.reach : 0,
+      engagementRateByFollower: finishFollowerRate(e.rate),
       engagementPerPost: e.posts > 0 ? e.eng / e.posts : 0,
       focusUsed: e.focusPosts > 0,
       focusPosts: e.focusPosts,
     }))
-    .sort((a, b) => b.companies - a.companies || b.engagementRateByFollower - a.engagementRateByFollower)
+    // Unmeasured rows sort last rather than acting like a zero rate.
+    .sort((a, b) => b.companies - a.companies
+      || (b.engagementRateByFollower ?? -1) - (a.engagementRateByFollower ?? -1))
     .slice(0, limit);
 }
 
@@ -252,11 +259,11 @@ function tally(
 function bucketRates(rows: Row[], focusId: string | null, of: (d: Date) => number, size: number): RateByBucket[] {
   const f = Array.from(
     { length: size },
-    () => ({ posts: 0, totalEngagement: 0, ratedEngagement: 0, reach: 0 }),
+    () => ({ posts: 0, totalEngagement: 0, rate: newFollowerRateAcc() }),
   );
   const l = Array.from(
     { length: size },
-    () => ({ posts: 0, totalEngagement: 0, ratedEngagement: 0, reach: 0 }),
+    () => ({ posts: 0, totalEngagement: 0, rate: newFollowerRateAcc() }),
   );
 
   for (const r of rows) {
@@ -264,29 +271,23 @@ function bucketRates(rows: Row[], focusId: string | null, of: (d: Date) => numbe
     if (b < 0 || b >= size) continue;
     l[b].posts += 1;
     l[b].totalEngagement += r.engagementTotal;
-    if (r.followersAtPost && r.followersAtPost > 0) {
-      l[b].ratedEngagement += r.engagementTotal;
-      l[b].reach += r.followersAtPost;
-    }
+    addToFollowerRate(l[b].rate, r);
     if (focusId && r.companyId === focusId) {
       f[b].posts += 1;
       f[b].totalEngagement += r.engagementTotal;
-      if (r.followersAtPost && r.followersAtPost > 0) {
-        f[b].ratedEngagement += r.engagementTotal;
-        f[b].reach += r.followersAtPost;
-      }
+      addToFollowerRate(f[b].rate, r);
     }
   }
 
   return Array.from({ length: size }, (_, b) => ({
     bucket: b,
     focusPosts: f[b].posts,
-    focusRate: f[b].reach > 0 ? f[b].ratedEngagement / f[b].reach : 0,
+    focusRate: finishFollowerRate(f[b].rate),
     focusEngagementPerPost: f[b].posts > 0
       ? f[b].totalEngagement / f[b].posts
       : 0,
     landscapePosts: l[b].posts,
-    landscapeRate: l[b].reach > 0 ? l[b].ratedEngagement / l[b].reach : 0,
+    landscapeRate: finishFollowerRate(l[b].rate),
     landscapeEngagementPerPost: l[b].posts > 0
       ? l[b].totalEngagement / l[b].posts
       : 0,
@@ -302,23 +303,18 @@ function activityByCompany(
     companyName: string;
     posts: number;
     totalEngagement: number;
-    ratedEngagement: number;
-    followers: number;
+    rate: ReturnType<typeof newFollowerRateAcc>;
   }>();
   for (const row of rows) {
     const current = acc.get(row.companyId) ?? {
       companyName: row.companyName,
       posts: 0,
       totalEngagement: 0,
-      ratedEngagement: 0,
-      followers: 0,
+      rate: newFollowerRateAcc(),
     };
     current.posts += 1;
     current.totalEngagement += row.engagementTotal;
-    if (row.followersAtPost && row.followersAtPost > 0) {
-      current.ratedEngagement += row.engagementTotal;
-      current.followers += row.followersAtPost;
-    }
+    addToFollowerRate(current.rate, row);
     acc.set(row.companyId, current);
   }
   return [...acc.entries()]
@@ -327,9 +323,7 @@ function activityByCompany(
       companyName: value.companyName,
       posts: value.posts,
       postsPerDay: value.posts / days,
-      engagementRateByFollower: value.followers > 0
-        ? value.ratedEngagement / value.followers
-        : 0,
+      engagementRateByFollower: finishFollowerRate(value.rate),
       engagementPerPost: value.posts > 0 ? value.totalEngagement / value.posts : 0,
       focus: companyId === focusId,
     }))
@@ -588,16 +582,7 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
       : memberIds.length,
   );
 
-  const rate = (list: Row[]) => {
-    let eng = 0; let reach = 0;
-    for (const r of list) {
-      if (r.followersAtPost && r.followersAtPost > 0) {
-        eng += r.engagementTotal;
-        reach += r.followersAtPost;
-      }
-    }
-    return reach > 0 ? eng / reach : 0;
-  };
+  const rate = (list: Row[]) => followerRate(list).rate;
   const engagementPerPost = (list: Row[]) => list.length > 0
     ? list.reduce((sum, row) => sum + row.engagementTotal, 0) / list.length
     : 0;

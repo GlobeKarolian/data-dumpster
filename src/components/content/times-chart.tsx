@@ -60,11 +60,11 @@ export function TimesChart({
     ? point.landscapePosts / activityPeriods / safeCompanies
     : metric === 'engagementPerPost'
       ? point.landscapeEngagementPerPost
-      : point.landscapeRate);
+      : (point.landscapeRate ?? 0));
   const max = Math.max(
     metric === 'rate' ? 0.000001 : 1,
-    ...focus,
-    ...(showBenchmark ? landscape : []),
+    ...focus.map((v) => v ?? 0),
+    ...(showBenchmark ? landscape.map((v) => v ?? 0) : []),
   );
   const step = data.length > 1 ? innerWidth / (data.length - 1) : innerWidth;
   const x = (index: number) =>
@@ -157,14 +157,14 @@ export function TimesChart({
 
         {showBenchmark ? (
           <path
-            d={path(landscape)}
+            d={path(landscape.map((v) => v ?? 0))}
             fill="none"
             strokeWidth={1.25}
             strokeDasharray="4 3"
             className="stroke-zinc-400 dark:stroke-zinc-500"
           />
         ) : null}
-        <path d={path(focus)} fill="none" strokeWidth={1.75} stroke="#C8102E" />
+        <path d={path(focus.map((v) => v ?? 0))} fill="none" strokeWidth={1.75} stroke="#C8102E" />
 
         {data.map((point, index) => (
           index % labelEvery === 0 || index === data.length - 1 ? (

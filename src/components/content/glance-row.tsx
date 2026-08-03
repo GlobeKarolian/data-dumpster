@@ -52,7 +52,8 @@ export function GlanceRow({
   showBenchmark?: boolean;
 }) {
   const g = glance;
-  const pctStr = (n: number) => (n * 100).toFixed(n < 0.01 ? 3 : 2) + '%';
+  const pctStr = (n: number | null) =>
+    (n === null ? '—' : (n * 100).toFixed(n < 0.01 ? 3 : 2) + '%');
   const compact = (n: number) => n.toLocaleString('en-US', {
     maximumFractionDigits: n < 10 ? 1 : 0,
   });
@@ -84,7 +85,10 @@ export function GlanceRow({
             ? compact(g.landscapeEngagementPerPost)
             : pctStr(g.landscapeEngagementRate))
           : noBenchmark}
+        // Only claim "worse than the market" when both sides were measured.
         worse={!usesEngagementPerPost
+          && g.engagementRateByFollower !== null
+          && g.landscapeEngagementRate !== null
           && g.engagementRateByFollower < g.landscapeEngagementRate}
       />
       <Stat

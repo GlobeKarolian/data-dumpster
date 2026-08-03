@@ -14,16 +14,37 @@ import type { ContentAnalysis, DimensionRow, RateByBucket } from '@/lib/metrics/
  * that a template beats inference. The model earns its keep on briefs, where
  * the reasoning is genuinely open-ended.
  */
-const pct = (n: number, digits = 2) => (n * 100).toFixed(digits) + '%';
+/**
+ * Null renders as an em dash, never as 0.00%.
+ *
+ * A missing follower reading has no rate. Printing it as zero inside a sentence
+ * that ranks companies is how "we have no data" becomes "they performed worst".
+ */
+const pct = (n: number | null, digits = 2) =>
+  (n === null ? '—' : (n * 100).toFixed(digits) + '%');
 const hour = (h: number | null) =>
   (h === null ? 'unclear' : h === 0 ? '12am' : h < 12 ? h + 'am' : h === 12 ? '12pm' : (h - 12) + 'pm');
+
+/**
+ * Rank by rate, excluding rows that were never measured.
+ *
+ * A null rate means no post carried a follower reading. Sorting it as 0 would
+ * bury a genuinely measured poor performer beneath unmeasured ones; treating it
+ * as eligible to WIN would be worse, so unmeasured rows are dropped from any
+ * "highest earning" claim rather than reordered.
+ */
+function rankedByRate(rows: DimensionRow[]): DimensionRow[] {
+  return rows
+    .filter((r): r is DimensionRow & { engagementRateByFollower: number } =>
+      r.engagementRateByFollower !== null)
+    .sort((x, y) => y.engagementRateByFollower - x.engagementRateByFollower);
+}
+
 const subject = (focusName?: string | null) => focusName?.trim() || 'The selected company';
 
 /** The row the focus company most under-uses relative to what it earns. */
 function biggestMiss(rows: DimensionRow[]): DimensionRow | null {
-  const ranked = rows
-    .filter((r) => r.posts >= 10)
-    .sort((a, b) => b.engagementRateByFollower - a.engagementRateByFollower);
+  const ranked = rankedByRate(rows.filter((r) => r.posts >= 10));
   const best = ranked[0];
   if (!best) return null;
   const share = best.posts > 0 ? best.focusPosts / best.posts : 0;
@@ -37,8 +58,13 @@ export function topicsInsight(
 ): string {
   const rows = a.topics;
   if (rows.length === 0) return 'Not enough ' + publications + ' in this window to identify topics.';
-  const best = [...rows].sort((x, y) => y.engagementRateByFollower - x.engagementRateByFollower)[0];
+  const best = rankedByRate(rows)[0];
   const used = rows.filter((r) => r.focusUsed).length;
+  if (!best) {
+    return 'Of the ' + rows.length + ' topics the market covered most, ' + used
+      + ' were covered by ' + subject(focusName).toLowerCase()
+      + '. No follower readings were captured, so engagement rates cannot be compared.';
+  }
   return 'Of the ' + rows.length + ' topics the market covered most, "' + best.key
     + '" earned the highest engagement rate at ' + pct(best.engagementRateByFollower)
     + '. ' + subject(focusName) + ' covered ' + used + ' of ' + rows.length
@@ -48,8 +74,12 @@ export function topicsInsight(
 export function hashtagsInsight(a: ContentAnalysis, focusName?: string | null): string {
   const rows = a.hashtags;
   if (rows.length === 0) return 'No hashtags were used often enough in this window to compare.';
-  const best = [...rows].sort((x, y) => y.engagementRateByFollower - x.engagementRateByFollower)[0];
+  const best = rankedByRate(rows)[0];
   const unused = rows.filter((r) => !r.focusUsed);
+  if (!best) {
+    return 'No follower readings were captured for these hashtags, so engagement rates '
+      + 'cannot be compared this window.';
+  }
   const tail = unused.length === 0
     ? ' ' + subject(focusName) + ' used all of them.'
     : ' ' + subject(focusName) + ' used none of ' + unused.slice(0, 3).map((r) => r.key).join(', ') + '.';
@@ -65,8 +95,7 @@ export function typesInsight(
   const rows = a.postTypes;
   if (rows.length === 0) return 'No ' + publications + ' in this window.';
   const yours = [...rows].sort((x, y) => y.focusPosts - x.focusPosts)[0];
-  const best = [...rows].filter((r) => r.posts >= 10)
-    .sort((x, y) => y.engagementRateByFollower - x.engagementRateByFollower)[0];
+  const best = rankedByRate(rows.filter((r) => r.posts >= 10))[0];
   const label = subject(focusName);
   if (!best) return label + '\'s most common format is ' + yours.key + '.';
   const miss = biggestMiss(rows);
@@ -84,8 +113,7 @@ export function channelsInsight(
   const rows = a.channels;
   if (rows.length === 0) return 'No ' + publications + ' in this window.';
   const yours = [...rows].sort((x, y) => y.focusPosts - x.focusPosts)[0];
-  const best = [...rows].filter((r) => r.posts >= 10)
-    .sort((x, y) => y.engagementRateByFollower - x.engagementRateByFollower)[0];
+  const best = rankedByRate(rows.filter((r) => r.posts >= 10))[0];
   const label = subject(focusName);
   if (!best || best.key === yours.key) {
     return label + '\'s most active channel is ' + yours.key + ', which is also the highest earning here.';
@@ -101,7 +129,8 @@ export function timesInsight(
   focusName?: string | null,
 ): string {
   const active = [...byHour].sort((a, b) => b.focusPosts - a.focusPosts)[0];
-  const ratePeak = [...byHour].sort((a, b) => b.focusRate - a.focusRate)[0];
+  // Unmeasured hours cannot be the peak; -1 keeps them out of the running.
+  const ratePeak = [...byHour].sort((a, b) => (b.focusRate ?? -1) - (a.focusRate ?? -1))[0];
   if (!active || active.focusPosts === 0) return 'Not enough publications to read a pattern.';
   const label = subject(focusName);
   return label + ' publishes most at ' + hour(topHour) + '. ' + label + '\'s engagement rate peaks at '

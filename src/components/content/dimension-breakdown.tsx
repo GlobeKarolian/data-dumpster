@@ -113,13 +113,28 @@ export function DimensionBreakdown({
   const activeRows = [...rows]
     .filter((row) => row.focusPosts > 0)
     .sort((a, b) => b.focusPosts - a.focusPosts || a.key.localeCompare(b.key));
-  const performanceValue = (row: DimensionRow) => row[performanceMetric];
-  const formatPerformance = (value: number) => performanceMetric === 'engagementPerPost'
+  /*
+   * An unmeasured rate is a dash, not a zero-length bar labelled 0.00%.
+   *
+   * engagementRateByFollower is null when no post in the row carried a follower
+   * reading. Rendering that as 0% put "never measured" and "measured badly"
+   * side by side in the same column, indistinguishable, and sorted them
+   * together at the bottom.
+   */
+  const performanceValue = (row: DimensionRow): number | null => row[performanceMetric];
+  const sortValue = (row: DimensionRow) => performanceValue(row) ?? -1;
+  const barWidth = (row: DimensionRow, max: number) => {
+    const v = performanceValue(row);
+    return v === null ? 0 : Math.max(v > 0 ? 2 : 0, (v / max) * 100);
+  };
+  const formatPerformance = (value: number | null) => value === null
+    ? '—'
+    : performanceMetric === 'engagementPerPost'
     ? number(value)
     : pct(value);
   const marketRows = [...rows]
     .sort((a, b) =>
-      performanceValue(b) - performanceValue(a)
+      sortValue(b) - sortValue(a)
       || b.posts - a.posts
       || a.key.localeCompare(b.key));
   const colors = new Map<string, string>(
@@ -133,7 +148,7 @@ export function DimensionBreakdown({
   const safeCompanyCount = Math.max(1, companyCount);
   const maxMarketRate = Math.max(
     0.000001,
-    ...marketRows.map(performanceValue),
+    ...marketRows.map((r) => performanceValue(r) ?? 0),
   );
 
   return (
@@ -233,10 +248,7 @@ export function DimensionBreakdown({
                       className="block h-full rounded-full"
                       style={{
                         backgroundColor: colors.get(row.key),
-                        width: `${Math.max(
-                          performanceValue(row) > 0 ? 2 : 0,
-                          (performanceValue(row) / maxMarketRate) * 100,
-                        )}%`,
+                        width: `${barWidth(row, maxMarketRate)}%`,
                       }}
                     />
                   </span>
