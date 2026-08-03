@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { formatFullDate, formatRelative } from '@/components/ui/format';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { NewReportButton } from '@/components/reports/new-report-button';
+import { DeleteReportButton } from '@/components/reports/delete-report-button';
 import { ScheduleManager } from '@/components/reports/schedule-manager';
 import { roleAtLeast } from '@/lib/roles';
 import { MANUAL_SECTIONS } from '@/lib/reports/types';
@@ -106,10 +107,13 @@ export default async function ReportsPage({
               const pasted = Number(r.manual_tables) || 0;
               const written = Number(r.narrative_sections) || 0;
               return (
-                <li key={r.id}>
+                <li
+                  key={r.id}
+                  className="flex items-start transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                >
                   <Link
                     href={'/reports/' + r.id}
-                    className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                    className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -133,6 +137,16 @@ export default async function ReportsPage({
                       {r.data_note ? <Badge tone="warning">Data note</Badge> : null}
                     </div>
                   </Link>
+                  {roleAtLeast(ctx.role, 'editor') ? (
+                    <div className="shrink-0 py-3 pr-3">
+                      <DeleteReportButton
+                        reportId={r.id}
+                        title={r.title}
+                        pastedTables={pasted}
+                        narrativeSections={written}
+                      />
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

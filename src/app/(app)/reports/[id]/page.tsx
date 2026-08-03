@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { ReportBuilder } from '@/components/reports/report-builder';
+import { DeleteReportButton } from '@/components/reports/delete-report-button';
 import { sanitizeReportNarrative } from '@/lib/reports/narrative-verification';
 import { readComputed, readManual, readNarrative } from '@/lib/reports/types';
 import { query } from '../../_lib/data';
@@ -67,13 +68,24 @@ export default async function WeeklyReportPage({ params }: { params: Promise<{ i
 
   return (
     <div className="mx-auto max-w-6xl">
-      <Link
-        href="/reports"
-        className="inline-flex items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
-      >
-        <ArrowRight className="h-3 w-3 rotate-180" aria-hidden />
-        All weekly reports
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href="/reports"
+          className="inline-flex items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          <ArrowRight className="h-3 w-3 rotate-180" aria-hidden />
+          All weekly reports
+        </Link>
+        {hasRole(session.role, 'editor') ? (
+          <DeleteReportButton
+            reportId={report.id}
+            title={report.title}
+            pastedTables={Object.values(manual.tables).filter((t) => t.rows.length > 0).length}
+            narrativeSections={Object.values(storedNarrative).filter((v) => v.trim()).length}
+            redirectTo="/reports"
+          />
+        ) : null}
+      </div>
 
       <div className="mt-3">
         <ReportBuilder
