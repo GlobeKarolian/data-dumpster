@@ -10,9 +10,9 @@
  *      let it correct itself once. One repair pass, not a loop: a model that
  *      cannot ground its claims on the second attempt is not going to on the
  *      fifth, and each attempt costs the org money.
- *   5. Persist the markdown, the fact sheet it came from, and the verification
- *      verdict together. A brief without its fact sheet is an assertion; with
- *      it, it is a document someone can audit a year later.
+ *   5. Persist only a draft that passed every deterministic check, together
+ *      with its fact sheet and verdict. Failed prose is diagnostic material,
+ *      never a document the product will put in front of an editor.
  */
 import { db } from '@/db';
 import { toDayString } from '@/lib/dates';
@@ -49,6 +49,21 @@ export interface GeneratedBrief {
   periodStart: string;
   periodEnd: string;
 }
+
+/** Raised when both the original draft and its repair fail verification. */
+export class BriefVerificationError extends Error {
+  constructor(readonly verification: BriefVerification) {
+    super('The model could not produce a brief that passed fact-sheet verification. No brief was saved.');
+    this.name = 'BriefVerificationError';
+  }
+}
+
+function requireVerifiedBrief(verification: BriefVerification): void {
+  if (!verification.ok) throw new BriefVerificationError(verification);
+}
+
+/** Narrow seam protecting the fail-closed invariant without invoking a model. */
+export const briefTestHelpers = { requireVerifiedBrief };
 
 /**
  * ISO date (no time) — the briefs table stores period bounds as dates.
@@ -171,11 +186,20 @@ export async function generateBrief(
         repaired = true;
       }
     } catch (cause) {
-      // A failed repair must not lose the first draft; it is still usable and
-      // its verification block tells the reader exactly what to double-check.
+      // Provider failure during repair is logged, then the original failed
+      // verdict is rejected below. Unverified prose never becomes a fallback.
       console.error('[ai] brief repair pass failed', cause);
     }
   }
+
+  if (!verification.ok) {
+    console.error('[ai] brief rejected by verification', {
+      unverified: verification.unverified.length,
+      miscited: verification.miscited.length,
+      violations: verification.violations.length,
+    });
+  }
+  requireVerifiedBrief(verification);
 
   const title = deriveTitle(body, facts);
   const periodStart = isoDate(range.start);

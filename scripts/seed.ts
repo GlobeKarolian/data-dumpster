@@ -1,32 +1,33 @@
 /**
- * Seed Pressbox with a real Boston media landscape.
+ * Seed Data Dumpster with a real Boston media landscape.
  *
  * Two rules govern everything in this file.
  *
- * **It is idempotent.** Every write is an upsert against a unique index, so
- * running it twice changes nothing and running it against a live database is
- * safe. A seed you are afraid to re-run is a seed nobody runs.
+ * **It is idempotent.** Every write is an upsert against a unique index. A
+ * rerun refreshes descriptive seed metadata but never re-enables a channel an
+ * operator paused. A seed you are afraid to re-run is a seed nobody runs.
  *
  * **It does not invent a single metric.** No follower counts, no engagement, no
- * posts. Every number in Pressbox comes from ingestion, and a seeded number that
+ * posts. Every number in Data Dumpster comes from ingestion, and a seeded number that
  * looks real is a number someone will eventually put in a deck. What this script
  * creates is the *shape* of the workspace -- who we watch, on which channels,
  * grouped how -- and then gets out of the way.
  *
- * The handles below are the real public accounts, verified against the platforms
- * at the time of writing. Channels on platforms Pressbox cannot read yet
- * (Instagram, X) are still recorded, but marked inactive so the ingest runner
- * skips them instead of failing on them every three hours. They are there
- * because the day an adapter exists, the handles should not have to be re-typed.
+ * The handles below are real public accounts. Free sources start active. Paid
+ * Instagram and X sources are recorded inactive until an operator explicitly
+ * enables them after configuring credentials and approving vendor spend.
  */
 import { randomBytes } from 'node:crypto';
 import { hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../src/db';
 import {
-  channels, companies, landscapeCompanies, landscapes, orgs, postTags, users,
+  channels, companies, landscapes, orgs, postTags, users,
 } from '../src/db/schema';
 import type { Platform } from '../src/lib/types';
+import { channelIdentityKey } from '../src/lib/channel-identity';
+import { enqueueLandscapeCollection } from '../src/lib/adapters/collection-queue';
+import { replaceLandscapeMembership } from '../src/lib/landscape-membership';
 
 /* --------------------------------------------------------------- the data */
 
@@ -38,9 +39,8 @@ interface SeedChannel {
   handle: string;
   profileUrl?: string;
   /**
-   * False for platforms with no adapter. The row is a record of the account,
-   * not a promise that we can read it. See lib/adapters/registry.ts for why
-   * Instagram and X cannot be read for accounts you do not own.
+   * False when the channel should be recorded without scheduling collection.
+   * Paid sources start this way so a seed cannot authorize vendor spend.
    */
   active?: boolean;
 }
@@ -64,7 +64,6 @@ const COMPANIES: SeedCompany[] = [
     channels: [
       { platform: 'bluesky', handle: 'bostonglobe.com' },
       { platform: 'youtube', handle: '@bostonglobe' },
-      { platform: 'rss', handle: 'https://www.bostonglobe.com/arc/outboundfeeds/rss/?outputType=xml' },
       { platform: 'instagram', handle: 'bostonglobe', profileUrl: 'https://www.instagram.com/bostonglobe/', active: false },
       { platform: 'twitter', handle: 'BostonGlobe', profileUrl: 'https://x.com/BostonGlobe', active: false },
     ],
@@ -78,7 +77,6 @@ const COMPANIES: SeedCompany[] = [
     channels: [
       { platform: 'bluesky', handle: 'boston.com' },
       { platform: 'youtube', handle: '@boston' },
-      { platform: 'rss', handle: 'https://www.boston.com/feed/' },
       { platform: 'instagram', handle: 'boston_com', profileUrl: 'https://www.instagram.com/boston_com/', active: false },
     ],
   },
@@ -91,7 +89,6 @@ const COMPANIES: SeedCompany[] = [
     channels: [
       { platform: 'bluesky', handle: 'statnews.com' },
       { platform: 'youtube', handle: '@statnews' },
-      { platform: 'rss', handle: 'https://www.statnews.com/feed/' },
       { platform: 'instagram', handle: 'statnews', profileUrl: 'https://www.instagram.com/statnews/', active: false },
     ],
   },
@@ -104,7 +101,6 @@ const COMPANIES: SeedCompany[] = [
     channels: [
       { platform: 'bluesky', handle: 'bostonherald.com' },
       { platform: 'youtube', handle: '@bostonherald' },
-      { platform: 'rss', handle: 'https://www.bostonherald.com/feed/' },
       { platform: 'twitter', handle: 'bostonherald', profileUrl: 'https://x.com/bostonherald', active: false },
     ],
   },
@@ -117,7 +113,6 @@ const COMPANIES: SeedCompany[] = [
     channels: [
       { platform: 'bluesky', handle: 'wbur.org' },
       { platform: 'youtube', handle: '@wbur' },
-      { platform: 'rss', handle: 'https://www.wbur.org/feed' },
       { platform: 'instagram', handle: 'wbur', profileUrl: 'https://www.instagram.com/wbur/', active: false },
     ],
   },
@@ -144,7 +139,7 @@ const COMPANIES: SeedCompany[] = [
     channels: [
       // Axios Boston publishes through a newsletter and the national accounts;
       // there is no Boston-specific feed or Bluesky handle to point at. Recorded
-      // inactive rather than pointed at national Axios, which would attribute
+      // local account rather than national Axios, which would attribute
       // national numbers to a local edition.
       { platform: 'instagram', handle: 'axiosboston', profileUrl: 'https://www.instagram.com/axiosboston/', active: false },
       { platform: 'twitter', handle: 'axiosboston', profileUrl: 'https://x.com/axiosboston', active: false },
@@ -314,7 +309,7 @@ async function seedAdmin(orgId: string): Promise<void> {
 
   await db
     .insert(users)
-    .values({ orgId, email, name: 'Pressbox Admin', role: 'owner', passwordHash })
+    .values({ orgId, email, name: 'Data Dumpster Admin', role: 'owner', passwordHash })
     .onConflictDoUpdate({
       target: users.email,
       set: {
@@ -350,7 +345,7 @@ async function seedCompanies(orgId: string): Promise<Map<string, string>> {
         color: company.color,
       })
       .onConflictDoUpdate({
-        target: [companies.orgId, companies.slug],
+        target: companies.slug,
         set: {
           name: company.name,
           website: company.website,
@@ -363,27 +358,51 @@ async function seedCompanies(orgId: string): Promise<Map<string, string>> {
     ids.set(company.slug, row.id);
 
     for (const channel of company.channels) {
-      await db
+      const identityKey = channelIdentityKey(channel.platform, channel.handle);
+      const [inserted] = await db
         .insert(channels)
         .values({
           companyId: row.id,
           platform: channel.platform,
           handle: channel.handle,
+          identityKey,
           profileUrl: channel.profileUrl ?? null,
           active: channel.active ?? true,
         })
-        .onConflictDoUpdate({
-          target: [channels.companyId, channels.platform, channels.handle],
-          set: { profileUrl: channel.profileUrl ?? null, active: channel.active ?? true },
-        });
+        .onConflictDoNothing()
+        .returning({ id: channels.id, companyId: channels.companyId });
+      const [canonical] = inserted
+        ? [inserted]
+        : await db.select({ id: channels.id, companyId: channels.companyId })
+          .from(channels)
+          .where(and(
+            eq(channels.platform, channel.platform),
+            eq(channels.identityKey, identityKey),
+          ))
+          .limit(1);
+      if (!canonical) {
+        throw new Error('Channel seed conflict could not be resolved for '
+          + channel.platform + '/' + channel.handle + '.');
+      }
+      if (canonical.companyId !== row.id) {
+        throw new Error('Channel seed identity ' + channel.platform + '/' + channel.handle
+          + ' already belongs to another company (' + canonical.companyId + '); expected '
+          + row.id + '. Reconcile the pooled account explicitly.');
+      }
+      if (!inserted) {
+        // Preserve an operator's pause/resume choice on rerun. The seed owns
+        // descriptive metadata, not live scheduling.
+        await db.update(channels)
+          .set({ profileUrl: channel.profileUrl ?? null })
+          .where(eq(channels.id, canonical.id));
+      }
     }
 
     const readable = company.channels.filter((c) => c.active !== false).length;
     step(company.name + ' - ' + company.channels.length + ' channels, ' + readable + ' readable');
     if (readable === 0) {
       notes.push(
-        company.name + ' has no readable channel yet. Its rows will be empty until an '
-        + 'adapter exists for Instagram or X, or until someone adds a feed for it.',
+        company.name + ' has no active source. Its rows will stay empty until one is enabled.',
       );
     }
   }
@@ -414,14 +433,16 @@ async function seedLandscapes(orgId: string, companyIds: Map<string, string>): P
       .map((slug) => companyIds.get(slug))
       .filter((id): id is string => id !== undefined);
 
-    // Membership is replaced rather than merged so the seed file stays the
-    // source of truth for what a seeded landscape contains.
-    await db.delete(landscapeCompanies).where(eq(landscapeCompanies.landscapeId, row.id));
-    if (memberIds.length > 0) {
-      await db.insert(landscapeCompanies).values(
-        memberIds.map((companyId, i) => ({ landscapeId: row.id, companyId, sortOrder: i })),
-      );
-    }
+    // Membership is replaced atomically so the seed remains the source of truth
+    // without exposing an empty intermediate state or cascading all demands.
+    await replaceLandscapeMembership(row.id, memberIds);
+    const until = new Date();
+    await enqueueLandscapeCollection({
+      orgId,
+      landscapeId: row.id,
+      since: new Date(until.getTime() - 90 * 86_400_000),
+      until,
+    });
 
     step(landscape.name + ' - focus ' + landscape.focusSlug + ', ' + memberIds.length + ' companies');
   }
@@ -454,7 +475,7 @@ function printNextSteps(): void {
   ).filter(([, value]) => !value).map(([name]) => name);
 
   console.log('');
-  console.log('Seed complete. Nothing above is a metric -- Pressbox has the shape of the');
+  console.log('Seed complete. Nothing above is a metric -- Data Dumpster has the shape of the');
   console.log('landscape and no numbers at all until you ingest.');
 
   if (notes.length > 0) {
@@ -470,7 +491,7 @@ function printNextSteps(): void {
     console.log('------------------');
     for (const name of missing) {
       const why = name === 'YOUTUBE_API_KEY'
-        ? 'YouTube channels will be skipped. Bluesky and RSS work with no key at all.'
+        ? 'YouTube channels will be skipped. Bluesky works with no key at all.'
         : name === 'CRON_SECRET'
           ? 'The /api/cron/* endpoints will refuse every request until this is set.'
           : name === 'ENCRYPTION_KEY'
@@ -485,13 +506,14 @@ function printNextSteps(): void {
   console.log('');
   console.log('Next');
   console.log('----');
-  console.log('  1. npm run db:push            apply the schema, if you have not already');
+  console.log('  1. npm run db:push -- --force create a new schema, if needed');
+  console.log('     npm run db:migrate         apply reviewed migrations');
   console.log('  2. Set the keys listed above in .env.local (see .env.example)');
   console.log('  3. npm run ingest:once        pull the first real posts and audience numbers');
   console.log('  4. npm run dev                sign in as the owner above');
   console.log('');
-  console.log('  Bluesky and RSS need no credentials, so step 3 produces real data');
-  console.log('  immediately. YouTube joins in as soon as YOUTUBE_API_KEY is set.');
+  console.log('  Bluesky needs no credentials, so step 3 produces real data immediately.');
+  console.log('  YouTube joins in as soon as YOUTUBE_API_KEY is set.');
   console.log('');
 }
 
@@ -499,7 +521,7 @@ function printNextSteps(): void {
 
 async function main(): Promise<void> {
   console.log('');
-  console.log('Seeding Pressbox');
+  console.log('Seeding Data Dumpster');
   console.log('----------------');
 
   const orgId = await seedOrg();

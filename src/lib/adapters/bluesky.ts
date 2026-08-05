@@ -351,9 +351,34 @@ export const blueskyAdapter: ChannelAdapter = {
     const profileBody = await xrpc<unknown>('app.bsky.actor.getProfile', { actor }, ctx);
     const { profile, audience } = readProfile(profileBody, ctx.handle);
 
+    if (ctx.limit <= 0) {
+      return {
+        posts: [],
+        audience: [audience],
+        profile,
+        cursor: {
+          did: profile.externalId,
+          handle: profile.handle,
+          lastRunAt: new Date().toISOString(),
+          windowSince: ctx.since.toISOString(),
+          windowUntil: ctx.until.toISOString(),
+          resumeCursor: null,
+          nextCursor: null,
+        },
+        hasMore: false,
+        exhaustive: false,
+        incompleteReason: 'Bluesky received a zero post limit, so no feed window was attempted. Run again with a positive limit before certifying coverage.',
+      };
+    }
+
     const posts: NormalizedPost[] = [];
     const seen = new Set<string>();
-    let cursor = typeof ctx.cursor.resumeCursor === 'string' ? ctx.cursor.resumeCursor : undefined;
+    const storedResumeCursor = typeof ctx.cursor.resumeCursor === 'string'
+      ? ctx.cursor.resumeCursor
+      : undefined;
+    const storedWindowMatches = ctx.cursor.windowSince === ctx.since.toISOString()
+      && ctx.cursor.windowUntil === ctx.until.toISOString();
+    let cursor = storedWindowMatches ? storedResumeCursor : undefined;
     let pages = 0;
     let hasMore = false;
     let reachedWindow = false;
@@ -362,7 +387,10 @@ export const blueskyAdapter: ChannelAdapter = {
       pages++;
       const body = await xrpc<unknown>('app.bsky.feed.getAuthorFeed', {
         actor: profile.externalId,
-        limit: FEED_PAGE_SIZE,
+        // Keep the vendor cursor immediately after the last accepted row. If
+        // the final request over-fetched beyond ctx.limit, resuming from its
+        // cursor would silently skip the unused tail of that page.
+        limit: Math.max(1, Math.min(FEED_PAGE_SIZE, ctx.limit - posts.length)),
         cursor,
         // Include the author's own reply threads: for a newsroom account,
         // replies are where the reporting conversation actually happens, and
@@ -372,6 +400,7 @@ export const blueskyAdapter: ChannelAdapter = {
 
       const root = asRecord(body);
       const feed = asArray(root?.feed);
+      const nextCursor = asString(root?.cursor);
       let oldestOnPage: Date | undefined;
 
       for (const raw of feed) {
@@ -389,11 +418,14 @@ export const blueskyAdapter: ChannelAdapter = {
 
       if (posts.length >= ctx.limit) {
         posts.length = ctx.limit;
-        hasMore = true;
+        // Resume after the page we just consumed, never from the token that
+        // led to it. An exact final page has no continuation and is complete.
+        cursor = nextCursor;
+        hasMore = Boolean(nextCursor);
         break;
       }
 
-      cursor = asString(root?.cursor);
+      cursor = nextCursor;
       if (!cursor || feed.length === 0) break;
       // The feed is strictly reverse-chronological, so once a whole page sits
       // before `since` there is nothing left in the window.
@@ -409,11 +441,22 @@ export const blueskyAdapter: ChannelAdapter = {
         did: profile.externalId,
         handle: profile.handle,
         lastRunAt: new Date().toISOString(),
+        windowSince: ctx.since.toISOString(),
+        windowUntil: ctx.until.toISOString(),
         // Only worth resuming from mid-history when we ran out of pages before
         // reaching the window; otherwise the next run starts from the top.
         resumeCursor: hasMore && !reachedWindow ? cursor ?? null : null,
+        // Generic alias lets the runner preserve this exact attempted window
+        // when it resumes outside the durable collection queue.
+        nextCursor: hasMore && !reachedWindow ? cursor ?? null : null,
       },
-      hasMore,
+      ...(hasMore
+        ? {
+            hasMore: true as const,
+            exhaustive: false as const,
+            incompleteReason: 'Bluesky stopped at the per-run post or page limit; the saved resume cursor must be collected before this window is complete.',
+          }
+        : { hasMore: false as const, exhaustive: true as const }),
     };
   },
 

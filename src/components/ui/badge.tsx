@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
+import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { PlatformIcon } from './platform-icon';
 
 type Tone = 'neutral' | 'accent' | 'positive' | 'warning' | 'critical' | 'outline';
 
@@ -30,7 +31,7 @@ export function Badge({
   );
 }
 
-/** A platform chip that carries the platform's own brand color as a dot. */
+/** A platform chip with a recognizable brand mark and an optional text label. */
 export function PlatformBadge({
   platform,
   showLabel = true,
@@ -48,11 +49,7 @@ export function PlatformBadge({
       )}
       title={PLATFORM_LABELS[platform]}
     >
-      <span
-        aria-hidden
-        className="h-2 w-2 shrink-0 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/15"
-        style={{ backgroundColor: PLATFORM_COLORS[platform] }}
-      />
+      <PlatformIcon platform={platform} className="h-3 w-3" />
       {showLabel ? PLATFORM_LABELS[platform] : <span className="sr-only">{PLATFORM_LABELS[platform]}</span>}
     </span>
   );

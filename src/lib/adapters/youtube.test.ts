@@ -120,6 +120,8 @@ describe('YouTube uploads pagination', { concurrency: false }, () => {
       const first = await youtubeAdapter.fetch(context());
       assert.equal(first.posts.length, 500);
       assert.equal(first.hasMore, true);
+      assert.equal(first.exhaustive, false);
+      assert.match(first.incompleteReason ?? '', /resume the saved page token/i);
       assert.equal(first.cursor?.nextPageToken, 'page-11');
       assert.equal(first.cursor?.nextCursor, 'page-11');
 
@@ -127,6 +129,8 @@ describe('YouTube uploads pagination', { concurrency: false }, () => {
       assert.equal(second.posts.length, 12);
       assert.equal(second.posts[0]?.externalId, 'video-501');
       assert.equal(second.hasMore, false);
+      assert.equal(second.exhaustive, true);
+      assert.equal(second.incompleteReason, undefined);
       assert.equal(second.cursor?.nextPageToken, null);
       assert.equal(second.cursor?.nextCursor, null);
     });

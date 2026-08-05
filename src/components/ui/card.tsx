@@ -10,7 +10,7 @@ export function Card({ className, ...props }: React.ComponentProps<'section'>) {
     <section
       {...props}
       className={cn(
-        'rounded-lg border border-zinc-200 bg-white',
+        'min-w-0 max-w-full rounded-lg border border-zinc-200 bg-white',
         'dark:border-zinc-800 dark:bg-zinc-900/40',
         className,
       )}

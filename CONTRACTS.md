@@ -1,86 +1,239 @@
-# Data Dumpster — build contract for parallel agents
+# Data Dumpster build contract
 
-Read this before writing a line. It is the only coordination mechanism between us.
+Read this before changing code. `src/db/schema.ts` is the data-model source of
+truth; this file records the invariants a green build alone cannot protect.
 
-## What we are building
+## Product contract
 
-Data Dumpster is a competitive social intelligence platform for newsrooms — a clone of
-Rival IQ, built to be better in three specific ways, targeted at Boston Globe Media
-as an internal tool.
+Data Dumpster is Boston Globe Media's internal competitive social-intelligence
+platform. A landscape is one focus company plus a comparison set. Every
+analytical screen answers: how did the focus company compare with that set on a
+defined metric, in this exact window, versus the previous equal-length window?
 
-Rival IQ's model, which we match:
-- A **landscape** is a named competitive set: one focus company plus N competitors.
-- Each **company** has **channels** (its handle on a platform).
-- Every screen answers one question: *how does the focus company compare to this set,
-  on this metric, over this window, versus the previous window of equal length?*
-- Screens: Cross-Channel overview, per-platform overview, Leaderboards, Social Posts
-  explorer, Post Tags, Posted URLs, Custom Dashboards, Reports, Alerts.
+The product earns trust through three properties:
 
-Where we beat it:
-1. **Bring your own model.** All AI runs on inference the org controls. No vendor
-   lock, no markup, no newsroom content going somewhere the newsroom did not pick.
-2. **Honest numbers.** Every metric is defined in the UI, every AI claim is generated
-   from a pre-computed fact sheet and is auditable. Rival IQ will print
-   "engagement up 265,895.2%" without blinking; we will not.
-3. **Newsroom-native.** Desk/vertical rollups and posted-URL analysis are first class,
-   not bolted on.
+1. The organization chooses and pays its own model provider.
+2. Metrics have one code-owned definition, explicit availability and auditable
+   provenance.
+3. Newsroom workflows such as desk tags, posted URLs, reports and alerts are
+   first-class.
+
+## Release gate
+
+The current schema is designed to pool public observations but does not yet
+isolate all owned-native data. Global `channels.isOwned`, cursors, collection
+state and raw payloads remain legacy mixed-mode structures. Phase 0 containment
+now forces pooled work through allowlisted deployment public sources and rejects
+owned-mode onboarding, so new normal collection cannot select an organization's
+owner credential. Historical rows still require contamination inventory,
+quarantine and public re-collection. Do not call the system safely multi-tenant
+or expand owned-insight use until `docs/OWNED-DATA-ISOLATION.md` is complete and
+its cross-tenant acceptance suite passes.
+
+Public competitive metrics must use only `public_comparable` observations.
+Owned saves, reach, impressions, clicks, native rates, signed media and raw
+payloads belong in organization-private storage behind a verified channel and
+credential binding. Public sharing and competitive AI may never consume them.
 
 ## Absolute rules
 
-- **TypeScript strict. `npm run typecheck` must pass when you finish.** This is not
-  optional and it is how your work gets accepted.
-- **Do not edit files you do not own.** File ownership is assigned in your prompt.
-  If you need something from another agent's area, code against the interface in
-  `src/lib/*/types.ts` and assume it exists.
-- **Never invent a metric definition.** They live in `src/lib/metrics/definitions.ts`.
-- **No mock data in production paths.** Seed data belongs only in `scripts/seed.ts`.
-- **Shell note: this machine has `NODE_ENV=production` exported.** Always run npm as
-  `NODE_ENV=development npm ...` or pass `--include=dev`, or dev deps vanish.
-- Run commands from `/Users/mkarolian/Developer/pressbox`.
-- Use `./node_modules/.bin/tsc --noEmit` (npx tsc does not work here).
-- Write files with shell heredocs (`cat > path <<'EOF' ... EOF`) via
-  Desktop Commander `start_process`. The `write_file` tool caps at 50 lines and will
-  make you miserable. Load Desktop Commander tools with ToolSearch first if needed.
+- TypeScript stays strict. Run `./node_modules/.bin/tsc --noEmit`; do not use
+  `npx tsc` in this repository.
+- Read the relevant guide in `node_modules/next/dist/docs/` before changing a
+  Next.js API or convention.
+- Never sum audience snapshots. Audience is a stock and every audience read
+  goes through `src/lib/metrics/` helpers that select a per-channel snapshot.
+- `changePct` returns `null` when the baseline is zero.
+- Missing is distinct from measured zero. Carry availability to the UI, exports
+  and fact sheets; exclude an unmeasured row from comparison averages.
+- Every AI number comes from the exact code-computed fact sheet supplied to the
+  model and passes deterministic citation and semantic verification before it
+  is saved or rendered.
+- No mock observations enter production paths. Seed data may create workspace
+  shape but never metrics.
+- No RSS ingestion. It was retired because posts with no comparable engagement
+  or audience distorted the product's averages.
+- Never commit secrets. Add every new environment variable to `.env.example`
+  and preserve an existing `.env.local`.
+- Apply every committed database migration before deploying application code
+  that reads its schema. A rolling deployment is not permission to reverse this
+  order.
 
-## Already built — do not recreate
+## Canonical metric vocabulary
 
-| File | What it is |
-|---|---|
-| `src/db/schema.ts` | Full Drizzle schema. Read it first; it is the source of truth for the data model. |
-| `src/db/index.ts` | `db` client (Neon HTTP driver). |
-| `src/lib/types.ts` | `Platform`, `PostType`, `MetricKey`, `MetricRow`, `AnalyticsQuery`, platform labels + colors. |
-| `src/lib/adapters/types.ts` | `ChannelAdapter`, `NormalizedPost`, `FetchContext`, `FetchResult`, `AdapterError`. |
-| `src/lib/ai/types.ts` | `ModelProvider`, `CompletionRequest`, `ResolvedModelConnection`, `ModelError`. |
-| `src/lib/crypto.ts` | `encrypt` / `decrypt` / `maskSecret` for tokens and API keys. |
-| `src/lib/utils.ts` | `cn`, `compactNumber`, `formatChange`, `percent`, `slugify`, `safeDomain`. |
-| `src/lib/dates.ts` | `presetRange`, `previousRange`, `autoGranularity`, `bucketKey`, `parseRangeParams`. |
-| `.env.example` | Every env var, documented. Add yours here if you introduce one. |
+- **applause**: likes, reactions, favorites, hearts, upvotes
+- **conversation**: comments, replies
+- **amplification**: shares, retweets, reposts, quotes
+- **saves**: saves or bookmarks where measured
+- **views**: video or impression views where measured
+- **engagementTotal**: applause + conversation + amplification + saves
+- **engagementPerPost**: engagementTotal / posts
+- **engagementRateByFollower**: mean of each measurable post's
+  engagementTotal / followersAtPost
+- **engagementRateByView**: engagementTotal / measured views
+- **audienceNetChange**: end stock - start stock
+- **shareOfVoice**: company posts / all landscape posts
+- **shareOfEngagement**: company engagementTotal / landscape engagementTotal
 
-## The metric vocabulary (canonical)
+`src/lib/metrics/definitions.ts` owns the labels, formulas and caveats. The
+follower-rate implementation is centralized in
+`src/lib/metrics/follower-rate.ts`: posts without a positive
+`followersAtPost` are excluded from both numerator and count, and the result is
+`null` when no post is measurable. Never replace this with pooled engagement
+divided by pooled followers.
 
-These names are used in the DB, the API, and the UI. Do not rename them.
+Some adapters normalize a platform field that was not exposed to a storage-level
+zero. That raw value alone is not evidence of measured zero. Product reads must
+consult coverage and metric availability before rendering, averaging or sending
+the value to AI.
 
-- **applause** — likes / reactions / favorites / hearts / upvotes
-- **conversation** — comments / replies
-- **amplification** — shares / retweets / reposts / quotes
-- **saves** — saves / bookmarks (where exposed)
-- **views** — video or impression views (where exposed)
-- **engagementTotal** — applause + conversation + amplification + saves
-- **engagementPerPost** — engagementTotal / posts
-- **engagementRateByFollower** — engagementTotal / followers / posts  ← the headline
-  comparability metric; it is the only one that is fair across audience sizes
-- **engagementRateByView** — engagementTotal / views (video only)
-- **audienceNetChange** — followers(end) − followers(start)
-- **shareOfVoice** — a company's posts ÷ all posts in the landscape
-- **shareOfEngagement** — a company's engagementTotal ÷ landscape total
+## Measurement boundary
+
+Measurement SQL is deliberately contained in these modules:
+
+- `src/lib/metrics/queries.ts`: core metrics, post and URL exploration, fact
+  sheets and report inputs;
+- `src/lib/metrics/content-analysis.ts`: Content Analysis;
+- `src/lib/metrics/ingestion-coverage.ts`: selected-window source coverage;
+- `src/lib/metrics/daily-coverage.ts`: audience-day health and recovery.
+
+Server Components call these modules directly. Route handlers are thin,
+Zod-validated wrappers for client interactions and external consumers. Every
+query resolves an organization-guarded landscape first; `companies.orgId` is
+attribution for a pooled company, not a tenancy boundary.
+
+All report and analytics dates use explicit IANA zones. Product metric windows
+are pinned to `America/New_York`; report schedules store their own IANA zone.
+Never use ambient process-local date methods for a product boundary.
+
+## Ingestion contract
+
+Every adapter implements `ChannelAdapter` and must return an explicit
+`FetchResult` completeness state:
+
+- `{ hasMore: false, exhaustive: true }` certifies the attempted window;
+- `{ hasMore: true, exhaustive: false, incompleteReason }` means a durable
+  continuation exists; and
+- `{ hasMore: false, exhaustive: false, incompleteReason }` means the source
+  returned useful but terminally limited data.
+
+Omission never means complete. The scheduler persists one of five outcomes:
+`certified_complete`, `continuation`, `terminal_source_limitation`,
+`retryable_operational_failure`, or `permanent_failure`. Only continuations run
+immediately; operational failures back off; terminal source limitations and
+permanent failures stop until a fresh or forced request. A source cap or selected
+feed must never become an infinite paid retry loop.
+
+Public account identity is global. `channels.identity_key` is the normalized
+platform/handle fallback, and a non-null platform `external_id` is unique within
+that platform. Each organization-private landscape records its own requested
+window in `landscape_channel_demands`; the scheduler pools those rows to one
+global state row, one source request and one lease per channel. A channel with no
+live demand cannot be claimed. Adding the same company to another landscape
+reuses stored observations and sufficiently fresh coverage; a wider unmet
+window creates one widened pooled job, not one crawl per landscape.
+
+The fetched platform id is a pre-write gate. The runner normalizes and claims it
+before any audience, post, snapshot, URL, tag or payload write. A blank id, a
+changed id for an already bound row, or an id claimed by another pooled row is a
+`permanent_failure` for operator reconciliation. It writes no observations and
+never guesses how to merge histories. An operational database error while
+checking the claim remains retryable.
+
+The only pre-identity persistence exception is an empty, still-running Bright
+Data snapshot from an explicitly implemented paid stage. Facebook, Instagram,
+TikTok, X and Threads bind each receipt to its source, dataset, stage and exact
+window and expose the snapshot id as a non-empty generic continuation cursor.
+The next run validates all of those fields and polls that snapshot instead of
+triggering another paid job. A multi-stage adapter may carry a profile identity
+that the source already returned, but no audience or post observation lands
+until the stable-id gate passes. A receipt older than 24 hours may start at most
+one automatic replacement, with a durable warning and counter in the cursor. If
+that replacement also remains pending, the adapter makes one final free poll of
+the saved receipt and then returns a non-retryable operator-review failure. It
+never starts a second automatic replacement. If the database cannot durably
+save a newly returned paid receipt, the run also fails permanently for operator
+review; automatic retry cannot prove that it would not purchase duplicate work.
+
+The durable Postgres queue:
+
+- requests 90 days for an uncollected profile;
+- re-reads a two-day overlap for mutable engagement;
+- considers settled profiles fresh for twelve hours;
+- claims rows with `FOR UPDATE SKIP LOCKED` and a six-minute lease;
+- runs up to ten network-bound workers while per-platform rate gates remain in
+  force; and
+- tracks attempted freshness separately from certified coverage.
+
+The shell exposes automatic collection status rather than a user-triggered paid
+refresh. New freshness windows open at 00:00 and 12:00 UTC. Offset recovery
+workers may resume continuations, paid receipts and eligible retries already in
+the durable queue, but they never reconcile fresh profiles into another window.
+The browser can monitor an active `refresh_jobs` coordinator and may be closed
+without stopping collection. The authenticated `POST /api/ingest/run` remains
+available for controlled recovery clients, but it respects the same twelve-hour
+freshness fence and cannot force a third normal crawl. Terminal counters and
+activity are frozen because the pooled channel queue continues changing after a
+coordinator finishes.
+
+Neon's HTTP driver does not provide a multi-statement transaction. The write
+order is load-bearing: stable platform identity first, audience second, posts
+third, metric snapshots fourth, then posted URLs and organization-private tag
+assignments, with the channel cursor and watermark last. Posts and most
+dependents are idempotent upserts.
+Posted URLs are a scoped delete-then-insert and briefly disappear between those
+statements; a failure leaves the cursor unchanged so the next run repairs them.
+The audit row is best effort and must not hide the primary outcome.
+
+The one-shot CLI is another queue dispatcher, not a direct runner. Real runs
+register each selected channel's demands across its landscapes and claim only
+through the global lease. `--dry-run` performs only the read-only target query:
+it registers no demand, imports no writable queue path, makes no vendor call and
+writes nothing. An untracked channel is reported but cannot be crawled until it
+belongs to a landscape.
+
+Public company and channel deletion is disabled in product routes because it
+would cascade pooled history. Removing landscape membership removes that
+landscape's demand while preserving the global identity and observations for
+reuse. `channels.active` is only a global admin quarantine, requires explicit
+global scope, and cannot be changed through one organization while the company
+is shared with another.
+
+Before mapping a vendor response, call the real endpoint and inspect a sanitized
+payload. A documented field name is not a contract until a fixture and mapper
+test prove it.
+
+## AI contract
+
+Ask and Brief receive only a typed fact sheet produced by the metric layer. The
+model has no database tools and performs no trusted arithmetic.
+
+- Ask recomputes the exact selected scope, compares its SHA-256 fingerprint with
+  the fact sheet displayed by the browser, and returns 409 before model spend if
+  the data changed.
+- The verifier checks every numeric claim, full array-indexed citation path,
+  metric subject and printed-percent guardrail.
+- Brief verification also requires every fact-sheet caveat.
+- One repair turn is allowed. A second failure returns 422; the prose is not
+  saved or rendered. Historical briefs without an explicit passing verdict are
+  withheld.
 
 ## Design language
 
-Dense, quiet, and fast. Think Linear or Vercel's dashboard, not a marketing site.
-- Neutral zinc/slate surfaces; one accent (`#C8102E`, Globe red) used sparingly.
-- Data is the only thing allowed to be colorful; platform colors come from
-  `PLATFORM_COLORS`.
-- Numbers right-aligned and tabular (`tabular-nums`). Deltas green/red, muted.
-- Every metric label has an info tooltip carrying its definition.
-- Dark mode supported via Tailwind `dark:` classes throughout.
-- No emoji anywhere in the product UI.
+Dense, quiet and fast, closer to Linear than a marketing site. Neutral zinc and
+slate surfaces, Globe red (`#C8102E`) as the restrained accent, platform colors
+only for data, right-aligned tabular numbers, explicit blanks and caveats, dark
+mode throughout, and no emoji in the product UI.
+
+## Required verification
+
+Run from `/Users/mkarolian/Developer/pressbox`:
+
+    ./node_modules/.bin/tsc --noEmit
+    npm run lint
+    npm test
+    npm run build
+    ./node_modules/.bin/drizzle-kit check
+
+If the shell has `NODE_ENV=production`, unset it first so npm does not omit the
+test and build toolchain.

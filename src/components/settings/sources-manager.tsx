@@ -2,20 +2,25 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, PauseCircle, PlayCircle, Plus, Radio, Search, Trash2 } from 'lucide-react';
-import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
-import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
+import { Check, Loader2, Plus, Radio, Search } from 'lucide-react';
+import { PLATFORM_LABELS, type Platform } from '@/lib/types';
+import type { CollectionOutcome } from '@/lib/adapters/types';
+import {
+  ADDABLE_PUBLIC_PROFILE_PLATFORMS,
+  POOLED_SOURCE_DISCLOSURE,
+  nextAddablePublicPlatform,
+} from '@/lib/adapters/supported-platforms';
 import { platformAudienceNoun, platformHandleLabel } from '@/lib/platform-language';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { Toggle } from '@/components/ui/toggle';
 import { Badge, Dot } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Tooltip } from '@/components/ui/tooltip';
 import { formatRelative } from '@/components/ui/format';
+import { PlatformIcon } from '@/components/ui/platform-icon';
 
 export interface ChannelRecord {
   id: string;
@@ -23,11 +28,11 @@ export interface ChannelRecord {
   handle: string;
   profileUrl: string | null;
   active: boolean;
-  isOwned: boolean;
   lastIngestedAt: string | null;
   lastRunStatus: string | null;
   lastRunError: string | null;
   collectionStatus: 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | null;
+  collectionOutcome: CollectionOutcome | null;
   collectionRequiredSince: string | null;
   collectionRequiredUntil: string | null;
   collectionCoverageSince: string | null;
@@ -49,7 +54,7 @@ export interface CompanySources {
   channels: ChannelRecord[];
 }
 
-export type CollectionHealth = 'complete' | 'collecting' | 'blocked' | 'paused';
+export type CollectionHealth = 'complete' | 'collecting' | 'limited' | 'blocked' | 'paused';
 
 interface BlockedCause {
   key: string;
@@ -70,12 +75,20 @@ export interface CollectionHealthSummary {
   total: number;
   complete: number;
   collecting: number;
+  limited: number;
   blocked: number;
   paused: number;
   blockedCauses: Array<BlockedCause & {
     count: number;
     profiles: string[];
     errors: string[];
+    platforms: Partial<Record<Platform, number>>;
+  }>;
+  limitedCauses: Array<BlockedCause & {
+    count: number;
+    profiles: string[];
+    errors: string[];
+    platforms: Partial<Record<Platform, number>>;
   }>;
 }
 
@@ -98,20 +111,27 @@ function coversRequiredWindow(channel: ChannelRecord): boolean {
     && coverageUntil >= requiredUntil;
 }
 
-function errorCause(error: string | null): BlockedCause {
+function errorCause(error: string | null, platform?: Platform): BlockedCause {
   const value = error?.toLowerCase() ?? '';
+  if (platform === 'facebook' && value.includes('meta / ppca is not connected')) {
+    return {
+      key: 'facebook-source-policy',
+      title: 'Facebook is on the pooled vendor route',
+      action: 'The next automatic window will collect the existing profile through Bright Data. New Facebook profile onboarding remains unavailable.',
+    };
+  }
   if (/not implemented|unsupported|no adapter/.test(value)) {
     return {
       key: 'unsupported',
       title: 'Platform collection is not configured',
-      action: 'Connect a supported source for this platform, then refresh data.',
+      action: 'Connect a supported source for this platform; collection will resume automatically.',
     };
   }
   if (/customer is not active|subscription|credits|quota|billing/.test(value)) {
     return {
       key: 'vendor-access',
       title: 'Collection vendor access is blocked',
-      action: 'Restore the vendor account or quota, then refresh data.',
+      action: 'Restore the vendor account or quota; collection will resume automatically.',
     };
   }
   if (/credential|api key|token|unauthorized|forbidden|\b401\b|\b403\b|authentication/.test(value)) {
@@ -144,19 +164,14 @@ export function collectionStateOf(
   channel: ChannelRecord,
   nowMs = Date.now(),
 ): CollectionViewState {
-  const error = (channel.collectionLastError ?? channel.lastRunError)?.trim() || null;
+  const rawError = (channel.collectionLastError ?? channel.lastRunError)?.trim() || null;
+  const legacyMetaError = channel.platform === 'facebook'
+    && /page public content access|\bppca\b|ppcaApproved|ppcaAccessToken|meta requires/i.test(rawError ?? '');
+  const error = legacyMetaError
+    ? POOLED_SOURCE_DISCLOSURE.facebook + ' ' + POOLED_SOURCE_DISCLOSURE.meta
+    : rawError;
 
   if (!channel.active) {
-    if (channel.platform === 'linkedin' && !channel.isOwned) {
-      return {
-        health: 'paused',
-        label: 'Unavailable',
-        explanation: 'Public LinkedIn competitor collection is unavailable. This profile is retained but excluded from completeness totals.',
-        color: '#f59e0b',
-        error,
-        cause: null,
-      };
-    }
     if (channel.platform === 'reddit' && /^r\//i.test(channel.handle)) {
       return {
         health: 'paused',
@@ -179,7 +194,7 @@ export function collectionStateOf(
 
   if (
     channel.collectionStatus === 'succeeded'
-    && channel.collectionHasMore === false
+    && channel.collectionOutcome === 'certified_complete'
     && coversRequiredWindow(channel)
   ) {
     return {
@@ -202,7 +217,7 @@ export function collectionStateOf(
       cause: {
         key: 'not-queued',
         title: 'Profiles have not been queued',
-        action: 'Use Refresh data to create collection work for these profiles.',
+        action: 'The next twice-daily collection window will create work for these profiles.',
       },
     };
   }
@@ -228,45 +243,110 @@ export function collectionStateOf(
       cause: {
         key: 'stalled',
         title: 'Collection workers stalled',
-        action: 'Use Refresh data to requeue the expired work.',
+        action: 'The recovery worker will reclaim this expired work automatically.',
       },
     };
   }
 
-  if (channel.collectionNextAttemptAt) {
-    const label = channel.collectionStatus === 'failed'
-      ? 'Retrying'
-      : channel.collectionStatus === 'partial'
-        ? 'Continuing'
-        : 'Queued';
+  if (channel.collectionOutcome === 'terminal_source_limitation') {
+    return {
+      health: 'limited',
+      label: 'Partial',
+      explanation: 'Recent data is usable, but the source cannot prove complete history for the full window.',
+      color: '#f59e0b',
+      error,
+      cause: {
+        key: 'source-limited',
+        title: 'Historical coverage is partial',
+        action: 'Current totals remain visible as partial. Rankings are provisional and WoW change is withheld until both windows are complete.',
+      },
+    };
+  }
+
+  if (channel.collectionOutcome === 'permanent_failure') {
+    const cause = error ? errorCause(error, channel.platform) : {
+      key: 'permanent-failure',
+      title: 'Collection needs operator attention',
+      action: 'Correct the source or credential configuration; the next automatic window will try again.',
+    };
+    return {
+      health: 'blocked',
+      label: 'Action required',
+      explanation: 'Collection stopped because this failure requires an operator or configuration change.',
+      color: '#ef4444',
+      error,
+      cause,
+    };
+  }
+
+  if (channel.collectionOutcome === 'continuation') {
     return {
       health: 'collecting',
-      label,
-      explanation: channel.collectionStatus === 'failed'
-        ? 'A retry is scheduled after a recoverable error.'
-        : 'More collection work is queued for this profile.',
+      label: 'Continuing',
+      explanation: channel.collectionNextAttemptAt
+        ? 'The source returned a continuation cursor. Another page is queued for collection.'
+        : 'The source returned a continuation cursor. More collection work remains.',
       color: '#2563eb',
       error,
       cause: null,
     };
   }
 
-  if (channel.collectionStatus === 'succeeded') {
+  if (channel.collectionOutcome === 'retryable_operational_failure') {
+    return {
+      health: 'collecting',
+      label: 'Retrying',
+      explanation: channel.collectionNextAttemptAt
+        ? 'A retry is scheduled after a recoverable operational error.'
+        : 'A recoverable operational error is waiting to be retried.',
+      color: '#2563eb',
+      error,
+      cause: null,
+    };
+  }
+
+  if (channel.collectionNextAttemptAt) {
+    return {
+      health: 'collecting',
+      label: 'Queued',
+      explanation: 'Collection work is queued for this profile.',
+      color: '#2563eb',
+      error,
+      cause: null,
+    };
+  }
+
+  if (channel.collectionOutcome === 'certified_complete') {
     return {
       health: 'blocked',
       label: 'Coverage gap',
-      explanation: 'The run ended without covering the full requested window.',
+      explanation: 'The latest attempt was certified, but durable coverage does not span the full requested window.',
       color: '#ef4444',
       error,
       cause: {
         key: 'coverage-gap',
         title: 'Requested history is incomplete',
-        action: 'Use Refresh data to request the missing part of the window.',
+        action: 'The next automatic window will request the missing part of the window.',
       },
     };
   }
 
-  const cause = errorCause(error);
+  if (channel.collectionStatus === 'succeeded') {
+    return {
+      health: 'blocked',
+      label: 'Unverified status',
+      explanation: 'Coverage exists, but no certified collection outcome is recorded.',
+      color: '#ef4444',
+      error,
+      cause: {
+        key: 'uncertified-outcome',
+        title: 'Completed runs are missing certification',
+        action: 'The next automatic window will ask the source to certify the requested window.',
+      },
+    };
+  }
+
+  const cause = errorCause(error, channel.platform);
   return {
     health: 'blocked',
     label: channel.collectionStatus === 'queued' ? 'Not scheduled' : 'Blocked',
@@ -279,7 +359,7 @@ export function collectionStateOf(
       ? {
           key: 'not-scheduled',
           title: 'Queued profiles have no scheduled attempt',
-          action: 'Use Refresh data to schedule this work.',
+          action: 'The recovery worker will schedule this queued work automatically.',
         }
       : cause,
   };
@@ -293,11 +373,14 @@ export function summarizeCollectionHealth(
     total: 0,
     complete: 0,
     collecting: 0,
+    limited: 0,
     blocked: 0,
     paused: 0,
     blockedCauses: [],
+    limitedCauses: [],
   };
-  const groups = new Map<string, CollectionHealthSummary['blockedCauses'][number]>();
+  const blockedGroups = new Map<string, CollectionHealthSummary['blockedCauses'][number]>();
+  const limitedGroups = new Map<string, CollectionHealthSummary['limitedCauses'][number]>();
 
   for (const company of companies) {
     for (const channel of company.channels) {
@@ -308,22 +391,26 @@ export function summarizeCollectionHealth(
       }
       summary.total += 1;
       summary[state.health] += 1;
-      if (state.health !== 'blocked' || !state.cause) continue;
+      if ((state.health !== 'blocked' && state.health !== 'limited') || !state.cause) continue;
 
+      const groups = state.health === 'limited' ? limitedGroups : blockedGroups;
       const group = groups.get(state.cause.key) ?? {
         ...state.cause,
         count: 0,
         profiles: [],
         errors: [],
+        platforms: {},
       };
       group.count += 1;
       group.profiles.push(company.name + ' · ' + platformHandleLabel(channel.platform, channel.handle));
       if (state.error && !group.errors.includes(state.error)) group.errors.push(state.error);
+      group.platforms[channel.platform] = (group.platforms[channel.platform] ?? 0) + 1;
       groups.set(state.cause.key, group);
     }
   }
 
-  summary.blockedCauses = [...groups.values()].sort((a, b) => b.count - a.count);
+  summary.blockedCauses = [...blockedGroups.values()].sort((a, b) => b.count - a.count);
+  summary.limitedCauses = [...limitedGroups.values()].sort((a, b) => b.count - a.count);
   return summary;
 }
 
@@ -343,46 +430,7 @@ export function SourcesManager({
 }) {
   const router = useRouter();
   const [addingFor, setAddingFor] = React.useState<string | null>(null);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
   const health = summarizeCollectionHealth(companies);
-
-  const toggleChannel = async (companyId: string, channelId: string, active: boolean) => {
-    setBusyId(channelId);
-    setError(null);
-    try {
-      const res = await fetch('/api/companies/' + companyId + '/channels', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ channelId, active }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res));
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update the channel.');
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const removeChannel = async (companyId: string, channelId: string) => {
-    setBusyId(channelId);
-    setError(null);
-    try {
-      const res = await fetch(
-        '/api/companies/' + companyId + '/channels?channelId=' + encodeURIComponent(channelId),
-        {
-        method: 'DELETE',
-        },
-      );
-      if (!res.ok) throw new Error(await readApiError(res));
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove the channel.');
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   if (companies.length === 0) {
     return (
@@ -399,11 +447,19 @@ export function SourcesManager({
 
   return (
     <div className="space-y-3">
-      {error ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+      <div
+        role="note"
+        aria-label="Pooled source routing"
+        className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40"
+      >
+        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">Pooled source routing</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+          {POOLED_SOURCE_DISCLOSURE.vendors} {POOLED_SOURCE_DISCLOSURE.facebook}
         </p>
-      ) : null}
+        <p className="mt-1 text-xs font-medium leading-relaxed text-amber-800 dark:text-amber-300">
+          {POOLED_SOURCE_DISCLOSURE.meta}
+        </p>
+      </div>
 
       <Card>
         <CardHeader>
@@ -413,20 +469,23 @@ export function SourcesManager({
               Durable status for every active profile in {landscapeName}.
             </p>
           </div>
-          <Badge tone={health.blocked > 0 ? 'critical' : health.collecting > 0 ? 'accent' : 'positive'}>
+          <Badge tone={health.blocked > 0 ? 'critical' : health.limited > 0 ? 'warning' : health.collecting > 0 ? 'accent' : 'positive'}>
             {health.blocked > 0
-              ? health.blocked + ' blocked'
-              : health.collecting > 0
-                ? 'Collection in progress'
-                : health.total > 0 ? 'Complete' : 'No active profiles'}
+              ? health.blocked + (health.blocked === 1 ? ' vendor issue' : ' vendor issues')
+              : health.limited > 0
+                ? health.complete + health.limited + ' profiles reporting'
+                : health.collecting > 0
+                  ? 'Collection in progress'
+                  : health.total > 0 ? 'Complete' : 'No active profiles'}
           </Badge>
         </CardHeader>
-        <div className="grid grid-cols-2 divide-x divide-y divide-zinc-200 sm:grid-cols-4 sm:divide-y-0 dark:divide-zinc-800">
+        <div className="grid grid-cols-2 divide-x divide-y divide-zinc-200 sm:grid-cols-5 sm:divide-y-0 dark:divide-zinc-800">
           {([
             ['Active profiles', health.total, 'text-zinc-900 dark:text-zinc-100'],
             ['Complete', health.complete, 'text-emerald-700 dark:text-emerald-400'],
             ['Collecting', health.collecting, 'text-blue-700 dark:text-blue-400'],
-            ['Blocked', health.blocked, health.blocked > 0 ? 'text-red-700 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100'],
+            ['Usable, partial', health.limited, health.limited > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-900 dark:text-zinc-100'],
+            ['Action required', health.blocked, health.blocked > 0 ? 'text-red-700 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100'],
           ] as const).map(([label, value, color]) => (
             <div key={label} className="px-4 py-3">
               <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">{label}</p>
@@ -435,10 +494,71 @@ export function SourcesManager({
           ))}
         </div>
 
+        {health.limitedCauses.length > 0 ? (
+          <div className="border-t border-amber-200 bg-amber-50/60 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+            <p className="text-xs font-semibold text-amber-950 dark:text-amber-200">
+              Partial does not mean broken
+            </p>
+            <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-amber-900/80 dark:text-amber-300/90">
+              {health.limited} profiles returned usable recent data. Their totals are visible, but Data Dumpster will not invent missing history or a WoW comparison. Open a group only when you need the vendor-level explanation.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {Object.entries(health.limitedCauses.reduce<Partial<Record<Platform, number>>>((totals, cause) => {
+                for (const [platform, value] of Object.entries(cause.platforms)) {
+                  const key = platform as Platform;
+                  totals[key] = (totals[key] ?? 0) + (value ?? 0);
+                }
+                return totals;
+              }, {})).map(([platform, value]) => (
+                <span key={platform} className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-zinc-600 ring-1 ring-amber-200 dark:bg-zinc-950 dark:text-zinc-300 dark:ring-amber-900/70">
+                  <PlatformIcon platform={platform as Platform} />
+                  {PLATFORM_LABELS[platform as Platform] + ' ' + value}
+                </span>
+              ))}
+            </div>
+            <div className="mt-2 space-y-2">
+              {health.limitedCauses.map((cause) => (
+                <details
+                  key={cause.key}
+                  className="rounded-md border border-amber-200 bg-white px-3 py-2 dark:border-amber-900/50 dark:bg-zinc-950/60"
+                >
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-xs font-semibold text-zinc-900 marker:hidden dark:text-zinc-100">
+                    <span className="flex items-center gap-2">
+                      {Object.keys(cause.platforms).slice(0, 4).map((platform) => (
+                        <PlatformIcon key={platform} platform={platform as Platform} />
+                      ))}
+                      {cause.title}
+                    </span>
+                    <Badge tone="warning">{cause.count} {cause.count === 1 ? 'profile' : 'profiles'}</Badge>
+                  </summary>
+                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    {cause.action}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-500">
+                    {cause.profiles.slice(0, 8).join(', ')}
+                    {cause.profiles.length > 8 ? ' · +' + (cause.profiles.length - 8) + ' more' : ''}
+                  </p>
+                  {cause.errors.slice(0, 3).map((causeError) => (
+                    <p
+                      key={causeError}
+                      className="mt-1 break-words rounded bg-amber-50 px-2 py-1 font-mono text-[10px] leading-relaxed text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                    >
+                      {causeError}
+                    </p>
+                  ))}
+                </details>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {health.blockedCauses.length > 0 ? (
           <div className="border-t border-red-200 bg-red-50/60 px-4 py-3 dark:border-red-900/50 dark:bg-red-950/20">
             <p className="text-xs font-semibold text-red-900 dark:text-red-200">
-              Resolve these before using the landscape’s rankings
+              Operator action is needed for {health.blocked} {health.blocked === 1 ? 'profile' : 'profiles'}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-red-800 dark:text-red-300">
+              Other measured profiles and provisional rankings remain available while this is resolved.
             </p>
             <ul className="mt-2 space-y-2">
               {health.blockedCauses.map((cause) => (
@@ -492,7 +612,11 @@ export function SourcesManager({
               <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                 {company.channels.length === 0
                   ? 'No channels connected'
-                  : companyHealth.complete + ' of ' + companyHealth.total + ' active profiles complete'
+                  : companyHealth.total + ' active · '
+                    + companyHealth.complete + ' full history · '
+                    + companyHealth.limited + ' usable partial · '
+                    + companyHealth.collecting + ' collecting'
+                    + (companyHealth.blocked > 0 ? ' · ' + companyHealth.blocked + ' action needed' : '')
                     + (companyHealth.paused > 0 ? ' · ' + companyHealth.paused + ' paused' : '')}
               </p>
             </div>
@@ -525,7 +649,7 @@ export function SourcesManager({
             <EmptyState
               compact
               title="Nothing connected yet"
-              description="Paste a profile URL or a handle. Data Dumpster resolves it to a platform id on the first ingest."
+              description="Add a public social profile. Data Dumpster verifies the account first, then collects only competitor-comparable public fields."
             />
           ) : (
             <>
@@ -544,7 +668,7 @@ export function SourcesManager({
                 */}
               <div
                 aria-hidden
-                className="flex items-center gap-3 border-b border-zinc-200 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:border-zinc-800 dark:text-zinc-500"
+                className="hidden items-center gap-3 border-b border-zinc-200 px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 sm:flex dark:border-zinc-800 dark:text-zinc-500"
               >
                 <span className="w-4 shrink-0" />
                 <span className="w-2 shrink-0" />
@@ -553,7 +677,6 @@ export function SourcesManager({
                 <span className="w-[4.5rem] shrink-0 text-center">Status</span>
                 <span className="w-24 shrink-0 text-right">Last collected</span>
                 <span className="w-14 shrink-0 text-right">Posts, all time</span>
-                <span className="w-[3.75rem] shrink-0" />
               </div>
               <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
               {company.channels.map((channel) => {
@@ -562,12 +685,14 @@ export function SourcesManager({
                   ? 'positive'
                   : state.health === 'collecting'
                     ? 'accent'
+                    : state.health === 'limited'
+                      ? 'warning'
                     : state.health === 'blocked'
                       ? 'critical'
                       : state.label === 'Paused' ? 'outline' : 'warning';
                 return (
                   <li key={channel.id} className="px-4 py-2.5">
-                    <div className="flex items-center gap-3">
+                    <div className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:gap-3">
                       <Tooltip
                         side="top"
                         content={
@@ -586,12 +711,8 @@ export function SourcesManager({
                         </span>
                       </Tooltip>
 
-                      <span
-                        aria-hidden
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: PLATFORM_COLORS[channel.platform] }}
-                      />
-                      <span className="w-24 shrink-0 text-xs text-zinc-600 dark:text-zinc-400">
+                      <PlatformIcon platform={channel.platform} />
+                      <span className="hidden w-24 shrink-0 text-xs text-zinc-600 sm:block dark:text-zinc-400">
                         {PLATFORM_LABELS[channel.platform]}
                       </span>
 
@@ -608,81 +729,46 @@ export function SourcesManager({
                         ) : (
                           platformHandleLabel(channel.platform, channel.handle)
                         )}
-                        {channel.isOwned ? <Badge tone="outline" className="ml-2">Owned</Badge> : null}
                       </span>
 
                       <Badge tone={tone} className="justify-center">{state.label}</Badge>
                       <span
-                        className="pb-num w-24 shrink-0 text-right text-[11px] text-zinc-400"
+                        className="pb-num hidden w-24 shrink-0 text-right text-[11px] text-zinc-400 sm:block"
                         title="Last successful ingest"
                       >
                         {formatRelative(channel.lastIngestedAt)}
                       </span>
                       <span
-                        className="pb-num w-14 shrink-0 text-right text-[11px] text-zinc-400"
+                        className="pb-num hidden w-14 shrink-0 text-right text-[11px] text-zinc-400 sm:block"
                         title="Collected posts"
                       >
                         {channel.postCount.toLocaleString('en-US')}
                       </span>
-
-                      {/* Pause is the safe verb and sits first. Deleting cascades
-                          and takes every post collected under this handle with it,
-                          which is almost never what "stop tracking" means. */}
-                      {company.manageable ? (
-                        <>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={(channel.active ? 'Pause ' : 'Resume ') + channel.handle}
-                            title={channel.active
-                              ? 'Pause polling. Keeps everything already collected.'
-                              : 'Resume polling.'}
-                            disabled={busyId === channel.id}
-                            onClick={() => toggleChannel(company.id, channel.id, !channel.active)}
-                          >
-                            {busyId === channel.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                            ) : channel.active ? (
-                              <PauseCircle className="h-3.5 w-3.5" aria-hidden />
-                            ) : (
-                              <PlayCircle className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
-                            )}
-                          </Button>
-
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={'Remove ' + channel.handle}
-                            title="Delete this channel and every post collected under it."
-                            disabled={busyId === channel.id}
-                            onClick={() => {
-                              if (channel.postCount > 0 && !window.confirm(
-                                'Delete ' + channel.handle + '? This also deletes '
-                                + channel.postCount.toLocaleString('en-US')
-                                + ' collected posts and cannot be undone. Pause instead to keep the history.',
-                              )) return;
-                              void removeChannel(company.id, channel.id);
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                          </Button>
-                        </>
-                      ) : (
-                        <span className="text-[11px] text-zinc-400">Managed globally</span>
-                      )}
+                      <span className="col-span-4 flex min-w-0 items-center gap-2 text-[10px] text-zinc-400 sm:hidden">
+                        <span>{PLATFORM_LABELS[channel.platform]}</span>
+                        <span aria-hidden>·</span>
+                        <span>{'Collected ' + formatRelative(channel.lastIngestedAt)}</span>
+                        <span aria-hidden>·</span>
+                        <span className="pb-num">{channel.postCount.toLocaleString('en-US') + ' posts'}</span>
+                      </span>
                     </div>
 
-                    {state.health === 'blocked' || state.health === 'paused' ? (
-                      <div className={cn(
+                    {state.health === 'blocked' || state.health === 'limited' || state.health === 'paused' ? (
+                      <details className={cn(
                         'ml-5 mt-2 rounded-md border px-3 py-2 text-[11px] leading-relaxed',
                         state.health === 'blocked'
                           ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/25 dark:text-red-300'
+                          : state.health === 'limited'
+                            ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/25 dark:text-amber-300'
                           : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/25 dark:text-amber-300',
-                      )}>
-                        <p className="font-medium">{state.explanation}</p>
+                      )} open={state.health === 'blocked'}>
+                        <summary className="cursor-pointer font-medium marker:text-current">
+                          {state.health === 'limited' ? 'Why this profile is partial' : state.explanation}
+                        </summary>
+                        {state.health === 'limited' ? <p className="mt-1">{state.explanation}</p> : null}
                         {state.error ? <p className="mt-0.5 break-words font-mono text-[10px]">{state.error}</p> : null}
                         {state.cause ? <p className="mt-0.5">{state.cause.action}</p> : null}
-                      </div>
+                      </details>
                     ) : null}
                   </li>
                 );
@@ -744,22 +830,47 @@ const SEVERITY_STYLE: Record<VerifyWarning['severity'], string> = {
  * looking at the account that actually came back, so the form makes that
  * unavoidable rather than optional.
  */
-export function AddChannelForm({
-  companyId,
-  existing,
-  onDone,
-  onCancel,
-}: {
+interface AddChannelFormProps {
   companyId: string;
   existing: Platform[];
   onDone: () => void;
   onCancel: () => void;
-}) {
-  const [platform, setPlatform] = React.useState<Platform>(
-    ADAPTER_SUPPORTED_PLATFORMS.find((p) => !existing.includes(p)) ?? 'facebook',
+}
+
+export function AddChannelForm(props: AddChannelFormProps) {
+  const initialPlatform = nextAddablePublicPlatform(props.existing);
+  if (!initialPlatform) {
+    return (
+      <div className="space-y-3 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+        <div>
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            Every available public platform is already connected
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+            Data Dumpster adds one competitor-comparable public profile per platform here. New
+            Facebook profiles are paused until verification can reuse the first paid crawl.
+          </p>
+        </div>
+        <Button type="button" size="sm" onClick={props.onCancel}>Close</Button>
+      </div>
+    );
+  }
+
+  return <AddChannelFormFields {...props} initialPlatform={initialPlatform} />;
+}
+
+function AddChannelFormFields({
+  companyId,
+  existing,
+  onDone,
+  onCancel,
+  initialPlatform,
+}: AddChannelFormProps & { initialPlatform: Platform }) {
+  const availablePlatforms = ADDABLE_PUBLIC_PROFILE_PLATFORMS.filter(
+    (candidate) => !existing.includes(candidate),
   );
+  const [platform, setPlatform] = React.useState<Platform>(initialPlatform);
   const [input, setInput] = React.useState('');
-  const [isOwned, setIsOwned] = React.useState(false);
   const [checking, setChecking] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [found, setFound] = React.useState<VerifyResult | null>(null);
@@ -804,9 +915,6 @@ export function AddChannelForm({
         body: JSON.stringify({
           platform,
           input: input.trim(),
-          // Reddit's account and community measurements both come from public
-          // data; the owned-insights distinction does not apply.
-          isOwned: platform === 'reddit' ? false : isOwned,
         }),
       });
       if (!res.ok) throw new Error(await readApiError(res));
@@ -825,12 +933,10 @@ export function AddChannelForm({
           <Select
             value={platform}
             onChange={(e) => {
-              const nextPlatform = e.target.value as Platform;
-              setPlatform(nextPlatform);
-              if (nextPlatform === 'reddit') setIsOwned(false);
+              setPlatform(e.target.value as Platform);
               reset();
             }}
-            options={ADAPTER_SUPPORTED_PLATFORMS.map((p) => ({
+            options={availablePlatforms.map((p) => ({
               value: p,
               label: PLATFORM_LABELS[p],
             }))}
@@ -859,18 +965,13 @@ export function AddChannelForm({
         </Field>
       </div>
 
-      {platform === 'reddit' ? (
-        <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-          Reddit publisher accounts use public data, so no owned-account connection is required.
-        </p>
-      ) : (
-        <Toggle
-          checked={isOwned}
-          onChange={setIsOwned}
-          label="We own this channel"
-          description="Owned channels can use platform insights APIs when credentials are configured, which unlocks reach and view figures that public data does not expose."
-        />
-      )}
+      <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] leading-relaxed text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/25 dark:text-blue-300">
+        Data Dumpster adds public profiles using competitor-comparable fields. Owner-only reach,
+        saves, impressions, and private content are excluded. New Facebook profiles are paused until
+        verification can reuse the first public crawl. LinkedIn competitor pages use Bright Data&apos;s
+        public company and post datasets.
+        {platform === 'reddit' ? ' Reddit sources must be publisher user accounts, not communities.' : ''}
+      </div>
 
       {error ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
@@ -948,7 +1049,7 @@ export function AddChannelForm({
         <Button type="button" size="sm" onClick={onCancel}>Cancel</Button>
         {checking ? (
           <span className="text-[11px] text-zinc-500">
-            Resolving against the platform. Purchased sources can take up to a minute.
+            Resolving through the configured public source. Purchased sources can take up to a minute.
           </span>
         ) : null}
       </div>

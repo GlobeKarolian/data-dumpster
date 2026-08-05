@@ -1,6 +1,6 @@
 /**
  * Replace the Facebook Page cover mistakenly stored as every Bright Data post
- * preview with the post-specific creative already retained in `posts.raw`.
+ * preview with the post-specific creative retained in legacy `posts.raw` rows.
  *
  * Dry-run by default:
  *   node --env-file=.env.local --import tsx scripts/repair-facebook-creatives.ts

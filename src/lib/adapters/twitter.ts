@@ -51,6 +51,12 @@ import {
 } from './types';
 import { asArray, asCount, asDate, asRecord, asString, fetchJson } from './util/request';
 import { classifyPostType, extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
+import { DATASETS } from '@/lib/vendors/brightdata';
+import {
+  clearBrightDataReceipt,
+  pendingBrightDataStage,
+  runBrightDataStage,
+} from './brightdata-receipt';
 
 const PLATFORM: Platform = 'twitter';
 const API = 'https://api.x.com/2';
@@ -414,22 +420,24 @@ export interface TwitterSourceAvailability {
 /**
  * Source precedence is ownership-aware.
  *
- * The X API is first only for owned channels, where it can return a complete
- * incremental timeline and potentially owned impressions. Competitors prefer
- * the public-data vendors so a deployment-wide Bearer token cannot silently
- * turn every competitor refresh into metered X API reads.
+ * The X API is available only for an explicitly owned channel, where it can
+ * return a complete incremental timeline and potentially owned impressions.
+ * Public-comparable collection never includes it, even as a last resort: a
+ * Bearer token accidentally reaching this adapter must not change the metric
+ * basis after the public vendors fail.
  */
 export function twitterSourceOrder(
   availability: TwitterSourceAvailability,
 ): TwitterSourceId[] {
-  const vendors: TwitterSourceId[] = [];
-  if (availability.hasEnsemble) vendors.push('ensembledata');
-  if (availability.hasBrightData) vendors.push('brightdata');
+  const vendors: TwitterSourceId[] = availability.hasBrightData
+    ? ['brightdata']
+    : availability.hasEnsemble
+      ? ['ensembledata']
+      : [];
 
   if (availability.owned && availability.hasBearer) {
     return ['x-api-v2', ...vendors];
   }
-  if (availability.hasBearer) vendors.push('x-api-v2');
   return vendors;
 }
 
@@ -476,12 +484,23 @@ async function fetchViaXApi(ctx: FetchContext, bearer: string): Promise<FetchRes
     cursor: {
       source: 'x-api-v2',
       userId: profile.externalId,
-      // Only advance the high-water mark when we actually saw something newer;
-      // an empty run must not reset it.
-      newestTweetId: timeline.newestId ?? storedSinceId ?? null,
+      // A capped response has unseen rows below it and no persisted pagination
+      // token. Advancing since_id would skip that gap forever, so only a
+      // terminal timeline response may move the high-water mark.
+      newestTweetId: timeline.hasMore
+        ? storedSinceId ?? null
+        : timeline.newestId ?? storedSinceId ?? null,
       lastRunAt: new Date().toISOString(),
     },
-    hasMore: timeline.hasMore,
+    ...(timeline.hasMore
+      ? {
+          // The X pagination token is not persisted. Advancing since_id and
+          // claiming a continuation would skip older rows in this window.
+          hasMore: false as const,
+          exhaustive: false as const,
+          incompleteReason: 'X API v2 reached the per-run post or page limit without a persisted pagination token. Add window-bound token persistence before certifying this requested window.',
+        }
+      : { hasMore: false as const, exhaustive: true as const }),
     warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
@@ -531,8 +550,8 @@ async function fetchViaEnsemble(
      * channels read as fully collected while holding no posts at all, which is
      * a worse failure than an error: an error gets investigated.
      *
-     * Marking it incomplete keeps the channel in the queue (partial stays
-     * retryable) and keeps the profile honest about what it holds.
+     * Marking it incomplete records a terminal source limitation: coverage
+     * stays honest without repeatedly buying the same selected feed.
      */
     exhaustive: false,
     incompleteReason: result.posts.length === 0
@@ -550,14 +569,29 @@ async function fetchViaBrightData(
   apiKey: string,
 ): Promise<FetchResult> {
   const { fetchProfilePosts } = await import('./twitter-brightdata');
-  const result = await fetchProfilePosts(ctx.handle, apiKey, {
+  const stage = await runBrightDataStage(ctx, {
+    platform: PLATFORM,
+    stage: 'twitter-posts',
+    datasetId: DATASETS.twitterPosts,
+  }, async (resumeSnapshotId) => await fetchProfilePosts(ctx.handle, apiKey, {
     since: ctx.since,
     until: ctx.until,
     limit: ctx.limit,
     onApiCall: ctx.onApiCall,
     signal: ctx.signal,
-  });
-  if (!result.profile) {
+    resumeSnapshotId,
+  }));
+  if (stage.kind === 'continuation') return stage.result;
+  const result = stage.value;
+  const profile = result.profile ?? (ctx.externalId?.trim()
+    ? {
+        externalId: ctx.externalId.trim(),
+        handle: ctx.handle.replace(/^@/, ''),
+        profileUrl: 'https://x.com/' + ctx.handle.replace(/^@/, ''),
+        meta: { source: 'brightdata', identitySource: 'stored-verified-profile' },
+      }
+    : undefined);
+  if (!profile) {
     throw new AdapterError(
       'Bright Data returned no readable X profile for @' + ctx.handle
       + (result.warnings[0] ? ': ' + result.warnings[0] : '.'),
@@ -567,10 +601,21 @@ async function fetchViaBrightData(
   return {
     posts: result.posts,
     audience: result.audience ? [result.audience] : [],
-    profile: result.profile,
-    cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
-    hasMore: false,
-    warnings: result.warnings,
+    profile,
+    cursor: {
+      source: 'brightdata',
+      ...clearBrightDataReceipt(),
+      lastRunAt: new Date().toISOString(),
+    },
+    ...(result.exhaustive
+      ? { hasMore: false as const, exhaustive: true as const }
+      : {
+          hasMore: false as const,
+          exhaustive: false as const,
+          incompleteReason: result.incompleteReason
+            ?? 'Bright Data did not certify the requested X window and exposed no continuation cursor.',
+        }),
+    warnings: [...result.warnings, ...stage.warnings],
   };
 }
 
@@ -607,6 +652,10 @@ async function fetchWithFailover(
       // spend money after the ingest run was explicitly stopped.
       if (ctx.signal?.aborted) throw err;
       failures.push({ id: source.id, detail: conciseError(err), error: err });
+      // A failed paid Bright Data stage is terminal for this run. Falling
+      // through to another vendor would both obscure the paid-stage failure
+      // and risk losing a receipt that must be resumed exactly.
+      if (source.id === 'brightdata') break;
     }
   }
 
@@ -627,9 +676,12 @@ export const twitterAdapter: ChannelAdapter = {
   platform: PLATFORM,
   displayName: 'X / Twitter',
   accessNotes:
-    'Public competitor data uses EnsembleData first, with Bright Data as a fallback. EnsembleData '
-    + 'returns followers and public engagement, but its X post endpoint is Twitter-selected rather '
-    + 'than chronological, so each run carries an explicit coverage warning. An X API v2 Bearer '
+    'Pooled public collection uses Bright Data exclusively when it is configured. EnsembleData is '
+    + 'used for collection only when Bright Data is not configured, and remains the synchronous '
+    + 'identity source for onboarding until a receipt-preserving Bright Data profile mapper exists. '
+    + 'A failed or cancelled paid Bright Data stage is never retried through EnsembleData. '
+    + 'EnsembleData returns followers and public engagement, but its X post endpoint is '
+    + 'Twitter-selected rather than chronological, so each run carries an explicit coverage warning. An X API v2 Bearer '
     + 'token remains the preferred owned-account path because it supports incremental timelines. '
     + 'X only returns impression_count for the authenticating account; competitor views are missing '
     + 'and stay 0. Likes, replies, retweets, quotes and bookmarks are public where the source exposes '
@@ -638,11 +690,11 @@ export const twitterAdapter: ChannelAdapter = {
     { key: 'bearerToken', label: 'X API v2 Bearer token', secret: true, required: false,
       help: 'Optional owned-account path. From developer.x.com, your Project, Keys and tokens.' },
     { key: 'ensembleDataToken', label: 'EnsembleData token', secret: true, required: false,
-      help: 'Preferred public competitor source. Reads profile audience and the posts X exposes publicly.' },
+      help: 'Required for public profile onboarding; used for collection only when Bright Data is not configured.' },
     { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
-      help: 'Fallback public competitor source when EnsembleData is not configured.' },
+      help: 'Primary pooled public collection source for existing verified channels.' },
   ],
-  // EnsembleData is the deployment's primary X source. The vendor bills by
+  // Public vendors bill by
   // daily units rather than publishing a narrow per-minute endpoint quota.
   // Its existing adapters use this conservative pacing budget as well.
   rateLimit: { callsPerWindow: 100, windowSeconds: 60 },
@@ -683,12 +735,12 @@ export const twitterAdapter: ChannelAdapter = {
   },
 
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
-    const ensembleToken = credentials.ensembleDataToken?.trim()
-      || process.env.ENSEMBLEDATA_TOKEN?.trim()
-      || '';
-    const bearer = credentials.bearerToken?.trim()
-      || process.env.TWITTER_BEARER_TOKEN?.trim()
-      || '';
+    const ensembleToken = credentials.ensembleDataToken?.trim() || '';
+    const brightDataKey = credentials.brightDataApiKey?.trim() || '';
+    // Callers explicitly decide whether this identity lookup may use an owned
+    // credential. Public pooled routes pass no Bearer token and must not be
+    // overridden by a deployment environment fallback.
+    const bearer = credentials.bearerToken?.trim() || '';
     let ensembleFailure: unknown;
 
     if (ensembleToken) {
@@ -698,7 +750,7 @@ export const twitterAdapter: ChannelAdapter = {
         return result.profile;
       } catch (err) {
         ensembleFailure = err;
-        if (!bearer) throw err;
+        if (!bearer && !brightDataKey) throw err;
       }
     }
 
@@ -718,33 +770,74 @@ export const twitterAdapter: ChannelAdapter = {
       }
     }
 
+    if (brightDataKey) {
+      const reason = 'Bright Data can expose a real X `user_id`/`profile_id` on completed post '
+        + 'rows, but it has no separate receipt-preserving profile lookup. Triggering that paid '
+        + 'asynchronous posts crawl during verification could lose its snapshot receipt and buy the '
+        + 'same work again during collection. Configure EnsembleData for safe X onboarding; Bright '
+        + 'Data is the primary collection source for an existing verified channel.';
+      if (ensembleFailure !== undefined) {
+        throw new AdapterError(
+          'X profile lookup through EnsembleData failed: ' + conciseError(ensembleFailure) + ' ' + reason,
+          {
+            platform: PLATFORM,
+            retryable: ensembleFailure instanceof AdapterError
+              && ensembleFailure.opts.retryable === true,
+          },
+        );
+      }
+      throw new AdapterError(reason, { platform: PLATFORM, retryable: false });
+    }
+
     throw new AdapterError(
-      'Adding or verifying an X channel requires an EnsembleData token or an X API v2 Bearer token. '
-      + 'Bright Data remains available as an ingest fallback for channels that are already configured.',
+      'Adding or verifying an X channel requires an EnsembleData token or an explicitly supplied '
+      + 'X API v2 Bearer token. Bright Data is the primary collection source for channels that already '
+      + 'have a verified platform id.',
       { platform: PLATFORM, retryable: false },
     );
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
-    const bearer = ctx.credentials.bearerToken?.trim()
-      || process.env.TWITTER_BEARER_TOKEN?.trim()
-      || '';
-    const ensembleToken = ctx.credentials.ensembleDataToken?.trim()
-      || process.env.ENSEMBLEDATA_TOKEN?.trim()
-      || '';
-    const brightDataKey = ctx.credentials.brightDataApiKey?.trim()
-      || process.env.BRIGHTDATA_API_KEY?.trim()
-      || '';
-    const order = twitterSourceOrder({
-      owned: ctx.cursor.__isOwned === true,
-      hasBearer: Boolean(bearer),
-      hasEnsemble: Boolean(ensembleToken),
-      hasBrightData: Boolean(brightDataKey),
-    });
+    // Fetch credentials are supplied by the runner's explicit source policy.
+    // Do not reach around it to an environment Bearer token: pooled collection
+    // must never fall back to an owned X path after public vendors fail. The
+    // adapter also ignores a mistakenly supplied Bearer token unless ownership
+    // was asserted explicitly by the future org-private runner.
+    const explicitlyOwned = ctx.cursor.__isOwned === true;
+    const suppliedBearer = ctx.credentials.bearerToken?.trim() || '';
+    const bearer = explicitlyOwned ? suppliedBearer : '';
+    const ensembleToken = ctx.credentials.ensembleDataToken?.trim() || '';
+    const brightDataKey = ctx.credentials.brightDataApiKey?.trim() || '';
+    const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
+    if (pendingStage !== undefined && pendingStage !== 'twitter-posts') {
+      throw new AdapterError(
+        'X has a Bright Data receipt for unknown stage "' + pendingStage
+          + '". Reconcile the receipt before starting another paid snapshot.',
+        { platform: PLATFORM, retryable: false },
+      );
+    }
+    if (pendingStage !== undefined && !brightDataKey) {
+      throw new AdapterError(
+        'X has a paid Bright Data snapshot waiting to resume, but the Bright Data API key is '
+          + 'unavailable. Restore the key before collecting this account through another source.',
+        { platform: PLATFORM, retryable: false },
+      );
+    }
+    const order: TwitterSourceId[] = pendingStage !== undefined
+      ? ['brightdata']
+      : twitterSourceOrder({
+          owned: explicitlyOwned,
+          hasBearer: Boolean(bearer),
+          hasEnsemble: Boolean(ensembleToken),
+          hasBrightData: Boolean(brightDataKey),
+        });
 
     if (order.length === 0) {
       throw new AdapterError(
-        'X requires an EnsembleData token, an X API v2 Bearer token, or a Bright Data API key.',
+        explicitlyOwned
+          ? 'Owned X collection requires an X API v2 Bearer token, an EnsembleData token, or a Bright Data API key.'
+          : 'Public X collection requires an EnsembleData token or a Bright Data API key. '
+            + 'Bearer tokens are reserved for explicitly owned, organization-private collection.',
         { platform: PLATFORM, retryable: false },
       );
     }

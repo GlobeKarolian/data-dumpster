@@ -1,12 +1,10 @@
 import { z } from 'zod';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { db } from '@/db';
 import { channels, companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { getAdapter } from '@/lib/adapters/registry';
 import {
-  isCaseSensitiveLandscapeImportIdentity,
-  landscapeImportIdentityHandle,
   parseLandscapeImportCsv,
   type LandscapeImportAccountPlan,
   type LandscapeImportCompanyPlan,
@@ -19,6 +17,7 @@ import {
 import { apiHandler, HttpError, requireRole } from '@/lib/session';
 import type { Platform } from '@/lib/types';
 import { slugify } from '@/lib/utils';
+import { channelIdentityKey } from '@/lib/channel-identity';
 import { readJson } from '../../_lib/query';
 
 export const runtime = 'nodejs';
@@ -57,6 +56,7 @@ interface ExistingChannel {
   companyName: string;
   platform: Platform;
   handle: string;
+  identityKey: string;
 }
 
 interface ExistingLandscape {
@@ -94,9 +94,7 @@ function canonicalStoredHandle(platform: Platform, handle: string): string {
 
 function identityHandle(platform: Platform, handle: string): string {
   const canonical = canonicalStoredHandle(platform, handle);
-  return importPlatform(platform)
-    ? landscapeImportIdentityHandle(platform, canonical)
-    : canonical;
+  return channelIdentityKey(platform, canonical);
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -126,9 +124,9 @@ function appendIssue(
 /**
  * Lock each normalized public account identity for the duration of one
  * statement, recheck global ownership after those locks are held, and insert
- * either every requested channel or none. The schema's legacy unique index is
- * company-scoped, so the advisory locks close the race where two simultaneous
- * imports could otherwise attach the same real account to two new companies.
+ * either every requested channel or none. Advisory locks make the ownership
+ * decision deterministic; the targetless conflict handler then defers to both
+ * global identity constraints without naming an index that a migration removed.
  */
 async function insertChannelsWithoutOwnershipRace(
   requested: ChannelToCreate[],
@@ -136,18 +134,13 @@ async function insertChannelsWithoutOwnershipRace(
   if (requested.length === 0) return { inserted: 0, conflicts: 0 };
 
   const requestedRows = sql.join(requested.map((channel) => {
-    const identity = landscapeImportIdentityHandle(channel.platform, channel.handle);
-    const caseSensitive = isCaseSensitiveLandscapeImportIdentity(
-      channel.platform,
-      channel.handle,
-    );
+    const identity = channelIdentityKey(channel.platform, channel.handle);
     return sql`(
       ${channel.companyId}::uuid,
       ${channel.platform}::platform,
       ${channel.handle}::text,
       ${channel.profileUrl}::text,
-      ${identity}::text,
-      ${caseSensitive}::boolean
+      ${identity}::text
     )`;
   }), sql`, `);
 
@@ -155,9 +148,7 @@ async function insertChannelsWithoutOwnershipRace(
     inserted_count: number | string;
     conflict_count: number | string;
   }>(sql`
-    WITH requested (
-      company_id, platform, handle, profile_url, identity, case_sensitive
-    ) AS MATERIALIZED (
+    WITH requested (company_id, platform, handle, profile_url, identity) AS MATERIALIZED (
       VALUES ${requestedRows}
     ),
     identity_locks AS MATERIALIZED (
@@ -177,25 +168,17 @@ async function insertChannelsWithoutOwnershipRace(
       CROSS JOIN lock_barrier
       INNER JOIN channels existing
         ON existing.platform = requested.platform
-       AND (
-         (
-           requested.case_sensitive
-           AND existing.handle = requested.identity
-         )
-         OR (
-           NOT requested.case_sensitive
-           AND lower(regexp_replace(existing.handle, '^@', '')) = requested.identity
-         )
-       )
+       AND existing.identity_key = requested.identity
        AND existing.company_id <> requested.company_id
     ),
     inserted AS (
       INSERT INTO channels (
-        company_id, platform, handle, profile_url, is_owned, active, meta
+        company_id, platform, handle, identity_key, profile_url, is_owned, active, meta
       )
       SELECT requested.company_id,
              requested.platform,
              requested.handle,
+             requested.identity,
              requested.profile_url,
              false,
              true,
@@ -203,7 +186,7 @@ async function insertChannelsWithoutOwnershipRace(
       FROM requested
       CROSS JOIN lock_barrier
       WHERE NOT EXISTS (SELECT 1 FROM ownership_conflicts)
-      ON CONFLICT (company_id, platform, handle) DO NOTHING
+      ON CONFLICT DO NOTHING
       RETURNING id
     )
     SELECT (SELECT count(*)::integer FROM inserted) AS inserted_count,
@@ -222,35 +205,8 @@ async function loadExistingChannels(
   parsed: LandscapeImportPreview,
 ): Promise<ExistingChannel[]> {
   const accounts = parsed.accounts;
-  const youtubeHandles = unique(accounts
-    .filter((account) => isCaseSensitiveLandscapeImportIdentity(account.platform, account.handle))
-    .map((account) => account.handle));
-  const foldedPlatforms = unique(accounts
-    .filter((account) => !isCaseSensitiveLandscapeImportIdentity(account.platform, account.handle))
-    .map((account) => account.platform));
-  const foldedHandles = unique(accounts
-    .filter((account) => !isCaseSensitiveLandscapeImportIdentity(account.platform, account.handle))
-    .flatMap((account) => {
-      const variants = [account.handle];
-      if (!account.handle.startsWith('@') && !account.handle.includes('/')) {
-        variants.push('@' + account.handle);
-      }
-      return variants.map((handle) => handle.toLowerCase());
-    }));
-  const identityFilter = or(
-    youtubeHandles.length > 0
-      ? and(eq(channels.platform, 'youtube'), inArray(channels.handle, youtubeHandles))
-      : undefined,
-    foldedPlatforms.length > 0 && foldedHandles.length > 0
-      ? and(
-        inArray(channels.platform, foldedPlatforms),
-        sql`lower(${channels.handle}) in (${sql.join(
-          foldedHandles.map((handle) => sql`${handle}`),
-          sql`, `,
-        )})`,
-      )
-      : undefined,
-  );
+  const identities = unique(accounts.map((account) =>
+    channelIdentityKey(account.platform, account.handle)));
 
   const [companyChannels, identityChannels] = await Promise.all([
     companyIds.length === 0
@@ -262,11 +218,12 @@ async function loadExistingChannels(
           companyName: companies.name,
           platform: channels.platform,
           handle: channels.handle,
+          identityKey: channels.identityKey,
         })
         .from(channels)
         .innerJoin(companies, eq(companies.id, channels.companyId))
         .where(inArray(channels.companyId, companyIds)),
-    !identityFilter
+    identities.length === 0
       ? Promise.resolve([])
       : db
         .select({
@@ -275,10 +232,11 @@ async function loadExistingChannels(
           companyName: companies.name,
           platform: channels.platform,
           handle: channels.handle,
+          identityKey: channels.identityKey,
         })
         .from(channels)
         .innerJoin(companies, eq(companies.id, channels.companyId))
-        .where(identityFilter),
+        .where(inArray(channels.identityKey, identities)),
   ]);
 
   return [...new Map(
@@ -361,8 +319,7 @@ async function buildPlan(
     const accountPlans: LandscapeImportAccountPlan[] = company.accounts.map((account) => {
       const matches = existingChannels.filter((channel) =>
         channel.platform === account.platform
-        && identityHandle(channel.platform, channel.handle)
-          === identityHandle(account.platform, account.handle));
+        && channel.identityKey === identityHandle(account.platform, account.handle));
       const sameCompany = existing
         ? matches.filter((channel) => channel.companyId === existing.id)
         : [];

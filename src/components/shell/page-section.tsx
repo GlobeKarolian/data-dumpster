@@ -3,12 +3,14 @@ import { cn } from '@/lib/utils';
 
 /** Section heading used inside pages, below the top bar. */
 export function PageSection({
+  id,
   title,
   description,
   actions,
   children,
   className,
 }: {
+  id?: string;
   title: string;
   description?: React.ReactNode;
   actions?: React.ReactNode;
@@ -16,7 +18,7 @@ export function PageSection({
   className?: string;
 }) {
   return (
-    <section className={cn('mb-6 last:mb-0', className)}>
+    <section id={id} className={cn('scroll-mt-24 mb-6 last:mb-0', className)}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[13px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">

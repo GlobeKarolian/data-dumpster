@@ -161,7 +161,7 @@ export function executiveLines(doc: ReportDocument): Line[] {
 
 /* ------------------------------------------------------------ table model */
 
-type Cell = { text: string; numeric?: boolean };
+type Cell = { text: string; numeric?: boolean; highlight?: boolean };
 type TableModel = { columns: { label: string; numeric?: boolean }[]; rows: Cell[][] };
 
 function brandTable(computed: ComputedBlock): TableModel {
@@ -172,15 +172,18 @@ function brandTable(computed: ComputedBlock): TableModel {
       { label: 'Net Change', numeric: true },
       ...REPORT_PLATFORMS.map((p) => ({ label: REPORT_PLATFORM_LABELS[p], numeric: true })),
     ],
-    rows: computed.brands.map((b) => [
-      { text: b.name },
-      { text: formatCount(b.totalFollowers), numeric: true },
-      { text: formatSignedCount(b.netChange), numeric: true },
-      ...REPORT_PLATFORMS.map((p) => ({
-        text: b.byPlatform[p] === undefined ? '-' : formatCount(b.byPlatform[p]),
-        numeric: true,
-      })),
-    ]),
+    rows: computed.brands.map((b) => {
+      const cells: Cell[] = [
+        { text: b.name + (b.isBgmOwned ? ' (BGM)' : '') },
+        { text: formatCount(b.totalFollowers), numeric: true },
+        { text: formatSignedCount(b.netChange), numeric: true },
+        ...REPORT_PLATFORMS.map((p) => ({
+          text: b.byPlatform[p] === undefined ? '-' : formatCount(b.byPlatform[p]),
+          numeric: true,
+        })),
+      ];
+      return cells.map((cell) => ({ ...cell, highlight: b.isBgmOwned }));
+    }),
   };
 }
 
@@ -192,16 +195,19 @@ function cohortTable(computed: ComputedBlock): TableModel {
       { label: 'Engagement', numeric: true },
       { label: 'Week over Week', numeric: true },
     ],
-    rows: computed.cohort.rows.map((r) => [
-      { text: String(r.rank), numeric: true },
-      { text: r.isFocus ? r.name + ' (us)' : r.name },
-      { text: formatCount(r.engagementTotal), numeric: true },
-      { text: formatPct(r.changePct), numeric: true },
-    ]),
+    rows: computed.cohort.rows.map((r) => {
+      const cells: Cell[] = [
+        { text: String(r.rank), numeric: true },
+        { text: r.name + (r.isBgmOwned ? ' (BGM)' : '') },
+        { text: formatCount(r.engagementTotal), numeric: true },
+        { text: formatPct(r.changePct), numeric: true },
+      ];
+      return cells.map((cell) => ({ ...cell, highlight: r.isBgmOwned }));
+    }),
   };
 }
 
-function topPostTable(computed: ComputedBlock): TableModel {
+function topPostTable(posts: ComputedBlock['topPosts']): TableModel {
   return {
     columns: [
       { label: 'Rank', numeric: true },
@@ -210,7 +216,7 @@ function topPostTable(computed: ComputedBlock): TableModel {
       { label: 'Post' },
       { label: 'Engagement', numeric: true },
     ],
-    rows: computed.topPosts.map((p) => [
+    rows: posts.map((p) => [
       { text: String(p.rank), numeric: true },
       { text: p.companyName },
       { text: p.platform },
@@ -243,7 +249,9 @@ function htmlTable(model: TableModel): string {
     .join('');
   const body = model.rows
     .map((row) => '<tr>' + row
-      .map((cell) => '<td style="' + TD + (cell.numeric ? 'text-align:right;' : '') + '">'
+      .map((cell) => '<td style="' + TD
+        + (cell.numeric ? 'text-align:right;' : '')
+        + (cell.highlight ? 'background:#fff1f2;color:#9f1239;' : '') + '">'
         + escapeHtml(cell.text) + '</td>')
       .join('') + '</tr>')
     .join('');
@@ -303,8 +311,12 @@ export function renderReportHtml(doc: ReportDocument): string {
     parts.push(narrativeHtml(doc, 'brands'));
     parts.push(htmlTable(brandTable(doc.computed)));
     if (doc.computed.topPosts.length > 0) {
-      parts.push(htmlHeading('Top Engaged Posts'));
-      parts.push(htmlTable(topPostTable(doc.computed)));
+      parts.push(htmlHeading('Top Engaged Posts — Market'));
+      parts.push(htmlTable(topPostTable(doc.computed.topPosts)));
+    }
+    if ((doc.computed.bgmTopPosts ?? []).length > 0) {
+      parts.push(htmlHeading('Top Engaged Posts — BGM'));
+      parts.push(htmlTable(topPostTable(doc.computed.bgmTopPosts ?? [])));
     }
   }
 
@@ -393,8 +405,12 @@ export function renderReportMarkdown(doc: ReportDocument): string {
     if (brandProse) out.push(brandProse);
     out.push(mdTable(brandTable(doc.computed)));
     if (doc.computed.topPosts.length > 0) {
-      out.push('## Top Engaged Posts');
-      out.push(mdTable(topPostTable(doc.computed)));
+      out.push('## Top Engaged Posts — Market');
+      out.push(mdTable(topPostTable(doc.computed.topPosts)));
+    }
+    if ((doc.computed.bgmTopPosts ?? []).length > 0) {
+      out.push('## Top Engaged Posts — BGM');
+      out.push(mdTable(topPostTable(doc.computed.bgmTopPosts ?? [])));
     }
   }
 

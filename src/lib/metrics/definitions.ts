@@ -141,7 +141,7 @@ export const METRIC_DEFS: Record<MetricKey, MetricDef> = {
     shortLabel: 'Eng Rate',
     description:
       'The share of a company’s following that reacts to a typical post. Roughly: of everyone who could have seen this, what fraction did something about it. Industry benchmarks for news brands sit in the low tenths of a percent, so small absolute differences here are meaningful.',
-    formula: 'Total Engagement ÷ Followers ÷ Posts, computed per platform and then combined',
+    formula: 'Mean of each post’s Total Engagement ÷ Followers at Post',
     unit: 'percent',
     higherIsBetter: true,
     precision: 3,

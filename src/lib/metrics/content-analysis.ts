@@ -93,8 +93,10 @@ export interface ActivityPoint {
   date: string;
   focusPosts: number;
   landscapePostsPerCompany: number;
-  focusRate: number;
-  landscapeRate: number;
+  /** Null means no post that day carried a follower denominator. */
+  focusRate: number | null;
+  /** Null means no post that day carried a follower denominator. */
+  landscapeRate: number | null;
   focusEngagementPerPost: number;
   landscapeEngagementPerPost: number;
 }
@@ -343,7 +345,8 @@ function activityByCompany(
     .sort((a, b) => b.posts - a.posts || a.companyName.localeCompare(b.companyName));
 }
 
-function activityByDay(
+/** @internal Exported so the daily metric contract can be regression-tested. */
+export function buildActivityByDay(
   rows: Row[],
   focusId: string | null,
   range: { start: Date; end: Date },
@@ -352,38 +355,28 @@ function activityByDay(
   const acc = new Map<string, {
     focusPosts: number;
     focusTotalEngagement: number;
-    focusRatedEngagement: number;
-    focusFollowers: number;
+    focusRate: ReturnType<typeof newFollowerRateAcc>;
     landscapePosts: number;
     landscapeTotalEngagement: number;
-    landscapeRatedEngagement: number;
-    landscapeFollowers: number;
+    landscapeRate: ReturnType<typeof newFollowerRateAcc>;
   }>();
   for (const row of rows) {
     const key = easternDay(row.postedAt);
     const current = acc.get(key) ?? {
       focusPosts: 0,
       focusTotalEngagement: 0,
-      focusRatedEngagement: 0,
-      focusFollowers: 0,
+      focusRate: newFollowerRateAcc(),
       landscapePosts: 0,
       landscapeTotalEngagement: 0,
-      landscapeRatedEngagement: 0,
-      landscapeFollowers: 0,
+      landscapeRate: newFollowerRateAcc(),
     };
     current.landscapePosts += 1;
     current.landscapeTotalEngagement += row.engagementTotal;
-    if (row.followersAtPost && row.followersAtPost > 0) {
-      current.landscapeRatedEngagement += row.engagementTotal;
-      current.landscapeFollowers += row.followersAtPost;
-    }
+    addToFollowerRate(current.landscapeRate, row);
     if (focusId && row.companyId === focusId) {
       current.focusPosts += 1;
       current.focusTotalEngagement += row.engagementTotal;
-      if (row.followersAtPost && row.followersAtPost > 0) {
-        current.focusRatedEngagement += row.engagementTotal;
-        current.focusFollowers += row.followersAtPost;
-      }
+      addToFollowerRate(current.focusRate, row);
     }
     acc.set(key, current);
   }
@@ -393,13 +386,9 @@ function activityByDay(
     return {
       date,
       focusPosts: value?.focusPosts ?? 0,
-      landscapePostsPerCompany: (value?.landscapePosts ?? 0) / companyCount,
-      focusRate: value && value.focusFollowers > 0
-        ? value.focusRatedEngagement / value.focusFollowers
-        : 0,
-      landscapeRate: value && value.landscapeFollowers > 0
-        ? value.landscapeRatedEngagement / value.landscapeFollowers
-        : 0,
+      landscapePostsPerCompany: (value?.landscapePosts ?? 0) / Math.max(1, companyCount),
+      focusRate: value ? finishFollowerRate(value.focusRate) : null,
+      landscapeRate: value ? finishFollowerRate(value.landscapeRate) : null,
       focusEngagementPerPost: value && value.focusPosts > 0
         ? value.focusTotalEngagement / value.focusPosts
         : 0,
@@ -498,8 +487,8 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
       glance: {
         postsPerDay: 0,
         landscapePostsPerDay: 0,
-        engagementRateByFollower: 0,
-        landscapeEngagementRate: 0,
+        engagementRateByFollower: null,
+        landscapeEngagementRate: null,
         engagementPerPost: 0,
         landscapeEngagementPerPost: 0,
         pctWithHashtags: 0,
@@ -637,7 +626,7 @@ export async function getContentAnalysis(q: ContentQuery): Promise<ContentAnalys
     focusCompanyName: focusName,
     totalPosts: rows.length,
     activity: activityByCompany(rows, focusId, days),
-    activityByDay: activityByDay(
+    activityByDay: buildActivityByDay(
       rows,
       focusId,
       { start: q.start, end: q.end },

@@ -15,7 +15,12 @@
 import 'server-only';
 import type { AnalyticsQuery, MetricRow } from '@/lib/types';
 import {
-  changePct, getFactSheet, getLeaderboard, getPosts, getSummary,
+  changePct,
+  getFactSheet,
+  getLandscapeCompanyIdsBySlug,
+  getLeaderboard,
+  getPosts,
+  getSummary,
 } from '@/lib/metrics/queries';
 import { endOfZoneDay, parseLocalDay, startOfZoneDay } from '@/lib/dates';
 import type { PostDto } from '@/lib/metrics/contract';
@@ -119,16 +124,19 @@ function platformSplit(row: MetricRow): Partial<Record<ReportPlatform, number>> 
   return out;
 }
 
-function toTopPost(post: PostDto, index: number): TopPost {
+function toTopPost(post: PostDto, index: number, bgmCompanyIds: ReadonlySet<string>): TopPost {
   return {
     id: post.id,
     rank: index + 1,
     companyName: post.company.name,
     platform: post.platform,
+    type: post.type,
     postedAt: post.postedAt,
     text: post.text,
     permalink: post.permalink,
+    thumbnailUrl: post.thumbnailUrl,
     engagementTotal: post.engagementTotal,
+    isBgmOwned: bgmCompanyIds.has(post.company.id),
   };
 }
 
@@ -161,13 +169,25 @@ export async function computeWeeklyReport(
   };
   const brandScope = { ...base, platforms: [...REPORT_PLATFORMS] };
 
-  const [facts, summary, followerBoard, netFollowerBoard, topPosts] = await Promise.all([
+  const [facts, summary, followerBoard, netFollowerBoard, topPosts, bgmCompanyIds] = await Promise.all([
     getFactSheet(base),
     getSummary(base),
     getLeaderboard({ ...brandScope, metric: 'audience' }),
     getLeaderboard({ ...brandScope, metric: 'audienceNetChange' }),
     getPosts({ ...base, sort: 'engagementTotal', direction: 'desc', page: 1, pageSize: 3 }),
+    getLandscapeCompanyIdsBySlug(orgId, 'bgm'),
   ]);
+  const bgmCompanyIdSet = new Set(bgmCompanyIds);
+  const bgmTopPosts = bgmCompanyIds.length > 0
+    ? await getPosts({
+      ...base,
+      companyIds: bgmCompanyIds,
+      sort: 'engagementTotal',
+      direction: 'desc',
+      page: 1,
+      pageSize: 3,
+    })
+    : { items: [], total: 0, page: 1, pageSize: 3 };
 
   const engagementBoard = facts.leaderboards.engagementTotal ?? [];
   const postsBoard = facts.leaderboards.posts ?? [];
@@ -178,6 +198,7 @@ export async function computeWeeklyReport(
     return {
       companyId: row.company.id,
       name: row.company.name,
+      isBgmOwned: bgmCompanyIdSet.has(row.company.id),
       rank: row.available ? row.rank : null,
       totalFollowers: row.available ? row.value : null,
       previousTotalFollowers: row.previousAvailable ? row.previousValue ?? null : null,
@@ -275,6 +296,7 @@ export async function computeWeeklyReport(
     engagementTotal: row.value,
     changePct: row.changePct ?? null,
     isFocus: focusCompany ? row.company.id === focusCompany.id : false,
+    isBgmOwned: bgmCompanyIdSet.has(row.company.id),
   }));
 
   const focusPostIndex = focusCompany
@@ -299,7 +321,8 @@ export async function computeWeeklyReport(
       engagementPerPost: portfolioPerPost,
     },
     brands,
-    topPosts: topPosts.items.map(toTopPost),
+    topPosts: topPosts.items.map((post, index) => toTopPost(post, index, bgmCompanyIdSet)),
+    bgmTopPosts: bgmTopPosts.items.map((post, index) => toTopPost(post, index, bgmCompanyIdSet)),
     cohort: {
       landscapeName: facts.landscape.name,
       focusCompanyName: focusCompany?.name ?? null,

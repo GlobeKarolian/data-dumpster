@@ -1205,7 +1205,7 @@ export function LandscapeImportDialog({
                 </h3>
                 <p className="mt-1 text-xs leading-relaxed text-emerald-800 dark:text-emerald-400">
                   The landscape and profile connections were saved, and complete-window collection
-                  was queued for every profile. Rankings stay locked until collection reaches 100%.
+                  was queued for every profile. Measured totals remain visible as partial while the missing history is collected; WoW comparisons stay withheld until both windows are complete.
                 </p>
               </div>
             </div>

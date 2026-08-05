@@ -13,6 +13,7 @@ import { useUrlState } from '@/components/common/use-url-state';
 import { formatDateTime, truncate } from '@/components/ui/format';
 import { StoryDetail } from './story-detail';
 import type { StoryCloudDto, StoryDto } from './types';
+import { storySupportsCompetitiveConclusions } from '@/lib/stories/confidence';
 
 /**
  * Bubble size is the square root of engagement.
@@ -144,6 +145,7 @@ function CloudControls({
     value: p,
     label: PLATFORM_LABELS[p],
     color: PLATFORM_COLORS[p],
+    platform: p,
   }));
 
   return (
@@ -344,6 +346,10 @@ function StoryBubble({
 }
 
 function BubbleTooltip({ story, mix }: { story: StoryDto; mix: PlatformShare[] }) {
+  const supportsConclusions = storySupportsCompetitiveConclusions(
+    story.cohesion,
+    story.companies.length,
+  );
   return (
     <div className="w-72 rounded-md border border-zinc-200 bg-white p-3 text-left shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
       <p className="text-xs font-semibold leading-snug text-zinc-900 dark:text-zinc-100">
@@ -370,9 +376,9 @@ function BubbleTooltip({ story, mix }: { story: StoryDto; mix: PlatformShare[] }
         </div>
       </dl>
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-        {story.brokeBy
+        {supportsConclusions && story.brokeBy
           ? 'Broken by ' + story.brokeBy.name + ' on ' + formatDateTime(story.firstPostedAt) + '.'
-          : 'No first poster recorded.'}
+          : 'Competitive timing conclusions are withheld for this grouping.'}
       </p>
       <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-500">
         {'Ran ' + spanLabel(story.firstPostedAt, story.lastPostedAt) + ' · '
@@ -393,7 +399,8 @@ function StoryShortlist({
   stories: StoryDto[];
   onSelect: (id: string) => void;
 }) {
-  const crossOutlet = stories.filter((s) => s.companies.length > 1).slice(0, 6);
+  const crossOutlet = stories.filter((story) =>
+    storySupportsCompetitiveConclusions(story.cohesion, story.companies.length)).slice(0, 6);
   const shown = crossOutlet.length > 0 ? crossOutlet : stories.slice(0, 6);
 
   return (
@@ -425,7 +432,10 @@ function StoryShortlist({
                   {story.companies.length + ' outlets · ' + story.posts.length + ' posts · '
                     + compactNumber(story.totalEngagement)}
                 </span>
-                {story.brokeBy ? (
+                {story.brokeBy && storySupportsCompetitiveConclusions(
+                  story.cohesion,
+                  story.companies.length,
+                ) ? (
                   <span className="mt-0.5 block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
                     {'Broken by ' + story.brokeBy.name}
                   </span>

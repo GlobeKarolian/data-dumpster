@@ -63,3 +63,24 @@ test('a negative value below zero-valued top rows is still a measured signal', (
 
   assert.doesNotMatch(html, /Every measured company is zero here/);
 });
+
+test('platform breakdown legend sits in its own wrapping row', () => {
+  const metricRows = rows(1, true, 10);
+  metricRows[0] = {
+    ...metricRows[0],
+    breakdown: { facebook: 6, instagram: 4 },
+    breakdownAvailability: { facebook: true, instagram: true },
+  };
+  const html = renderToStaticMarkup(React.createElement(BarLeaderboard, {
+    rows: metricRows,
+    metric: 'posts',
+    focusCompanyId: null,
+    showPlatformBreakdown: true,
+  }));
+
+  assert.match(html, /aria-label="Platform breakdown"/);
+  assert.match(html, /flex-wrap/);
+  assert.match(html, />Facebook</);
+  assert.match(html, />Instagram</);
+  assert.doesNotMatch(html, /recharts-legend-wrapper/);
+});

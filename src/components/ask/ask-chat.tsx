@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Loader2, PanelLeftClose, PanelLeft, Send } from 'lucide-react';
 import type { FactSheet } from '@/lib/metrics/contract';
+import type { FactSheetScope } from '@/lib/metrics/fact-sheet-request';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
@@ -28,6 +29,8 @@ export interface AskChatProps {
   start: string;
   end: string;
   facts: FactSheet | null;
+  factsFingerprint: string | null;
+  scope: FactSheetScope;
 }
 
 /**
@@ -38,7 +41,15 @@ export interface AskChatProps {
  * panel on the right. That is a deliberate ceiling on what it can say, and it
  * is the reason its answers can be put in front of an editor.
  */
-export function AskChat({ landscapeId, landscapeName, start, end, facts }: AskChatProps) {
+export function AskChat({
+  landscapeId,
+  landscapeName,
+  start,
+  end,
+  facts,
+  factsFingerprint,
+  scope,
+}: AskChatProps) {
   const [turns, setTurns] = React.useState<Turn[]>([]);
   const [draft, setDraft] = React.useState('');
   const [streaming, setStreaming] = React.useState(false);
@@ -52,7 +63,7 @@ export function AskChat({ landscapeId, landscapeName, start, end, facts }: AskCh
 
   const ask = async (question: string) => {
     const trimmed = question.trim();
-    if (!trimmed || streaming) return;
+    if (!trimmed || streaming || !facts || !factsFingerprint) return;
 
     const userTurn: Turn = { id: 'u' + Date.now(), role: 'user', content: trimmed };
     const assistantId = 'a' + Date.now();
@@ -69,6 +80,8 @@ export function AskChat({ landscapeId, landscapeName, start, end, facts }: AskCh
           landscapeId,
           start,
           end,
+          ...scope,
+          factsFingerprint,
           question: trimmed,
           history: turns.map((t) => ({ role: t.role, content: t.content })),
         }),
@@ -76,7 +89,14 @@ export function AskChat({ landscapeId, landscapeName, start, end, facts }: AskCh
 
       if (!res.ok || !res.body) {
         const detail = res.body ? await res.text() : '';
-        throw new Error(detail.slice(0, 300) || 'The assistant returned ' + res.status + '.');
+        let message = detail;
+        try {
+          const parsed = JSON.parse(detail) as { error?: unknown };
+          if (typeof parsed.error === 'string') message = parsed.error;
+        } catch {
+          // A provider or proxy may return plain text. It is already safe to show.
+        }
+        throw new Error(message.slice(0, 300) || 'The assistant returned ' + res.status + '.');
       }
 
       const reader = res.body.getReader();
@@ -189,11 +209,17 @@ export function AskChat({ landscapeId, landscapeName, start, end, facts }: AskCh
               rows={2}
               placeholder="Ask about this landscape and window"
               aria-label="Your question"
+              disabled={!facts || !factsFingerprint}
               className="border-0 bg-transparent px-1 focus:border-0 dark:bg-transparent"
             />
             <div className="mt-1 flex items-center justify-between gap-2">
               <p className="text-[10px] text-zinc-400">Command-Enter to send</p>
-              <Button type="submit" variant="primary" size="sm" disabled={streaming || !draft.trim()}>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={streaming || !draft.trim() || !facts || !factsFingerprint}
+              >
                 {streaming ? (
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
                 ) : (

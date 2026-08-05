@@ -11,6 +11,12 @@ Bluesky and RSS ingest only. RSS carries no engagement, so every engagement numb
 in this document is a Bluesky number. 1,429 posts across five companies, roughly
 sixteen posts a day across the whole landscape.
 
+**Historical scope note, 4 August 2026.** The paragraph above describes the v1
+dataset used for this simulated objection exercise, not current ingestion. RSS is
+now retired, and the live product has additional official and purchased sources.
+Use `HANDOFF.md` for current routing; keep the figures below as a dated Bluesky-only
+case study.
+
 Engagement total, 90 days: WBUR 5,739. Boston Globe 5,182. GBH News 1,054.
 Boston.com 127. Boston Herald 48. Landscape total 12,150.
 Engagement rate by follower, rank order: GBH News, WBUR, Boston.com, Boston Herald,
@@ -343,12 +349,13 @@ believe it too much, and both are expensive.
 
 **The finding is fragile. Six reasons, in order of severity.**
 
-1. **One platform.** Only Bluesky and RSS ingest today, and RSS carries no
-   engagement. Every engagement figure is a Bluesky figure. Facebook and Instagram,
-   where the Globe's largest audiences almost certainly live, contribute nothing.
-   Facebook competitor data does not exist and cannot be purchased since CrowdTangle
-   closed in August 2024. Instagram competitor data is thin and requires weeks of Meta
-   App Review. This is not a social performance picture. It is one text platform.
+1. **One platform in this v1 sample.** Only Bluesky contributed engagement to the
+   dated sample. Facebook and Instagram, where the Globe's largest audiences
+   almost certainly live, contributed nothing to these figures. That was a
+   collection-state limitation, not market impossibility: Facebook competitor
+   data is available through PPCA after approval and through purchased sources,
+   while current Instagram collection also has purchased paths. This is not a
+   social performance picture. It is one text-platform case study.
 2. **Bluesky is unrepresentative in a way that points directly at this result.** Its
    user base skews toward journalists, academics, and politically engaged early
    Twitter migrants. Public media brands index unusually well with exactly that

@@ -65,6 +65,7 @@ describe('renderReportCsv', () => {
         brands: [{
           companyId: 'company-1',
           name: 'Example News',
+          isBgmOwned: true,
           rank: 1,
           totalFollowers: 100,
           previousTotalFollowers: 0,
@@ -81,6 +82,18 @@ describe('renderReportCsv', () => {
           text: '=unsafe, "quoted"',
           permalink: 'https://example.com/post',
           engagementTotal: 20,
+          isBgmOwned: true,
+        }],
+        bgmTopPosts: [{
+          id: 'post-1',
+          rank: 1,
+          companyName: 'Example News',
+          platform: 'instagram',
+          postedAt: '2026-07-21T12:00:00.000Z',
+          text: '=unsafe, "quoted"',
+          permalink: 'https://example.com/post',
+          engagementTotal: 20,
+          isBgmOwned: true,
         }],
         cohort: {
           landscapeName: 'Example Landscape',
@@ -95,6 +108,7 @@ describe('renderReportCsv', () => {
             engagementTotal: 20,
             changePct: null,
             isFocus: true,
+            isBgmOwned: true,
           }],
           focusPostRank: 1,
           focusPostPool: 1,
@@ -108,7 +122,8 @@ describe('renderReportCsv', () => {
     const csv = renderReportCsv(doc);
     assert.match(csv, /"followers",100,0,,"unknown"/);
     assert.match(csv, /"net_followers",,,,,?/);
-    assert.match(csv, /"Example News",100,0,,,/);
+    assert.match(csv, /"Example News",true,100,0,,,/);
+    assert.match(csv, /"Top posts — BGM"/);
     assert.match(csv, /"'=unsafe, ""quoted"""/);
     assert.doesNotMatch(csv, /Infinity|NaN/);
   });

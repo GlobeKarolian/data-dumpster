@@ -8,7 +8,7 @@
  * and the second is the important one:
  *
  *   1. Cold start. The runner pulls in every adapter and their HTTP stacks. This
- *      route is called eight times a day; the other several thousand requests
+ *      route is called frequently for queue recovery; unrelated requests
  *      that share a bundle should not pay for it.
  *   2. Failure isolation. If the ingestion module is missing or throws at import
  *      time -- mid-deploy, a bad env var, a half-shipped adapter -- a static
@@ -27,36 +27,28 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 /*
- * Why vercel.json schedules this every three hours.
+ * Why vercel.json opens new collection windows every twelve hours.
  *
  * Audience is a point-in-time snapshot. A follower count is only knowable on
  * the day it is read, and a day that passes uncollected is missing forever;
  * there is no backfill for it. Every channel therefore has to be visited at
  * least once a day or the weekly report loses net change and growth rate.
  *
- * The arithmetic, measured rather than assumed: a full pass over the 138 active
- * channels is 965 seconds of serial wall time, which is 96 seconds at ten
- * concurrent workers. The whole estate therefore fits in one request, and the
- * per-run ceiling is 200 rather than 60 so a run is bounded by the clock rather
- * than by an arbitrary count.
+ * The full active estate fits below the 250-channel ceiling. A five-minute
+ * request may still stop before the slow vendor tail settles, so offset recovery
+ * ticks drain durable continuations and retries without opening a new window.
  *
- * Eight runs a day is deliberate headroom, not eight times the data. Facebook
- * goes through a scraper whose successful calls take about two minutes each,
- * and a channel that misses its slot has to catch a later one the same day or
- * the reading is gone for good. The queue claims oldest-first with SKIP LOCKED,
- * so extra runs advance the stale tail instead of repeating the same work.
- *
- * Running it less often is how the estate ended up with six uneven days of
- * audience inside a seven-day window, and one day missing altogether.
+ * New collection windows open twice daily. Separate recovery invocations call
+ * this same route with mode=recover; they drain only already-queued work and
+ * never reconcile fresh profiles into a third paid refresh.
  */
 const paramsSchema = z.object({
+  mode: z.enum(['scheduled', 'recover']).default('scheduled'),
   /*
    * Channels per invocation.
    *
-   * The ceiling was 60 against an estate of 138, so no single run could ever
-   * see more than 43% of it and the rest waited three hours for the next one.
-   * At ten workers a full pass measures about 96 seconds, so the whole estate
-   * now fits inside one request with room for the slow tail.
+   * The current estate fits below 250, leaving headroom for additional profiles
+   * while keeping one serverless invocation bounded.
    */
   limit: z.coerce.number().int().min(1).max(250).default(24),
   /** Maximum posts read from one profile before pagination continues next batch. */
@@ -81,7 +73,8 @@ function isRunnerModule(mod: unknown): mod is RunnerModule {
 
 async function handle(req: NextRequest): Promise<Response> {
   assertCronAuthorized(req);
-  const { limit, postLimit } = paramsSchema.parse({
+  const { mode, limit, postLimit } = paramsSchema.parse({
+    mode: req.nextUrl.searchParams.get('mode') ?? undefined,
     limit: req.nextUrl.searchParams.get('limit') ?? undefined,
     postLimit: req.nextUrl.searchParams.get('postLimit') ?? undefined,
   });
@@ -113,13 +106,40 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const startedAt = Date.now();
-  const queued = await runner.enqueueTrackedProfiles();
+  // Recovery ticks are deliberately incapable of opening a new freshness
+  // window. They only claim continuations, paid snapshot receipts and retries
+  // that a twice-daily scheduled pass already placed in the durable queue.
+  const queued = mode === 'scheduled' ? await runner.enqueueTrackedProfiles() : 0;
+  let automaticCoordinators: unknown = null;
+  let refreshJobs: typeof import('@/lib/adapters/refresh-jobs') | null = null;
+  try {
+    refreshJobs = await import('@/lib/adapters/refresh-jobs');
+    if (mode === 'scheduled') {
+      automaticCoordinators = await refreshJobs.startAutomaticRefreshCoordinators();
+    }
+  } catch (err) {
+    // The global queue remains authoritative. A monitor-row failure must not
+    // prevent already-enqueued paid work from running.
+    console.error('[pressbox:cron/ingest] automatic monitor creation failed', err);
+  }
   const result = await runner.runCollectionQueue({ maxChannels: limit, postLimit });
+  let refreshJobsReconciled = 0;
+  try {
+    refreshJobs ??= await import('@/lib/adapters/refresh-jobs');
+    refreshJobsReconciled = await refreshJobs.reconcileActiveRefreshJobs();
+  } catch (err) {
+    // Collection has already succeeded. A progress-row reconciliation failure
+    // must be visible, but it must not turn that paid work into a false retry.
+    console.error('[pressbox:cron/ingest] refresh job reconciliation failed', err);
+  }
   return cronJson({
     ok: true,
+    mode,
     limit,
     postLimit,
     queued,
+    automaticCoordinators,
+    refreshJobsReconciled,
     durationMs: Date.now() - startedAt,
     result,
   });

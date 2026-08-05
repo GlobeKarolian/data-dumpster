@@ -2,6 +2,10 @@ import type { Metadata } from 'next';
 import { toDayString } from '@/lib/dates';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { AskChat } from '@/components/ask/ask-chat';
+import {
+  factSheetFingerprint,
+  factSheetScopeFromQuery,
+} from '@/lib/metrics/fact-sheet-request';
 import { analyticsQuery, resolveContext } from '../_lib/context';
 import { loadFactSheet, type SearchParamsInput } from '../_lib/data';
 
@@ -15,7 +19,9 @@ export default async function AskPage({
   const ctx = await resolveContext(await searchParams);
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
 
-  const facts = await loadFactSheet(analyticsQuery(ctx));
+  const query = analyticsQuery(ctx);
+  const facts = await loadFactSheet(query);
+  const fingerprint = facts.data ? factSheetFingerprint(facts.data) : null;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -25,11 +31,14 @@ export default async function AskPage({
         </p>
       ) : null}
       <AskChat
+        key={fingerprint ?? 'unavailable'}
         landscapeId={ctx.landscape.id}
         landscapeName={ctx.landscape.name}
         start={toDayString(ctx.range.start)}
         end={toDayString(ctx.range.end)}
         facts={facts.data}
+        factsFingerprint={fingerprint}
+        scope={factSheetScopeFromQuery(query)}
       />
     </div>
   );

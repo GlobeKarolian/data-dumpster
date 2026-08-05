@@ -13,7 +13,7 @@ export default async function CrossChannelPage({
 }) {
   const ctx = await resolveContext(await searchParams);
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 max-w-full space-y-5">
       <CrossChannelTabs />
       <OverviewScreen ctx={ctx} />
     </div>

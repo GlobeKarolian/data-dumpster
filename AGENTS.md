@@ -16,7 +16,16 @@ A Rival IQ competitor built for news organizations, for Boston Globe Media.
 
 Next.js 16 App Router, React 19, TypeScript strict, Tailwind v4, Drizzle ORM on Neon Postgres, deployed to Vercel at `pressbox-kappa.vercel.app`. Private mirror at `github.com/GlobeKarolian/data-dumpster`.
 
-It ingests account- and post-level social data across Instagram, TikTok, Facebook, YouTube, LinkedIn and Threads through a `ChannelAdapter` interface — one adapter per platform in `src/lib/adapters/`, vendor client modules beside them in `src/lib/vendors/`. EnsembleData is the primary vendor; Bright Data is the fallback. AI features run behind a `ModelProvider` interface so the org brings its own model (Anthropic, OpenAI, Google, Azure, OpenAI-compatible, Ollama).
+It ingests account- and post-level social data across Facebook, Instagram,
+TikTok, X, Threads, Reddit, LinkedIn, YouTube and Bluesky through a
+`ChannelAdapter` interface. Bright Data is the purchased primary source for
+existing Facebook profiles and, whenever configured, for Instagram, TikTok, X,
+Threads and LinkedIn. EnsembleData remains the Reddit publisher-user source,
+the synchronous X onboarding helper, and the no-Bright fallback for Instagram,
+TikTok, X and Threads. A started or failed paid Bright Data stage never falls
+through to another vendor. YouTube and Bluesky use their sanctioned public
+interfaces. AI features run behind a `ModelProvider` interface so the org brings
+its own model (Anthropic, OpenAI, Google, Azure, OpenAI-compatible, Ollama).
 
 Two landscapes: **BGM** (14 owned brands) and **Boston News Market** (22 companies). There is no RSS ingestion and there should not be.
 
@@ -49,11 +58,14 @@ is implemented, including email, Slack links, run-now and the delivery audit.
 Before using it, apply the schema change and configure the delivery variables in
 `.env.example`. Also outstanding:
 
-- Twitter ingestion is implemented against the live EnsembleData response, but
-  the 22 active channels have never run. `/twitter/user/tweets` returned a
-  Twitter-selected highlights feed rather than a chronological timeline, so
-  every run carries a coverage warning.
-- Crons are off (`vercel.json` has an empty `crons` array) pending a decision on vendor spend.
-- Audience history is one day deep, so all net-change reads render blank. Not a bug.
+- X uses Bright Data when configured, but a live exact-window test returned an
+  incomplete timeline. Without Bright Data, EnsembleData's
+  `/twitter/user/tweets` returns a Twitter-selected Highlights feed rather than
+  a chronological timeline. Neither path currently certifies full post-window
+  coverage.
+- Recurring collection is active: pooled ingest runs every three hours and two
+  same-day coverage sweeps protect audience snapshots before Eastern midnight.
+- Audience history begins on July 28. Earlier follower stocks cannot be
+  reconstructed, so mid-July net-change reads remain blank. Not a bug.
 - `GBH News` has 380 posts belonging to no landscape. Needs a product decision, not a code fix.
 - The requested post-library rebuild is still separate from Content Analysis.

@@ -13,6 +13,7 @@ import { SparkLine } from '@/components/charts/spark-line';
 import { DeltaBadge } from '@/components/ui/delta-badge';
 import { formatMetric } from '@/components/ui/format';
 import { MetricLabel } from '@/components/ui/metric-label';
+import { PlatformIcon } from '@/components/ui/platform-icon';
 
 export interface CrossChannelGlanceProps {
   summary: SummaryResult | null;
@@ -30,8 +31,9 @@ function MetricColumn({
   stat: HeadlineStat | null;
 }) {
   const available = stat?.available === true;
+  const complete = available && stat?.complete !== false;
   const previousLabel =
-    stat?.previousAvailable && stat.previousValue !== null
+    complete && stat?.previousAvailable && stat.previousComplete !== false && stat.previousValue !== null
       ? formatMetric(stat.previousValue, metric, 'full')
       : undefined;
 
@@ -49,6 +51,11 @@ function MetricColumn({
           previousLabel={previousLabel}
         />
       </div>
+      {available && !complete ? (
+        <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+          Partial coverage · WoW withheld
+        </p>
+      ) : null}
       <div className="mt-auto pt-3">
         {available && stat.spark.length > 0 ? (
           <SparkLine
@@ -85,11 +92,7 @@ function TopChannelColumn({ summary }: { summary: SummaryResult | null }) {
       </p>
       <div className="mt-2 flex min-w-0 items-center gap-2">
         {hasMeasuredEngagement ? (
-          <span
-            className="h-3 w-3 shrink-0 rounded-sm"
-            style={{ backgroundColor: PLATFORM_COLORS[platform] }}
-            aria-hidden="true"
-          />
+          <PlatformIcon platform={platform} className="h-4 w-4" />
         ) : null}
         <span className="truncate text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           {hasMeasuredEngagement ? PLATFORM_LABELS[platform] : '—'}

@@ -1,5 +1,5 @@
 import { METRIC_DEFS } from '@/lib/metrics/definitions';
-import { parseDateValue } from '@/lib/dates';
+import { parseDateValue, REPORT_TIME_ZONE } from '@/lib/dates';
 import type { MetricKey } from '@/lib/types';
 import { compactNumber } from '@/lib/utils';
 
@@ -57,11 +57,16 @@ export function formatUsd(value: number | null | undefined, digits = 2): string 
   });
 }
 
-const DATE_FMT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const DATE_FMT = new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric', timeZone: REPORT_TIME_ZONE,
+});
 const DATE_TIME_FMT = new Intl.DateTimeFormat('en-US', {
   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  timeZone: REPORT_TIME_ZONE,
 });
-const FULL_FMT = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+const FULL_FMT = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric', month: 'short', day: 'numeric', timeZone: REPORT_TIME_ZONE,
+});
 
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '—';

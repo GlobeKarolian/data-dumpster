@@ -20,13 +20,18 @@
  * saving. Nothing here invents a number.
  */
 import { and, eq } from 'drizzle-orm';
-import { endOfWeek, startOfWeek, subWeeks } from 'date-fns';
 import type { NextRequest } from 'next/server';
 import { apiHandler } from '@/lib/session';
 import { db } from '@/db';
 import { briefs, landscapes, modelConnections, orgs } from '@/db/schema';
 import { generateBrief } from '@/lib/ai/brief';
-import { toDayString } from '@/lib/dates';
+import {
+  endOfZoneDay,
+  parseLocalDay,
+  REPORT_TIME_ZONE,
+  toDayString,
+} from '@/lib/dates';
+import { lastCompleteWeekInZone } from '@/lib/reports/schedule';
 import { assertCronAuthorized, cronJson } from '../../_lib/cron';
 
 export const runtime = 'nodejs';
@@ -63,9 +68,13 @@ function readSettings(raw: Record<string, unknown> | null): WeeklyBriefSettings 
 
 /** Monday 00:00 to Sunday 23:59 of the week that just ended. */
 function lastCompleteWeek(now = new Date()): { start: Date; end: Date } {
-  const thisWeek = startOfWeek(now, { weekStartsOn: 1 });
-  const start = subWeeks(thisWeek, 1);
-  return { start, end: endOfWeek(start, { weekStartsOn: 1 }) };
+  const period = lastCompleteWeekInZone(now, REPORT_TIME_ZONE);
+  const start = parseLocalDay(period.start);
+  const endDay = parseLocalDay(period.end);
+  if (!start || !endDay) {
+    throw new Error('Could not construct the previous complete Eastern week.');
+  }
+  return { start, end: endOfZoneDay(endDay) };
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -139,7 +148,7 @@ async function handle(req: NextRequest): Promise<Response> {
       summary.generated += 1;
       summary.landscapes.push({
         landscapeId: row.landscapeId,
-        status: brief.verification.ok ? 'generated' : 'generated_with_warnings',
+        status: 'generated',
         briefId: brief.id,
       });
     } catch (err) {

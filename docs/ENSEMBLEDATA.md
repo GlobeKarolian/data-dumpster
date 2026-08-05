@@ -3,6 +3,14 @@
 Researched 29 July 2026 against the live API and the published docs, after
 measuring the previous vendor at 76% success and a 44-second median call.
 
+**Implementation update, 4 August 2026.** This endpoint inventory remains dated
+evidence, not the operative source order. Bright Data is now primary for existing
+Facebook and for Instagram, TikTok, X, Threads and LinkedIn whenever configured.
+EnsembleData remains the Reddit publisher-user source, the synchronous X
+onboarding helper, and the no-Bright fallback for Instagram, TikTok, X and
+Threads. A paid Bright Data stage never falls through after it starts or fails.
+YouTube stays on the official API and Bluesky on the public appview.
+
 ## Why this document exists
 
 The first vendor was chosen from a comparison article and integrated endpoint by
@@ -93,14 +101,16 @@ stored with zero views and none is typed as a reel.
 Both endpoints accept `oldest_timestamp`, so a window can be requested directly
 rather than over-fetched and filtered client side.
 
-### 3. Facebook is the only real gap
+### 3. EnsembleData does not cover Facebook or LinkedIn
 
-Facebook and LinkedIn are absent. Facebook competitor Pages therefore stay on
-the previous vendor, which measured 42% success there, or wait for Page Public
-Content Access. LinkedIn has no competitor read path from anyone at any price,
-which is unchanged and not this vendor's fault.
+That remains true about EnsembleData, not about the product or vendor market.
+Existing Facebook profiles now use Bright Data, while future sanctioned Page
+Public Content Access remains approval-gated. LinkedIn public company pages now
+use Bright Data's company and company-post datasets. That path exposes follower
+stock, posts, likes and comments only; it has no terminal history marker, so
+every requested history window remains source-limited.
 
-## Cost at this landscape's size
+## Historical cost model at this landscape's size
 
 The Silver plan is 11,000 units per day for $400 a month.
 
@@ -121,16 +131,16 @@ the plan. Hourly refreshes of the whole landscape would need Gold. The
 `/customer/get-used-units` endpoint costs nothing to poll, so actual spend
 should be surfaced in Settings rather than estimated in a document.
 
-## What to build, in order
+## Current role in the source policy
 
-1. Instagram on EnsembleData, feed and reels as separate calls, so views and
-   reel typing stop being wrong. This is a correctness fix, not an addition.
-2. YouTube on EnsembleData, which needs no key and lights up 23 channels.
-3. Twitter on EnsembleData for public competitor coverage. The live endpoint
-   returned `profile_best_highlights`, not a chronological timeline, so missing
-   posts must be described as unobserved. Keep X API v2 for owned accounts that
-   need a complete incremental timeline or impressions.
-4. Reddit user-account and subreddit posts through EnsembleData, after Legal
-   confirms the commercial use is covered by the vendor contract.
-5. Retire the previous vendor everywhere except Facebook.
-6. Surface unit spend in Settings from `/customer/get-used-units`.
+1. Collect Reddit publisher-user feeds after Legal confirms the vendor agreement
+   covers commercial use. Retained legacy subreddit rows remain readable, but new
+   Reddit sources are user accounts.
+2. Resolve X profiles synchronously during onboarding.
+3. Collect Instagram, TikTok, X and Threads only when Bright Data is absent.
+4. Never take over a live or failed paid Bright Data stage; resume its saved
+   receipt or surface the failure.
+5. Treat `/twitter/user/tweets` as selected Highlights, never a chronological
+   timeline or certified window.
+6. Surface unit spend from `/customer/get-used-units` when that product work is
+   prioritized.

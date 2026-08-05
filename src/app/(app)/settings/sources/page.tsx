@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { Platform } from '@/lib/types';
+import type { CollectionOutcome } from '@/lib/adapters/types';
 import { SourcesManager, type CompanySources } from '@/components/settings/sources-manager';
 import { CoverageStrip } from '@/components/settings/coverage-strip';
 import { recentCoverage, type DayCoverage } from '@/lib/metrics/daily-coverage';
@@ -18,11 +19,11 @@ type SourceRow = {
   handle: string | null;
   profile_url: string | null;
   active: boolean | null;
-  is_owned: boolean | null;
   last_ingested_at: string | null;
   last_run_status: string | null;
   last_run_error: string | null;
   collection_status: 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | null;
+  collection_outcome: CollectionOutcome | null;
   collection_required_since: string | null;
   collection_required_until: string | null;
   collection_coverage_since: string | null;
@@ -63,20 +64,47 @@ export default async function SourcesPage({
            ch.handle,
            ch.profile_url,
            ch.active,
-           ch.is_owned,
            ch.last_ingested_at,
            run.status AS last_run_status,
            run.error  AS last_run_error,
-           state.status AS collection_status,
-           state.required_since AS collection_required_since,
-           state.required_until AS collection_required_until,
+           CASE
+             WHEN demand.channel_id IS NULL THEN NULL
+             WHEN state.coverage_since <= demand.required_since
+               AND state.coverage_until >= demand.required_until
+               THEN 'succeeded'::ingest_status
+             ELSE state.status
+           END AS collection_status,
+           CASE
+             WHEN demand.channel_id IS NULL THEN NULL
+             WHEN state.coverage_since <= demand.required_since
+               AND state.coverage_until >= demand.required_until
+               THEN 'certified_complete'::collection_outcome
+             ELSE state.outcome
+           END AS collection_outcome,
+           demand.required_since AS collection_required_since,
+           demand.required_until AS collection_required_until,
            state.coverage_since AS collection_coverage_since,
            state.coverage_until AS collection_coverage_until,
            state.attempts AS collection_attempts,
-           state.next_attempt_at AS collection_next_attempt_at,
+           CASE
+             WHEN state.coverage_since <= demand.required_since
+               AND state.coverage_until >= demand.required_until
+               THEN NULL
+             ELSE state.next_attempt_at
+           END AS collection_next_attempt_at,
            state.lease_until AS collection_lease_until,
-           state.has_more AS collection_has_more,
-           state.last_error AS collection_last_error,
+           CASE
+             WHEN state.coverage_since <= demand.required_since
+               AND state.coverage_until >= demand.required_until
+               THEN false
+             ELSE state.has_more
+           END AS collection_has_more,
+           CASE
+             WHEN state.coverage_since <= demand.required_since
+               AND state.coverage_until >= demand.required_until
+               THEN NULL
+             ELSE state.last_error
+           END AS collection_last_error,
            state.updated_at AS collection_updated_at,
            (SELECT count(*) FROM posts p WHERE p.channel_id = ch.id) AS post_count
       FROM landscapes selected_l
@@ -85,6 +113,9 @@ export default async function SourcesPage({
       JOIN companies c
         ON c.id = lc.company_id
       LEFT JOIN channels ch ON ch.company_id = c.id
+      LEFT JOIN landscape_channel_demands demand
+        ON demand.landscape_id = selected_l.id
+       AND demand.channel_id = ch.id
       LEFT JOIN channel_collection_state state ON state.channel_id = ch.id
       LEFT JOIN LATERAL (
         SELECT r.status, r.error
@@ -113,11 +144,11 @@ export default async function SourcesPage({
         handle: row.handle,
         profileUrl: row.profile_url,
         active: row.active ?? true,
-        isOwned: row.is_owned ?? false,
         lastIngestedAt: row.last_ingested_at,
         lastRunStatus: row.last_run_status,
         lastRunError: row.last_run_error,
         collectionStatus: row.collection_status,
+        collectionOutcome: row.collection_outcome,
         collectionRequiredSince: row.collection_required_since,
         collectionRequiredUntil: row.collection_required_until,
         collectionCoverageSince: row.collection_coverage_since,
@@ -141,8 +172,9 @@ export default async function SourcesPage({
           Social profiles
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          Add and manage the accounts in {landscape.name}. Complete means the profile’s durable
-          collection record covers its entire requested window, not merely that a recent run finished.
+          Add and manage the accounts in {landscape.name}. A profile can report useful recent data
+          while its older history remains partial; Data Dumpster labels that distinction instead of
+          turning missing history into zero.
         </p>
       </div>
 

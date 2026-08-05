@@ -55,9 +55,17 @@ export interface MetricRow {
    * exist. Consumers must render a blank rather than treating `value` as zero.
    */
   available: boolean;
+  /**
+   * False when a real value was computed from useful observations but one or
+   * more configured profiles could not certify the entire requested window.
+   * Partial is not unavailable, and it is never safe to use for a WoW delta.
+   */
+  complete?: boolean;
   previousValue?: number | null;
   /** Whether `previousValue` was measured rather than supplied as a fallback. */
   previousAvailable?: boolean;
+  /** Whether the previous value covers every configured profile and day. */
+  previousComplete?: boolean;
   /** Fractional change, e.g. 0.27 for +27%. Null when the prior period is zero. */
   changePct?: number | null;
   rank: number;

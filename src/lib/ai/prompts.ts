@@ -61,7 +61,12 @@ export function unavailableMetricField(record: Record<string, unknown>, key: str
   return record.previousAvailable === false && key === 'previousValue';
 }
 
-function availableBreakdown(
+/**
+ * Return only the per-platform values the availability metadata says were
+ * measured. The prompt renderer, number index, and deterministic verifier all
+ * use this function so none can expose or certify a hidden fallback value.
+ */
+export function availableBreakdownForPrompt(
   record: Record<string, unknown>,
   value: unknown,
 ): Record<string, unknown> | null {
@@ -91,7 +96,7 @@ function slimForPrompt(value: unknown, key?: string): unknown {
       if (k === 'thumbnailUrl' || k === 'logoUrl' || k === 'color' || k === 'mediaUrl') continue;
       if (unavailableMetricField(record, k)) continue;
       if (k === 'breakdown') {
-        const measured = availableBreakdown(record, v);
+        const measured = availableBreakdownForPrompt(record, v);
         if (measured) out[k] = slimForPrompt(measured, k);
         continue;
       }
@@ -129,7 +134,7 @@ export function numberIndex(facts: FactSheet, limit = 600): { path: string; valu
       for (const [k, v] of Object.entries(record)) {
         if (unavailableMetricField(record, k)) continue;
         if (k === 'breakdown') {
-          const measured = availableBreakdown(record, v);
+          const measured = availableBreakdownForPrompt(record, v);
           if (measured) walk(measured, path ? path + '.' + k : k);
           continue;
         }
@@ -155,6 +160,12 @@ export function renderFactSheet(facts: FactSheet): string {
 
 /* ------------------------------------------------------------ shared rules */
 
+/** Keep the prose rule and deterministic verifier on the same boundaries. */
+export const PRINTED_PERCENT_CHANGE_GUARDRAILS = {
+  maximum: 1000,
+  minimum: -95,
+} as const;
+
 const HONESTY_RULES = [
   'HARD RULES. These are not style preferences. Violating any of them makes the output unusable.',
   '',
@@ -165,8 +176,14 @@ const HONESTY_RULES = [
   '2. CITATIONS. Every sentence containing a number ends with the fact-sheet path that number',
   '   came from, in square brackets, exactly as written in the NUMBER INDEX. Example:',
   '   "Engagement fell to 41,208 [facts.focusSummary.headline.engagementTotal.value]."',
-  '   Multiple figures in one sentence get multiple bracketed paths.',
-  '3. RUNAWAY PERCENTAGES. If a percent change is greater than 1000% (or less than -95%),',
+  '   Multiple figures in one sentence get multiple bracketed paths in the same order as the',
+  '   figures. The cited path must describe the stated metric, not merely contain the same value.',
+  '   Write every quantitative fact with digits, never as a spelled-out quantity. If a caveat',
+  '   contains a number that has no NUMBER INDEX path, preserve its warning qualitatively without',
+  '   repeating that number.',
+  '3. RUNAWAY PERCENTAGES. If a percent change is greater than '
+    + PRINTED_PERCENT_CHANGE_GUARDRAILS.maximum + '% (or less than '
+    + PRINTED_PERCENT_CHANGE_GUARDRAILS.minimum + '%),',
   '   never print the figure. Describe it in words and say why: such swings always come from a',
   '   near-zero baseline in the prior period, so the ratio is an artefact, not a result.',
   '   Write "grew from a near-zero base" rather than "+4,300%".',
@@ -188,7 +205,7 @@ const NEWSROOM_VOICE = [
   '- No hype and no hedging filler: no "delve", "leverage", "unlock", "robust", "significant"',
   '  as a synonym for "large", "it is worth noting", "in today\'s landscape", "game-changer".',
   '- No emoji. No exclamation marks. No rhetorical questions. No bullet lists of one-word items.',
-  '- Prefer a specific noun to an adjective. "Three video posts" beats "strong video performance".',
+  '- Prefer a specific noun to an adjective. "3 video posts" beats "strong video performance".',
   '- Do not congratulate anyone. Do not editorialise about effort. Report.',
   '- An analyst reading this should be able to act on it or forward it without editing it.',
 ].join('\n');

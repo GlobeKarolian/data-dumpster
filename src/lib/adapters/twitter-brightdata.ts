@@ -28,12 +28,21 @@ export interface TwitterVendorResult {
   audience?: NormalizedAudience;
   profile?: AdapterProfile;
   warnings: string[];
+  exhaustive: boolean;
+  incompleteReason?: string;
 }
 
 export async function fetchProfilePosts(
   handle: string,
   apiKey: string,
-  opts: { since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal },
+  opts: {
+    since: Date;
+    until: Date;
+    limit: number;
+    onApiCall?: () => void;
+    signal?: AbortSignal;
+    resumeSnapshotId?: string;
+  },
 ): Promise<TwitterVendorResult> {
   const profileUrl = 'https://x.com/' + handle.replace(/^@/, '');
 
@@ -50,6 +59,7 @@ export async function fetchProfilePosts(
       discoverBy: 'profile_url',
       onApiCall: opts.onApiCall,
       signal: opts.signal,
+      resumeSnapshotId: opts.resumeSnapshotId,
     },
   );
 
@@ -57,11 +67,20 @@ export async function fetchProfilePosts(
   const posts: NormalizedPost[] = [];
   let followers = 0;
   let profile: AdapterProfile | undefined;
+  let sawErrorRow = false;
+  let noPublicPosts = false;
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
     if (isErrorRow(row)) {
       const why = rowError(row);
+      const code = str(row.error_code)?.toLowerCase();
+      if (code === 'dead_page' && /no public posts/i.test(why ?? '')) {
+        noPublicPosts = true;
+        if (why) warnings.push('X for @' + handle + ': ' + why);
+        continue;
+      }
+      sawErrorRow = true;
       if (why) warnings.push('X row error for @' + handle + ': ' + why);
       continue;
     }
@@ -69,8 +88,10 @@ export async function fetchProfilePosts(
     const f = num(pick(row, ['followers', 'followers_count']));
     if (f > followers) followers = f;
     if (!profile) {
+      const externalId = str(pick(row, ['user_id', 'profile_id', 'author_id']));
+      if (!externalId) continue;
       profile = {
-        externalId: str(pick(row, ['user_id', 'profile_id'])) ?? handle,
+        externalId,
         handle: str(pick(row, ['user_posted'])) ?? handle,
         displayName: str(pick(row, ['name'])),
         avatarUrl: str(pick(row, ['profile_image_link'])) ?? null,
@@ -129,12 +150,43 @@ export async function fetchProfilePosts(
   if (posts.length === 0 && rows.length > 0 && warnings.length === 0) {
     warnings.push('X for @' + handle + ': rows returned but none were original posts inside the window.');
   }
-  if (!profile && rows.length === 0) {
+  if (!profile) {
+    if (rows.length === 0 || noPublicPosts) {
+      const incompleteReason = noPublicPosts
+        ? 'Bright Data found no public X posts for @' + handle
+          + ' in the requested period. The source cannot certify that the account was inactive.'
+        : 'Bright Data returned no X rows for @' + handle
+          + ' and cannot certify the requested historical window.';
+      if (!warnings.includes(incompleteReason)) warnings.push(incompleteReason);
+      return {
+        posts: [],
+        warnings,
+        exhaustive: false,
+        incompleteReason,
+      };
+    }
     throw new AdapterError(
-      'Bright Data returned nothing for the X account @' + handle + '.',
+      'Bright Data returned X rows for @' + handle
+        + ' without a stable platform id. No observations were accepted.',
       { platform: PLATFORM, retryable: false },
     );
   }
 
-  return { posts, audience, profile, warnings };
+  const reachedLimit = posts.length >= opts.limit;
+  if (posts.length > opts.limit) posts.length = opts.limit;
+  const incompleteReason = sawErrorRow
+    ? 'Bright Data returned an error row for this X collection; retry the date-ranged dataset before certifying the window.'
+    : reachedLimit
+      ? 'Bright Data reached the ' + opts.limit + '-post X run limit without exposing a continuation cursor; narrow the window or raise the run limit.'
+      : 'Bright Data completed the X snapshot but exposed no terminal cursor or completeness marker, so the requested historical window cannot be certified.';
+  if (incompleteReason && !warnings.includes(incompleteReason)) warnings.push(incompleteReason);
+
+  return {
+    posts,
+    audience,
+    profile,
+    warnings,
+    exhaustive: false,
+    incompleteReason,
+  };
 }

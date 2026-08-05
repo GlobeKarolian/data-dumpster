@@ -1,0 +1,1 @@
+ALTER TABLE "refresh_jobs" ADD COLUMN "request_scopes" jsonb DEFAULT '[]'::jsonb NOT NULL;

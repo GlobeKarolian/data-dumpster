@@ -42,6 +42,10 @@ export function isPostMetricReported(
     case 'youtube':
       return metric === 'applause' || metric === 'conversation' || metric === 'views';
     case 'linkedin':
+      // Bright Data's public company-post contract reports reactions and
+      // comments. It does not expose repost counts, saves, views, reach or
+      // impressions for competitor pages.
+      return metric === 'applause' || metric === 'conversation';
     case 'rss':
       return false;
   }

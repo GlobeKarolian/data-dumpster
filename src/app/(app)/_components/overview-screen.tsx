@@ -11,7 +11,6 @@ import { LeaderboardPanel } from '@/components/overview/leaderboard-panel';
 import { OverviewBenchmarkPanel } from '@/components/overview/overview-benchmark-panel';
 import { PlatformMixPanel } from '@/components/overview/platform-mix';
 import { TopPostsPanel } from '@/components/overview/top-posts';
-import { TopPostsByChannel } from '@/components/overview/top-posts-by-channel';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { StackedAreaChart } from '@/components/charts/stacked-area-chart';
 import { HeatmapGrid } from '@/components/charts/heatmap-grid';
@@ -26,6 +25,7 @@ import {
 import { effectiveFocusCompanyId } from '@/lib/analytics-scope';
 import {
   loadLeaderboard, loadPostingCadence, loadSummary, loadTimeSeries,
+  loadTopPostsByPlatform,
 } from '../_lib/data';
 
 export interface OverviewScreenProps {
@@ -36,6 +36,34 @@ export interface OverviewScreenProps {
   redditMode?: RedditEntityMix | null;
   /** Companies with an active Reddit source in the current URL scope. */
   redditTrackedCompanyIds?: string[];
+}
+
+function OverviewJumpNav() {
+  const links = [
+    { href: '#overview-highlights', label: 'At a glance' },
+    { href: '#overview-top-content', label: 'Top content' },
+    { href: '#overview-benchmarks', label: 'Benchmarks' },
+    { href: '#overview-patterns', label: 'Publishing patterns' },
+  ];
+  return (
+    <nav
+      aria-label="Jump to analysis section"
+      className="flex items-center gap-1 overflow-x-auto rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900/40"
+    >
+      <span className="shrink-0 px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+        Jump to
+      </span>
+      {links.map((link) => (
+        <a
+          key={link.href}
+          href={link.href}
+          className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+        >
+          {link.label}
+        </a>
+      ))}
+    </nav>
+  );
 }
 
 /**
@@ -53,12 +81,13 @@ export async function OverviewScreen({
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
 
   const base = analyticsQuery(ctx, platform ? { platforms: [platform] } : undefined);
+  const requestedFocusCompanyId = effectiveFocusCompanyId(ctx.focusCompanyId, ctx.companyIds);
   const scope = platform ? ' on ' + PLATFORM_LABELS[platform] : ' across every channel';
   const accent = platform ? PLATFORM_COLORS[platform] : undefined;
   const redditAccountView = platform === 'reddit' && redditMode !== 'subreddit';
 
   const [
-    [summary, audience, posts, engagement, rate, series, voice, cadence],
+    [summary, audience, posts, engagement, rate, series, voice, cadence, topPosts],
     redditMetrics,
   ] = await Promise.all([
     Promise.all([
@@ -70,6 +99,10 @@ export async function OverviewScreen({
       loadTimeSeries({ ...base, metric: 'engagementTotal' }),
       loadTimeSeries({ ...base, metric: 'posts' }),
       loadPostingCadence(base),
+      loadTopPostsByPlatform({
+        ...base,
+        perPlatform: platform ? 18 : 3,
+      }),
     ]),
     redditAccountView
       ? Promise.all([
@@ -82,7 +115,7 @@ export async function OverviewScreen({
 
   const focusCompanyId =
     summary.data?.focus?.id
-    ?? effectiveFocusCompanyId(ctx.focusCompanyId, ctx.companyIds);
+    ?? requestedFocusCompanyId;
   const focusName =
     summary.data?.focus?.name
     ?? ctx.companies.find((company) => company.id === focusCompanyId)?.name
@@ -109,6 +142,12 @@ export async function OverviewScreen({
   const scopedCompanyCount = ctx.companyIds.length > 0
     ? ctx.companyIds.length
     : ctx.companies.length;
+  const topPostScopeLabel = ctx.companyIds.length === 1
+    ? ctx.companies.find((company) => company.id === ctx.companyIds[0])?.name
+      ?? 'the selected company'
+    : ctx.companyIds.length > 1
+      ? ctx.companyIds.length + ' selected companies'
+      : ctx.landscape.name;
   const chartSeries = redditAccountView
     ? seriesFor(ctx).filter((item) => trackedRedditCompanies.has(item.key))
     : seriesFor(ctx);
@@ -118,8 +157,11 @@ export async function OverviewScreen({
 
   return (
     <div className="space-y-4">
+      <OverviewJumpNav />
+
       {platform ? (
         <PageSection
+          id="overview-highlights"
           title={focusName + ' at a glance'}
           description={
             'How ' + focusName + ' performed' + scope + ' in the selected window, and how each figure ' +
@@ -158,23 +200,31 @@ export async function OverviewScreen({
           ) : null}
         </PageSection>
       ) : (
-        <>
+        <div id="overview-highlights" className="scroll-mt-24">
           <CrossChannelGlance
             summary={summary.data}
             focusName={focusName}
             error={summary.error}
           />
-          <TopPostsByChannel
-            posts={summary.data?.topPosts ?? []}
-            error={summary.error}
-            landscapeId={ctx.landscape.id}
-            title={`${focusName}'s Top Posts by Channel`}
-          />
-        </>
+        </div>
       )}
+
+      <TopPostsPanel
+        id="overview-top-content"
+        posts={topPosts.data}
+        error={topPosts.error}
+        title={platform
+          ? 'Top ' + publications + ' on ' + PLATFORM_LABELS[platform]
+          : 'Top posts across ' + topPostScopeLabel}
+        platform={platform}
+        landscapeId={ctx.landscape.id}
+        scopeLabel={topPostScopeLabel}
+        perPlatform={platform ? 18 : 3}
+      />
 
       {platform ? (
         <PageSection
+          id="overview-benchmarks"
           title={redditAccountView && !redditCanBenchmark ? 'Account performance' : 'Against the competitive set'}
           description={
             redditAccountView
@@ -280,7 +330,7 @@ export async function OverviewScreen({
           </div>
         </PageSection>
       ) : (
-        <>
+        <div id="overview-benchmarks" className="scroll-mt-24 space-y-4">
           <OverviewBenchmarkPanel
             metric="audience"
             rows={audience.data}
@@ -303,12 +353,13 @@ export async function OverviewScreen({
             focusCompanyId={focusCompanyId}
             focusName={focusName}
           />
-        </>
+        </div>
       )}
 
       <PageSection
-        title="Additional analysis"
-        description="Data Dumpster additions beyond the Rival IQ baseline."
+        id="overview-patterns"
+        title="Publishing patterns"
+        description="Use timing, channel mix, and trend shape to understand what drove the headline numbers."
       >
         <div className="space-y-3">
           <div className={redditAccountView ? '' : 'grid gap-3 xl:grid-cols-3'}>
@@ -359,16 +410,6 @@ export async function OverviewScreen({
           </div>
         </div>
       </PageSection>
-
-      {platform ? (
-        <TopPostsPanel
-          posts={summary.data?.topPosts ?? []}
-          error={summary.error}
-          title={'Top ' + publications + ' on ' + PLATFORM_LABELS[platform]}
-          platform={platform}
-          landscapeId={ctx.landscape.id}
-        />
-      ) : null}
 
     </div>
   );

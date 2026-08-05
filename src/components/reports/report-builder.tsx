@@ -21,6 +21,7 @@ import { ExportActions } from './export-actions';
 import { FigureFields } from './figure-fields';
 import { NarrativeField } from './narrative-field';
 import { PasteBox } from './paste-box';
+import { SearchConsoleSync } from './search-console-sync';
 
 export type ReportBuilderProps = {
   reportId: string;
@@ -72,6 +73,8 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
   const [save, setSave] = React.useState<SaveState>({ phase: 'clean', at: null });
   const [recomputing, setRecomputing] = React.useState(false);
   const [recomputeError, setRecomputeError] = React.useState<string | null>(null);
+  const [searchSyncing, setSearchSyncing] = React.useState(false);
+  const [searchSyncError, setSearchSyncError] = React.useState<string | null>(null);
 
   const period = React.useMemo(
     () => ({ start: initial.periodStart, end: initial.periodEnd }),
@@ -168,6 +171,33 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
       setRecomputeError(err instanceof Error ? err.message : 'Recompute failed.');
     } finally {
       setRecomputing(false);
+    }
+  };
+
+  const syncSearchConsole = async () => {
+    setSearchSyncing(true);
+    setSearchSyncError(null);
+    try {
+      if (!(await persist())) throw new Error('Save the report before pulling Google data.');
+      const res = await fetch('/api/reports/' + reportId + '/search-console', { method: 'POST' });
+      const payload: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = typeof payload === 'object' && payload !== null && 'error' in payload
+          ? String((payload as { error: unknown }).error)
+          : 'Search Console pull failed with status ' + res.status + '.';
+        throw new Error(message);
+      }
+      if (typeof payload !== 'object' || payload === null || !('manual' in payload)) {
+        throw new Error('Search Console returned an invalid report update.');
+      }
+      const next = payload as { manual: ManualState; narrative?: NarrativeBlock };
+      setManual(next.manual);
+      if (next.narrative) setNarrative(next.narrative);
+      setSave({ phase: 'clean', at: new Date().toISOString() });
+    } catch (err) {
+      setSearchSyncError(err instanceof Error ? err.message : 'Search Console pull failed.');
+    } finally {
+      setSearchSyncing(false);
     }
   };
 
@@ -286,6 +316,14 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
       )}
 
       <div className="space-y-3">
+        <SearchConsoleSync
+          period={period}
+          disabled={!canEdit}
+          busy={searchSyncing}
+          error={searchSyncError}
+          syncedAt={manual.tables.globeSearch?.updatedAt ?? manual.tables.bostonSearch?.updatedAt ?? null}
+          onSync={() => { void syncSearchConsole(); }}
+        />
         {searchSections.map((spec) => (
           <PasteBox
             key={spec.id}

@@ -517,7 +517,13 @@ export const youtubeAdapter: ChannelAdapter = {
           (acc, p) => (!acc || p.postedAt.toISOString() > acc ? p.postedAt.toISOString() : acc), null,
         ),
       },
-      hasMore,
+      ...(hasMore
+        ? {
+            hasMore: true as const,
+            exhaustive: false as const,
+            incompleteReason: 'YouTube stopped at the per-run upload or page limit; resume the saved page token before certifying this requested window.',
+          }
+        : { hasMore: false as const, exhaustive: true as const }),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   },

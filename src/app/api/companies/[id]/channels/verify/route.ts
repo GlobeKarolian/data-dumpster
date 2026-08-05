@@ -22,10 +22,11 @@ import { channels, companies } from '@/db/schema';
 import { PLATFORMS, type Platform } from '@/lib/types';
 import { AdapterError } from '@/lib/adapters/types';
 import { getAdapter, hasAdapter, UNIMPLEMENTED_REASONS } from '@/lib/adapters/registry';
+import { publicProfileOnboardingUnavailableReason } from '@/lib/adapters/supported-platforms';
 import { assessProfileMatch } from '@/lib/profile-verification';
+import { publicSourceCredentials } from '@/lib/adapters/public-sources';
 import { readJson } from '../../../../_lib/query';
 import { assertCompanyInOrg } from '../../../../_lib/org-scope';
-import { loadCredentials } from '../../../../_lib/credentials';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,6 +61,10 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
 
   const body = await readJson(req, verifySchema);
   if (!hasAdapter(body.platform)) unsupported(body.platform);
+  const onboardingUnavailable = publicProfileOnboardingUnavailableReason(body.platform);
+  if (onboardingUnavailable) {
+    throw new HttpError(422, onboardingUnavailable, 'public_profile_onboarding_unavailable');
+  }
   const adapter = getAdapter(body.platform);
 
   let handle: string;
@@ -74,7 +79,10 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
     );
   }
 
-  const credentials = await loadCredentials(orgId, body.platform);
+  // This profile is shown immediately and then persisted on confirmation.
+  // Resolve only through deployment public sources; workspace owner/admin
+  // credentials must never influence shared identity or metadata.
+  const credentials = publicSourceCredentials(body.platform);
 
   let profile;
   try {

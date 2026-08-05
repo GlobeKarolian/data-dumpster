@@ -45,6 +45,12 @@ import {
 } from './types';
 import { asArray, asCount, asRecord, asString, fetchJson } from './util/request';
 import { classifyPostType, extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
+import { DATASETS } from '@/lib/vendors/brightdata';
+import {
+  clearBrightDataReceipt,
+  pendingBrightDataStage,
+  runBrightDataStage,
+} from './brightdata-receipt';
 
 const PLATFORM: Platform = 'tiktok';
 const API = 'https://open.tiktokapis.com/v2';
@@ -384,11 +390,10 @@ async function fetchVideos(
 /* ------------------------------------------------------------- adapter */
 
 /**
- * Owned or competitor? Same reasoning as the Instagram adapter: the runner
- * injects `cursor.__isOwned` from channels.is_owned, and keys prefixed with a
- * double underscore are stripped before the cursor is persisted. Absent that
- * flag we assume owned, because a token was configured for something and the
- * failure mode of guessing wrong is a clear error rather than bad data.
+ * Owned or competitor? The pooled runner forces `cursor.__isOwned` to false,
+ * and double-underscore keys are stripped before persistence. Explicit true is
+ * reserved for a future org-private owned runner. The absent-flag fallback is
+ * retained only for direct/legacy adapter callers.
  */
 function isOwnedTikTok(ctx: FetchContext): boolean {
   const flag = ctx.cursor.__isOwned;
@@ -404,18 +409,13 @@ function isOwnedTikTok(ctx: FetchContext): boolean {
  * metrics come from different datasets.
  */
 /**
- * Preferred competitor path: EnsembleData.
- *
- * Chosen over the previous vendor on measured evidence rather than preference.
- * Across the same eight accounts: 8 of 8 in 1.5 to 2.6 seconds, against 76%
- * success at a 44-second median. The engagement figures agreed exactly on posts
- * both returned, so this is a latency and reliability swap, not a data change.
+ * Secondary competitor path used only when Bright Data is not configured.
  */
 async function fetchCompetitorViaEnsemble(ctx: FetchContext, token: string): Promise<FetchResult> {
   const { fetchProfile, fetchPosts } = await import('./tiktok-ensemble');
 
   const { profile, audience } = await fetchProfile(ctx.handle, token, ctx.onApiCall, ctx.signal);
-  const { posts, warnings } = await fetchPosts(ctx.handle, token, {
+  const result = await fetchPosts(ctx.handle, token, {
     since: ctx.since,
     until: ctx.until,
     limit: ctx.limit,
@@ -424,34 +424,102 @@ async function fetchCompetitorViaEnsemble(ctx: FetchContext, token: string): Pro
   });
 
   return {
-    posts,
+    posts: result.posts,
     audience: audience ? [audience] : [],
     profile,
     cursor: { source: 'ensembledata', lastVendorReadAt: new Date().toISOString() },
-    hasMore: false,
-    warnings,
+    ...(result.exhaustive
+      ? { hasMore: false as const, exhaustive: true as const }
+      : {
+          hasMore: false as const,
+          exhaustive: false as const,
+          incompleteReason: result.incompleteReason
+            ?? 'EnsembleData did not certify the requested TikTok window and exposed no continuation cursor.',
+        }),
+    warnings: result.warnings,
   };
 }
 
 async function fetchCompetitorViaVendor(ctx: FetchContext, apiKey: string): Promise<FetchResult> {
   const { fetchProfile, fetchPosts } = await import('./tiktok-brightdata');
+  const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
+  if (
+    pendingStage !== undefined
+    && pendingStage !== 'tiktok-profile'
+    && pendingStage !== 'tiktok-posts'
+  ) {
+    throw new AdapterError(
+      'TikTok has a Bright Data receipt for unknown stage "' + pendingStage
+        + '". Reconcile the receipt before starting another paid snapshot.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
 
-  const { profile, audience } = await fetchProfile(ctx.handle, apiKey, ctx.onApiCall, ctx.signal);
-  const { posts, warnings } = await fetchPosts(ctx.handle, apiKey, {
+  let profile: AdapterProfile | undefined;
+  let audience: NormalizedAudience | undefined;
+  const warnings: string[] = [];
+
+  if (pendingStage !== 'tiktok-posts') {
+    const profileStage = await runBrightDataStage(ctx, {
+      platform: PLATFORM,
+      stage: 'tiktok-profile',
+      datasetId: DATASETS.tiktokProfile,
+    }, async (resumeSnapshotId) => await fetchProfile(
+      ctx.handle,
+      apiKey,
+      ctx.onApiCall,
+      ctx.signal,
+      resumeSnapshotId,
+    ));
+    if (profileStage.kind === 'continuation') return profileStage.result;
+    ({ profile, audience } = profileStage.value);
+    warnings.push(...profileStage.warnings);
+  } else if (!ctx.externalId?.trim()) {
+    throw new AdapterError(
+      'TikTok post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+        + ' cannot resume because the pooled channel has no verified stable platform id. '
+        + 'Reconcile the profile identity before retrying; no observations were written.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+
+  const postsContext = pendingStage === 'tiktok-profile'
+    ? { ...ctx, cursor: { ...ctx.cursor, ...clearBrightDataReceipt() } }
+    : ctx;
+  const postsStage = await runBrightDataStage(postsContext, {
+    platform: PLATFORM,
+    stage: 'tiktok-posts',
+    datasetId: DATASETS.tiktokPostsByProfile,
+  }, async (resumeSnapshotId) => await fetchPosts(ctx.handle, apiKey, {
     since: ctx.since,
     until: ctx.until,
     limit: ctx.limit,
     onApiCall: ctx.onApiCall,
     signal: ctx.signal,
-  });
+    resumeSnapshotId,
+  }), profile, audience ? [audience] : []);
+  if (postsStage.kind === 'continuation') return postsStage.result;
+  const result = postsStage.value;
+  warnings.push(...postsStage.warnings);
 
   return {
-    posts,
+    posts: result.posts,
     audience: audience ? [audience] : [],
-    profile,
-    cursor: { source: 'brightdata', lastVendorReadAt: new Date().toISOString() },
-    hasMore: false,
-    warnings,
+    ...(profile ? { profile } : {}),
+    cursor: {
+      source: 'brightdata',
+      ...clearBrightDataReceipt(),
+      lastVendorReadAt: new Date().toISOString(),
+    },
+    ...(result.exhaustive
+      ? { hasMore: false as const, exhaustive: true as const }
+      : {
+          hasMore: false as const,
+          exhaustive: false as const,
+          incompleteReason: result.incompleteReason
+            ?? 'Bright Data did not certify the requested TikTok window and exposed no continuation cursor.',
+        }),
+    warnings: [...result.warnings, ...warnings],
   };
 }
 
@@ -459,7 +527,10 @@ export const tiktokAdapter: ChannelAdapter = {
   platform: PLATFORM,
   displayName: 'TikTok',
   accessNotes:
-    'Owned accounts only, via the TikTok Display API v2 (user.info.profile, user.info.stats and '
+    'Pooled public collection uses Bright Data exclusively when it is configured. EnsembleData '
+    + 'is used only when Bright Data is not configured; a failed or cancelled paid Bright Data '
+    + 'stage is never retried through EnsembleData. '
+    + 'Owned accounts can use the TikTok Display API v2 (user.info.profile, user.info.stats and '
     + 'video.list scopes). The account owner completes an OAuth consent once; access tokens last 24 '
     + 'hours and are refreshed automatically here using the 365-day refresh token. '
     + 'Owned accounts return followers, video list, views, likes, comments and shares. Saves and '
@@ -478,7 +549,7 @@ export const tiktokAdapter: ChannelAdapter = {
     { key: 'accessToken', label: 'Access token', secret: true, required: false,
       help: 'Owned channels only. From the TikTok for Developers OAuth flow, with user.info.profile, user.info.stats and video.list scopes.' },
     { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
-      help: 'Competitor channels only. Enables purchased public TikTok data. Read docs/DATA-ACCESS.md before enabling.' },
+      help: 'Primary pooled public source. Enables purchased public TikTok data. Read docs/DATA-ACCESS.md before enabling.' },
     { key: 'refreshToken', label: 'Refresh token', secret: true, required: false,
       help: 'Strongly recommended. Access tokens expire after 24 hours; without this every nightly run fails.' },
     { key: 'clientKey', label: 'Client key', required: false, help: 'Needed only for automatic token refresh.' },
@@ -525,14 +596,19 @@ export const tiktokAdapter: ChannelAdapter = {
    * caller is responsible for checking it is the one they meant.
    */
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
-    // Adding a competitor channel is the common case, and the Display API cannot
-    // serve it. Prefer the purchased source whenever the org has one configured
-    // and no owner token is present, so the Sources screen can resolve any
-    // public account instead of demanding an OAuth grant nobody can give.
-    const vendorKey = credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    // Callers supply the public-source allowlist. Do not reach around it to
+    // deployment environment variables or change vendors after a paid failure.
+    const ensembleToken = credentials.ensembleDataToken?.trim() || '';
+    const vendorKey = credentials.brightDataApiKey?.trim() || '';
     if (!credentials.accessToken && vendorKey) {
       const { fetchProfile } = await import('./tiktok-brightdata');
       const { profile } = await fetchProfile(handle, vendorKey);
+      return profile;
+    }
+
+    if (!credentials.accessToken && ensembleToken) {
+      const { fetchProfile } = await import('./tiktok-ensemble');
+      const { profile } = await fetchProfile(handle, ensembleToken);
       return profile;
     }
 
@@ -552,22 +628,27 @@ export const tiktokAdapter: ChannelAdapter = {
   async fetch(ctx: FetchContext): Promise<FetchResult> {
     if (!isOwnedTikTok(ctx)) {
       // Competitor channel. The Display API cannot serve this, so route to the
-      // purchased source if the org has configured one.
-      // Preference order is deliberate and evidence-based: the faster, more
-      // reliable vendor first, the older one only as a fallback.
-      const ensembleToken = ctx.credentials.ensembleDataToken ?? process.env.ENSEMBLEDATA_TOKEN ?? '';
-      if (ensembleToken) return await fetchCompetitorViaEnsemble(ctx, ensembleToken);
+      // purchased source selected by the deployment-wide public-source policy.
+      const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
+      const ensembleToken = ctx.credentials.ensembleDataToken?.trim() || '';
+      const vendorKey = ctx.credentials.brightDataApiKey?.trim() || '';
 
-      const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
-      if (!vendorKey) {
+      if (pendingStage !== undefined && !vendorKey) {
         throw new AdapterError(
-          `TikTok competitor data requires a purchased source. @${ctx.handle} is not an owned channel, `
-          + 'and the Display API only reads the account that granted the token. Configure a Bright Data '
-          + 'API key in Settings > Data Sources, or mark this channel as owned. See docs/DATA-ACCESS.md.',
+          `TikTok has a paid Bright Data snapshot waiting to resume for @${ctx.handle}, but `
+            + 'the Bright Data API key is unavailable. Restore the key before using another source.',
           { platform: PLATFORM, retryable: false },
         );
       }
-      return await fetchCompetitorViaVendor(ctx, vendorKey);
+      if (vendorKey) return await fetchCompetitorViaVendor(ctx, vendorKey);
+      if (ensembleToken) return await fetchCompetitorViaEnsemble(ctx, ensembleToken);
+
+      throw new AdapterError(
+        `TikTok public data for @${ctx.handle} requires a deployment-level Bright Data API key or, `
+          + 'when Bright Data is unconfigured, an EnsembleData token. Owner OAuth collection is '
+          + 'disabled until private insights have org-scoped storage. See docs/DATA-ACCESS.md.',
+        { platform: PLATFORM, retryable: false },
+      );
     }
 
     const auth: TikTokAuth = { accessToken: requireAccessToken(ctx.credentials) };
@@ -602,7 +683,15 @@ export const tiktokAdapter: ChannelAdapter = {
         tokenRefreshedAt: auth.refreshedAccessToken ? new Date().toISOString() : null,
         tokenExpiresAt: auth.expiresAt ?? null,
       },
-      hasMore,
+      ...(hasMore
+        ? {
+            // TikTok's paging cursor is not yet persisted, so rerunning would
+            // start at the newest video rather than resume this window.
+            hasMore: false as const,
+            exhaustive: false as const,
+            incompleteReason: 'TikTok Display API reached the per-run post or page limit without a persisted cursor. Add window-bound cursor persistence before certifying this requested window.',
+          }
+        : { hasMore: false as const, exhaustive: true as const }),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   },

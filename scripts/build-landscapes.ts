@@ -11,11 +11,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { db } from '@/db';
-import { orgs, companies, channels, landscapes, landscapeCompanies } from '@/db/schema';
+import { orgs, companies, channels, landscapes } from '@/db/schema';
 import { and, eq, notInArray } from 'drizzle-orm';
 import { slugify } from '@/lib/utils';
 import { getAdapter, hasAdapter } from '@/lib/adapters/registry';
 import type { Platform } from '@/lib/types';
+import { channelIdentityKey } from '@/lib/channel-identity';
+import { enqueueLandscapeCollection } from '@/lib/adapters/collection-queue';
+import { replaceLandscapeMembership } from '@/lib/landscape-membership';
 
 const COLUMNS: { column: string; platform: Platform }[] = [
   { column: 'twitter', platform: 'twitter' },
@@ -71,12 +74,20 @@ async function upsertCompanyAndChannels(orgId: string, row: Record<string, strin
     let handle: string;
     try { handle = getAdapter(platform).parseHandle(url); } catch { continue; }
 
-    const exists = await db.select({ id: channels.id }).from(channels).where(and(
-      eq(channels.companyId, company.id), eq(channels.platform, platform), eq(channels.handle, handle),
+    const identityKey = channelIdentityKey(platform, handle);
+    const [existingChannel] = await db.select({ id: channels.id, companyId: channels.companyId })
+      .from(channels).where(and(
+      eq(channels.platform, platform),
+      eq(channels.identityKey, identityKey),
     ));
-    if (exists.length === 0) {
+    if (existingChannel && existingChannel.companyId !== company.id) {
+      throw new Error('Pooled account ' + platform + '/' + handle
+        + ' already belongs to company ' + existingChannel.companyId
+        + '; expected ' + company.id + '. Reconcile the identity explicitly.');
+    }
+    if (!existingChannel) {
       await db.insert(channels).values({
-        companyId: company.id, platform, handle, profileUrl: url,
+        companyId: company.id, platform, handle, identityKey, profileUrl: url,
         isOwned: false, active: true,
         meta: { importedFrom: 'rivaliq-export' },
       }).onConflictDoNothing();
@@ -86,12 +97,21 @@ async function upsertCompanyAndChannels(orgId: string, row: Record<string, strin
     // handle, so the Instagram column doubles as the Threads one. Flagged as
     // inferred so a failed ingest explains itself rather than looking like a bug.
     if (platform === 'instagram') {
-      const th = await db.select({ id: channels.id }).from(channels).where(and(
-        eq(channels.companyId, company.id), eq(channels.platform, 'threads'), eq(channels.handle, handle),
+      const threadsIdentityKey = channelIdentityKey('threads', handle);
+      const [threadsChannel] = await db.select({ id: channels.id, companyId: channels.companyId })
+        .from(channels).where(and(
+        eq(channels.platform, 'threads'),
+        eq(channels.identityKey, threadsIdentityKey),
       ));
-      if (th.length === 0) {
+      if (threadsChannel && threadsChannel.companyId !== company.id) {
+        throw new Error('Pooled account threads/' + handle
+          + ' already belongs to company ' + threadsChannel.companyId
+          + '; expected ' + company.id + '. Reconcile the identity explicitly.');
+      }
+      if (!threadsChannel) {
         await db.insert(channels).values({
           companyId: company.id, platform: 'threads', handle,
+          identityKey: threadsIdentityKey,
           profileUrl: 'https://www.threads.com/@' + handle,
           isOwned: false, active: true,
           meta: { derivedFrom: 'instagram', note: 'Handle inferred from Instagram, not exported.' },
@@ -136,13 +156,16 @@ async function main() {
         .set({ name: spec.name, focusCompanyId: focusId }).where(eq(landscapes.id, ls.id));
     }
 
-    // Rebuild membership so the landscape matches the CSV exactly. Removing a
-    // join row changes framing only; the company and its posts survive.
-    await db.delete(landscapeCompanies).where(eq(landscapeCompanies.landscapeId, ls.id));
-    for (const [i, companyId] of memberIds.entries()) {
-      await db.insert(landscapeCompanies)
-        .values({ landscapeId: ls.id, companyId, sortOrder: i }).onConflictDoNothing();
-    }
+    // Rebuild membership atomically so an insert failure cannot leave the
+    // landscape empty or erase every demand row through cascading deletes.
+    await replaceLandscapeMembership(ls.id, memberIds);
+    const until = new Date();
+    await enqueueLandscapeCollection({
+      orgId,
+      landscapeId: ls.id,
+      since: new Date(until.getTime() - 90 * 86_400_000),
+      until,
+    });
 
     keepSlugs.push(spec.slug);
     console.log('  -> ' + memberIds.length + ' members, focus = ' + (focusId ? spec.focus : 'NONE'));

@@ -26,7 +26,7 @@ function readThreshold(raw: string | string[] | undefined): number {
 
 function readMinSize(raw: string | string[] | undefined): number {
   const parsed = Number(Array.isArray(raw) ? raw[0] : raw);
-  if (!Number.isFinite(parsed)) return 2;
+  if (!Number.isFinite(parsed)) return 3;
   return clamp(Math.round(parsed), 2, 6);
 }
 
@@ -90,8 +90,8 @@ export default async function StoriesPage({
           Every post in this landscape between {formatDate(ctx.range.start)} and{' '}
           {formatDate(ctx.range.end)}, grouped into the real-world events behind them by shared links,
           shared rare terms and time proximity. Each bubble is one event. The ones with heavy outlines
-          were covered by more than one newsroom, and those are the ones worth arguing about: someone
-          got there first, and someone else won the engagement.
+          were covered by more than one newsroom. Data Dumpster names who arrived first and who won
+          engagement only when the cluster clears its confidence threshold.
         </p>
       </div>
 

@@ -1,481 +1,499 @@
 # Data Dumpster architecture
 
-**Audience:** an engineer who will maintain this, or a CTO deciding whether it is
-maintainable. Every claim here is checkable by reading the file named next to it.
+**Audience:** the engineer maintaining the product and the executive deciding
+whether its numbers are trustworthy.
 
-**Shape in one sentence:** a Next.js 16 application on Vercel, a single Postgres
-database, eight platform adapters behind one interface, a metric layer that every
-read goes through, and a model abstraction that never holds a key it did not
-decrypt three lines earlier.
+**Shape:** Next.js 16 and React 19 on Vercel, Neon Postgres through Drizzle, nine
+platform adapters behind one explicit fetch contract, a durable database queue,
+a contained metric layer, and bring-your-own-model inference that cannot put a
+number in front of a user without deterministic verification.
 
-183 TypeScript files, roughly 26,400 lines under "src". No state manager, no
-data-fetching library, no component kit, no message queue, no cache tier. Each of
-those absences is a decision and most of them are reversible.
-
----
-
-## 1. Data flow, end to end
-
-                         PLATFORM APIs
-       bluesky   youtube   x   meta   tiktok   linkedin   threads
-          |         |      |     |       |        |         |
-          +---------+------+-----+-------+--------+---------+
-                              |
-                    +---------v----------+
-                    |  lib/adapters/*.ts |   one file per platform
-                    |  fetch + normalize |   ChannelAdapter interface
-                    +---------+----------+
-                              |  NormalizedPost, NormalizedAudience
-                    +---------v----------+
-                    | adapters/runner.ts |   idempotent upserts, chunked
-                    |  concurrency 4     |   per-channel failure isolation
-                    |  rate budget       |   writes ingestion_runs
-                    +---------+----------+
-                              |
-    +-------------------------v--------------------------------+
-    |                      POSTGRES                            |
-    |  posts (latest metrics denormalized)                     |
-    |  post_metric_snapshots (append-only time series)         |
-    |  audience_snapshots (one row per channel per day)        |
-    |  posted_urls, post_tag_assignments                       |
-    |  companies, channels, landscapes, landscape_companies    |
-    |  briefs, dashboards, alert_rules, alert_events           |
-    |  weekly_reports, report_schedules, report_deliveries     |
-    |  platform_credentials, model_connections, ai_usage       |
-    +-------------------------+--------------------------------+
-                              |
-                    +---------v----------+
-                    | lib/metrics/       |   contract.ts is the interface
-                    |   queries.ts       |   queries.ts is the only SQL
-                    |   definitions.ts   |   definitions.ts is the dictionary
-                    +----+----------+----+
-                         |          |
-          direct call    |          |    direct call
-          (no HTTP)      |          |    (no HTTP)
-                         |          |
-        +----------------v--+    +--v-------------------+
-        | Server Components |    | lib/ai/brief.ts      |
-        | app/(app)/*/page  |    | getFactSheet -> model|
-        +----------+--------+    +--+-------------------+
-                   |                |
-        +----------v--------+    +--v-------------------+
-        | Client components |    | lib/ai/verify.ts     |
-        | fetch /api/*      |    | deterministic check  |
-        +----------+--------+    +--+-------------------+
-                   |                |
-        +----------v----------------v-------------------+
-        |  app/api/*  Zod-validated wrappers over the   |
-        |  same metric functions. Not an internal hop.  |
-        +-----------------------------------------------+
-
-The important property of this diagram is that there is exactly one path from a
-number in the database to a number on a screen, and it goes through
-"src/lib/metrics/queries.ts". Nothing else in the application writes SQL against
-the measurement tables. That is what makes the metric dictionary enforceable
-rather than aspirational.
+There is no RSS ingestion. There is no external message broker, cache tier,
+search index or client state manager. The collection queue is persisted in
+Postgres, not held in a serverless process.
 
 ---
 
-## 2. Why Postgres, and why this schema
+## 1. End-to-end data flow
 
-### Why one relational database
+```text
+landscape changes | scheduled dispatcher | one-shot CLI
+        |
+        v
+landscape_channel_demands          exact private demand per landscape/channel
+        |
+        v
+channel_collection_state           one pooled request, outcome, lease and coverage
+        |
+        v
+src/lib/adapters/collection-queue.ts  SKIP LOCKED claims, ten network workers,
+        |                           per-platform rate gates
+        v
+src/lib/adapters/runner.ts            public-source selection
+        |
+        v
+src/lib/adapters/*                 fetch, normalize, declare completeness
+        |
+        v
+platform APIs and purchased sources
+  Bluesky | YouTube | Facebook | Instagram | TikTok | X | Threads | Reddit | LinkedIn
+        |
+        v
+src/lib/adapters/runner.ts            stable-id gate, ordered writes and audit
+        |
+        v
+Postgres                            pooled observations plus org-private product data
+        |
+        +--------------------+---------------------+
+        v                    v                     v
+metrics modules         reports/exports       AI fact sheets
+        |                    |                     |
+        v                    v                     v
+Server Components       CSV/PPTX/delivery     deterministic verifier
+and thin API routes                                |
+                                                   v
+                                              saved/rendered prose
+```
 
-The workload is a few million rows, joins across six tables, and time-windowed
-aggregation with a comparison period. That is the exact shape Postgres has been
-good at for thirty years. A time-series database would handle the metric history
-better and the entity graph worse; a document store would handle the raw platform
-payloads better and every leaderboard worse. One Postgres is the correct answer
-until the scaling numbers in section 6 say otherwise, and the schema is written so
-that the fix at that point is materialised rollups rather than a rewrite.
+The platform boundary is `src/lib/adapters/types.ts`. Adapters emit normalized
+posts and audience readings plus explicit evidence about whether the attempted
+window was exhausted. The rest of the application does not infer source
+completeness from post count or HTTP success.
 
-Drizzle rather than Prisma because the schema file is the source of truth and
-reads like SQL, there is no separate generation step in the deploy, and the
-queries in "queries.ts" need window functions and lateral joins that an ORM query
-builder tends to fight.
-
-### Stock versus flow: the distinction the schema is built around
-
-This is the design decision that most affects whether the numbers are right.
-
-**Audience is a stock.** Followers are a level, measured at a point in time. The
-schema stores one row per channel per day in "audience_snapshots", with a
-composite primary key on (channelId, day). Re-running ingestion for a day
-overwrites that day rather than adding to it. Widening a date range therefore
-changes which day the snapshot is read from, and never changes the magnitude.
-This is the single most common way social dashboards mislead people, and the
-metric dictionary carries the caveat in the tooltip: "Audience is a stock, not a
-flow."
-
-Audience net change and growth rate are computed as end-minus-start against that
-daily series, which means they are well defined for any window and honest about
-negative values. Platforms purge bot accounts and audiences do shrink.
-
-**Post engagement is a flow that keeps flowing.** A post published on Monday
-keeps collecting likes through Thursday. If Data Dumpster recorded engagement once at
-first sight, every velocity curve in the product would be wrong. So there are two
-tables and they do different jobs.
-
-"post_metric_snapshots" is append-only, keyed on (postId, capturedAt). It is the
-history. Every refresh writes a new row, and a retry inside the same run
-overwrites rather than duplicates because capturedAt is the run's timestamp, not
-the current clock. This is what makes "how fast did this post accumulate" a real
-question with a real answer.
-
-"posts" carries a denormalised copy of the latest snapshot in its own columns
-(applause, conversation, amplification, saves, views, engagementTotal,
-engagementRateByFollower). Every read path in the product wants the current
-number, and making the leaderboard join a history table with a correlated
-"latest" subquery would be the dominant cost in every query in the system. The
-denormalisation is a deliberate read optimisation, and it is safe because the
-runner writes both in the same operation and the history table is the record of
-truth if they ever disagree.
-
-"posts.followersAtPost" is stored rather than joined, for the same reason and one
-more: engagement rate by follower has to divide by the follower count at the time
-the post ran, not the count today. Storing it makes leaderboards cheap and makes
-historical rates stable when a channel's audience later changes.
-
-"posts.raw" holds the original platform payload. It costs storage and it buys the
-ability to reprocess a normalisation bug without re-fetching, which on a metered
-API is the difference between a bug fix and a budget request.
-
-### Multi-tenancy from the first migration
-
-Everything hangs off an "orgs" row. This was not speculative generality. Boston
-Globe Media runs multiple brands (the Globe, Boston.com, STAT), each of which has
-a different competitive set and a different social team, and the alternative to
-org scoping on day one is three forks by month six. The cost is one join column
-on most tables and a scope check in "src/lib/session.ts" that every handler calls.
-
-### Landscapes are a join table, not a column
-
-"landscape_companies" is many-to-many with a sort order. A company appears in
-several landscapes, and the same company means different things in each. The
-focus company lives on the landscape, not on the company, because "us" is a
-point of view rather than a property.
+The measurement boundary is `src/lib/metrics/`. Server Components call it
+directly, without making an HTTP request to their own deployment. Route handlers
+exist for client-side filter changes, exports and external consumers; they
+validate input, resolve the session and call the same modules.
 
 ---
 
-## 3. Why Server Components read the query layer directly
+## 2. Data model and trust boundaries
 
-A page in "src/app/(app)" imports a function from "src/lib/metrics/queries.ts"
-and calls it. It does not fetch its own API route.
+### Audience is a stock
 
-The reason is that a Server Component already runs on the server, next to the
-database. Making it issue an HTTP request to a route handler in the same
-deployment adds a serialization pass, a network round trip, a second cold start,
-a second auth check, and a class of bug where the page and the API disagree about
-the shape of a response. It buys nothing, because there is no client on the other
-end of that call.
+`audience_snapshots` has one row per channel and calendar day. A rerun on the
+same day replaces that reading. Audience for a window is the latest per-channel
+snapshot inside the window, never the sum of its daily observations.
 
-The API routes still exist, and they are not dead code. They serve three real
-consumers: client components that need to refetch on a filter change without a
-full navigation, the CSV export path, and anything outside the app that wants
-Data Dumpster numbers. They are thin. Each one validates its input with Zod, resolves
-the org scope from the session, and calls the identical function the Server
-Component calls. The contract they share is "src/lib/metrics/contract.ts", which
-is types only, so a signature change breaks the build in both places at once.
+Audience net change requires at least two measured daily snapshots. Growth rate
+also requires a non-zero starting stock. Missing history and a zero baseline
+therefore produce `null`, not zero, Infinity or an attention-grabbing percentage.
 
-The practical rule: if a screen renders on first load, it is a Server Component
-reading queries.ts. If a control changes data without navigating, that control
-calls an API route.
+### Engagement is a changing flow
 
-### Scheduled report delivery
+`posts` stores the current normalized values for efficient analytical reads.
+`post_metric_snapshots` stores repeated observations keyed by post and capture
+time so engagement velocity remains reconstructable. `followersAtPost` travels
+with each post; historical follower-rate arithmetic never joins against today's
+audience.
 
-Weekly report exports render from the stored `ReportDocument`, never from a
-second analytics query. CSV, PowerPoint, the report screen and email therefore
-share the same computed block and the same null baselines. `report_schedules`
-stores the local weekday, hour and IANA time zone. `report_deliveries` is the
-audit and idempotency boundary: one schedule window has one delivery row and a
-frozen snapshot of its landscape, report period, recipients, formats and whether
-Slack was requested. Once a report row is attached, retries load that exact
-report id instead of deriving a week from the current clock or edited schedule.
-Email and Slack carry separate durable states. Each destination is marked `sending`
-before the network call and persisted immediately afterward. A worker that
-stops with a destination in `sending` is recovered as `unknown`, which blocks
-automatic retry because the provider may already have accepted it. Explicit
-provider rejection remains retryable, and a successful destination is never
-sent again when another destination fails. Failed and stale claims are recovered
-with one compare-and-set update that returns the sole winning claim.
+The canonical engagement rate by follower is:
 
-The global Slack webhook is usable for reports only when
-`REPORT_SLACK_ORG_ID` matches the schedule's org. Missing or mismatched bindings
-fail before any Slack request, preventing one tenant's report from reaching
-another tenant's channel.
+```text
+mean over measurable posts of (post engagementTotal / post followersAtPost)
+```
 
-An existing weekly report is delivered from its stored computed snapshot.
-Scheduled delivery never refreshes figures underneath already-written
-narrative. Explicit recompute is the only refresh path and clears narrative
-because that prose was grounded in the previous snapshot.
+A post without a positive follower denominator is excluded from both the sum
+and count. If no post is measurable, the result is `null`. Pooled engagement
+divided by pooled followers is a different statistic and is prohibited.
 
-The dispatcher is an authenticated hourly cron route, but `vercel.json` does not
-declare it while vendor spend is undecided. A run-now action exercises the exact
-same build and delivery path without consuming the scheduled window.
+Some sources represent an unavailable native counter as storage-level zero.
+That raw value does not prove measured zero. Coverage and metric availability
+must decide whether a product surface, export or fact sheet may render it.
 
----
+### Measurement SQL is contained, not singular
 
-## 4. Ingestion, scheduling, and rate limits
+The old architecture described `queries.ts` as the only SQL. The actual boundary
+is four modules:
 
-Four cron routes are implemented and documented in "docs/CRONS.md". No jobs are
-declared in `vercel.json` while the vendor-spend decision remains open.
+- `src/lib/metrics/queries.ts`: summaries, leaderboards, series, posts, URLs,
+  tags, post types, fact sheets and report inputs;
+- `src/lib/metrics/content-analysis.ts`: topic, hashtag, format, channel and
+  posting-time analysis;
+- `src/lib/metrics/ingestion-coverage.ts`: certified coverage for the exact
+  organization, landscape, companies, platforms and date window on screen;
+- `src/lib/metrics/daily-coverage.ts`: day-level audience monitoring and the
+  recovery sweep.
 
-    /api/cron/ingest    every 3 hours       maxDuration 300s
-    /api/cron/alerts    hourly at :20       maxDuration 120s
-    /api/cron/brief     Mondays 06:00 UTC   maxDuration 300s
-    /api/cron/reports   hourly at :10       maxDuration 300s
+`definitions.ts` owns the user-facing vocabulary and caveats;
+`follower-rate.ts` owns the canonical per-post arithmetic. New analytical SQL
+belongs inside this boundary with a testable contract, not in a page component.
 
-maxDuration is route segment config in each route file rather than a glob in
-"vercel.json", because route segment config is authoritative on Vercel, it lives
-next to the runtime it describes, and a stale glob fails the whole deploy.
+### Public pooling and the owned-data release gate
 
-All four verify an "Authorization: Bearer $CRON_SECRET" header in constant time
-and fail closed when CRON_SECRET is unset. All four accept GET, which is what
-Vercel Cron sends, and POST, which is what a human reaches for.
+Companies, channels and public observations are pooled because the same public
+fact should not be purchased once per organization. Landscapes, tags,
+dashboards, briefs, reports and alert configuration are organization-private.
+`companies.orgId` records attribution for a pooled company and is not a tenancy
+filter; landscape membership plus the session organization is the analytical
+scope.
 
-### What a run actually does
+The current model is not yet a complete boundary for owned-native insights.
+Global `channels.isOwned`, mixed-source cursors and raw payloads are legacy
+structures, and historical pooled rows may contain owner-derived values.
 
-The runner picks active channels that have an adapter and usable credentials,
-stalest first, and processes them four at a time. For each channel it computes a
-window, calls the adapter, and lands the result.
+Phase 0 containment prevents new leakage through the normal path. Pooled
+collection and profile resolution use only an explicit allowlist of
+deployment-wide public sources, force `__isOwned=false`, and reject owned-mode
+onboarding. Meta owner/PPCA, TikTok owner, LinkedIn admin, X owner and Bluesky
+app credentials cannot be selected for pooled writes. Global channel identity
+and organization-private `landscape_channel_demands` are also implemented.
+Legacy rows still require inventory, quarantine and public re-collection.
 
-The window is the interesting part. A channel with no ingest history reaches back
-30 days. A channel with history starts at last_ingested_at minus a two-day
-refresh overlap. That overlap exists because engagement is not immutable, and
-starting strictly at the high-water mark would freeze every post's metrics at the
-moment of first sight.
+The fetched stable platform id is checked after the public source responds but
+before any observation is written. The runner normalizes the id and claims it
+under the platform's global unique index. A blank id, a changed id for an
+already-bound row, or an id already claimed by another channel becomes a
+permanent operator-review outcome with zero observation writes. The runner does
+not merge histories or decide that two conflicting rows are the same account.
 
-**The refresh overlap is the largest cost dial in the system.** On the open
-platforms it is free. On metered X it is directly proportional to spend: at
-roughly 0.005 dollars per post read, a landscape of a dozen X accounts costs
-about 45 dollars a month with no refresh, about 180 with a three-day window, and
-about 1,350 if you naively re-read 30 days daily. It is currently a constant in
-"runner.ts" and it should be a per-platform setting before this is in production
-against a paid API. That is the first line item in the Next list in the PRD.
+Company and channel deletion is disabled in product routes because either would
+cascade shared history. Removing landscape membership is the scoped stop
+operation; it removes that landscape's demand while leaving identity and
+observations available for later reuse. `channels.active` is reserved for an
+explicit admin-only global quarantine and cannot be changed by one organization
+when the company is also shared with another.
 
-### Rate limits
+`docs/OWNED-DATA-ISOLATION.md` remains a release gate. The implemented public
+foundation is globally unique channel identity, organization-private
+`landscape_channel_demands`, one demand-gated public collection job and an
+allowlist of deployment sources that excludes owner and Bluesky app
+credentials. Still required are source-specific public cursors, field-level
+public allowlisting and run
+provenance, legacy-data cleanup, and an organization-scoped `owned_native`
+stream with verified channel/credential bindings, private observations, private
+payloads, private cursors and private jobs.
 
-Three mechanisms, because the platforms use three different models.
-
-**A reservation budget in the runner.** Each channel run reserves an estimated
-four API calls before starting and waits up to 60 seconds for budget. A channel
-that cannot get budget is deferred rather than failed, so a quota crunch delays
-data instead of losing it.
-
-**Adapter-level economy.** The X adapter keeps a since_id high-water mark on the
-channel cursor, excludes retweets, and caps pages. Each of those is money. The
-YouTube adapter batches video ids, which is why a channel refresh costs about
-three quota units per fifty videos against a 10,000 unit daily allowance.
-
-**Honest reporting.** Every run writes an "ingestion_runs" row with posts
-upserted, snapshots upserted, API calls made, status, and error text. That table
-is how you answer "what did this cost" and "why is this competitor stale" without
-guessing.
-
-### Idempotence, and the constraint that forced it
-
-The Neon HTTP driver has no multi-statement transactions. Each statement is its
-own HTTP round trip, so "db.transaction" is unavailable, which rules out
-delete-then-insert as an atomic pattern and rules out wrapping a channel's writes
-in a rollback boundary.
-
-The design response is ordering plus upserts. Posts land first, then everything
-that references them, and every dependent write is itself an upsert keyed on
-something the platform owns (channelId plus externalId for posts, channelId plus
-day for audience, postId plus capturedAt for snapshots). A partial failure leaves
-a consistent-if-incomplete picture that the next run repairs. Cron overlaps,
-humans clicking refresh, and mid-run crashes all become non-events.
-
-Two more constraints are baked in. Postgres binds at most 65,535 parameters per
-statement, so every batch is chunked by column count rather than by a guessed row
-count, with a conservative ceiling of 8,000 binds and 500 rows. And one bad
-channel must never take down the batch: failures are caught per channel, written
-to "ingestion_runs", and reported in the summary, because a newsroom watching
-fourteen competitors cannot lose the night to one expired Instagram token.
+Competitive screens, public share links, exports, alerts and competitive AI
+fact sheets must use only `public_comparable` data. Mixed-basis arithmetic is
+not allowed.
 
 ---
 
-## 5. The AI path, and where the seams are
+## 3. Durable collection
 
-### The brief loop
+### Explicit fetch results
 
-    getFactSheet()  ---------------------------------+
-      9 parallel SQL aggregations                    |
-      leaderboards, focus summary, top posts,        |
-      tag + post-type performance, notable URLs,     |
-      anomalies, coverage, caveats                   |
-                                                     v
-                                            +------------------+
-                                            |   FactSheet      |
-                                            |  (typed, stored) |
-                                            +--------+---------+
-                                                     |
-                            renderFactSheet(): JSON  |  + a flat NUMBER INDEX
-                            of every value with its  |    "facts.a.b[0].c = 41208"
-                            exact citable path       |
-                                                     v
-                                            +------------------+
-                                            |   MODEL          |
-                                            | narrates only.   |
-                                            | may not compute. |
-                                            +--------+---------+
-                                                     | markdown with
-                                                     | [facts.path] citations
-                                                     v
-                                            +------------------+
-                                            | verifyBrief()    |
-                                            | no model. pure   |
-                                            | string + number  |
-                                            +--------+---------+
-                                                     |
-                                    ok? ---- yes ----+---- no ----+
-                                     |                            |
-                                     v                            v
-                            store markdown +            one repair turn with
-                            factSheet +                 the exact failing
-                            verification                strings, then keep
-                            in briefs.facts             whichever draft scored
-                                                        higher. Never a loop.
+An adapter may return one of three completeness shapes:
 
-The model never queries anything. It receives a fact sheet that Data Dumpster's own
-SQL computed and sanity-checked, and it may only restate values that appear in
-it. It may not add, divide, average, project, or annualise. If a number is not in
-the sheet, the correct output is a sentence without a number.
+```ts
+{ hasMore: false, exhaustive: true }
+{ hasMore: true,  exhaustive: false, incompleteReason: string }
+{ hasMore: false, exhaustive: false, incompleteReason: string }
+```
 
-"verify.ts" then checks mechanically whether it obeyed. It extracts every number
-in the markdown, normalises it (1.2M, 45k, 27.3%, 41,208), strips things that
-contain digits but are not claims (dates, clock times, years, code, URLs), and
-matches each against an index of every number in the fact sheet. Tolerance is
-derived from how precisely the number was written: someone who writes 1.2M has
-claimed the value is in [1.15M, 1.25M] and nothing more. It also flags any
-printed percent change above 1000 percent, and checks that every string in
-facts.caveats survived into the text by distinctive-word overlap.
+The first certifies the attempted window. The second promises a durable
+continuation for the same window. The third records a terminal source
+limitation: useful observations arrived, but the source cannot prove the whole
+window. Missing flags never certify coverage.
 
-The verdict is stored in the same row as the brief. Months later, anyone can see
-not just what the model said but what was verified at the time it said it.
+The runner maps source and operational behavior to five scheduling outcomes:
 
-### Seam one: adding a platform
+| Outcome | Scheduling behavior |
+|---|---|
+| `certified_complete` | Merge the attempted window into certified coverage; no immediate retry |
+| `continuation` | Preserve the original window and continue immediately |
+| `terminal_source_limitation` | Advance attempted freshness, keep coverage uncertified, stop paid retry |
+| `retryable_operational_failure` | Keep coverage and attempt watermark unchanged; exponential backoff |
+| `permanent_failure` | Stop until an operator or forced request changes the state |
 
-Write "src/lib/adapters/<platform>.ts" implementing "ChannelAdapter" from
-"types.ts": an id, a display name, accessNotes, a worksUnauthenticated flag, a
-credential requirement list, and fetch functions returning NormalizedPost and
-NormalizedAudience. Add one line to the map in "registry.ts". Add the platform to
-the "platform" pgEnum if it is genuinely new.
+Presentation status (`succeeded`, `partial`, `failed`) is not a scheduler. This
+separation prevents a capped Facebook snapshot or X Highlights response from
+becoming an endless paid failure loop.
 
-Nothing else changes. The runner, the settings UI, the channel picker and the
-navigation all read through "getAdapter", "listAdapters" and
-"listUnauthenticatedAdapters". The registry map is deliberately a Partial record
-rather than a complete one, because the schema can store platforms that no
-adapter can read, and the type system should force every caller to handle that
-rather than pretend the gap does not exist.
+### Queue lifecycle
 
-### Seam two: adding a model provider
+`landscape_channel_demands` stores one exact window per landscape and channel,
+with composite foreign keys proving landscape membership and channel/company
+coherence. Reconciliation pools the minimum start and maximum end per channel
+into one durable `channel_collection_state`. The shared state widens safely
+under concurrent enqueues; each live demand widens monotonically until its
+membership is removed, and the demand table retains that landscape's exact
+required window. On-screen coverage requires certified public coverage to span
+the union of that demand and the exact selected window. A globally wider state
+does not make an otherwise covered landscape incomplete. A state row is not
+claimable without at least one live demand.
 
-Write "src/lib/ai/providers/<name>.ts" implementing "ModelProvider" from
-"ai/types.ts": an id, a display name, whether baseUrl is required, whether a key
-is needed, suggested models with their per-million-token prices, a docs link, and
-a "complete" function. Add one entry to "PROVIDERS" in "ai/registry.ts" and one
-value to the model_provider pgEnum.
+Adding an already-tracked channel to another landscape records the new demand
+immediately. If certified pooled coverage spans the request, reconciliation does
+not queue another purchase. A recent terminal source limitation also suppresses
+an immediate repurchase of the same unavailable history, but remains visibly
+uncertified. An older feasible uncovered window creates one widened global job.
+Removing the last demand makes the retained state unclaimable but does not
+delete its cursor, coverage or observations.
 
-The Settings picker renders straight off "listProviders()", so there is no UI
-work. Because "PROVIDERS" is a complete Record over the ModelProviderId union,
-TypeScript fails the build the moment an id is added without an implementation.
-Bedrock is in the table today and deliberately unimplemented, failing with a
-message that names the workaround (an OpenAI-compatible gateway in front of it),
-because a provider that is silently missing looks like a bug and a provider that
-explains itself is documentation.
+Reconciliation requests a 90-day window for an uncollected profile and
+considers a settled profile fresh for twelve hours. Incremental work re-reads a
+two-day overlap because post engagement changes after publication.
+
+Workers claim eligible rows with `FOR UPDATE SKIP LOCKED`, a unique lease token
+and a six-minute lease. The normal queue runs at up to ten workers because these
+tasks are network-bound; each platform still has its own reservation gate.
+Vercel's active ingest call considers at most 250 channels and caps one adapter
+read at 500 posts.
+
+### Automatic refresh and recovery
+
+Scheduled ingest opens one freshness window at 00:00 UTC and another at 12:00
+UTC. Those are the only routine invocations allowed to reconcile tracked
+profiles and create newly due work. Offset recovery invocations call the same
+route with `mode=recover`; that mode skips reconciliation and can only claim
+continuations, paid snapshot receipts and retries already in the durable queue.
+
+The shell is a status monitor; clicking it does not purchase or queue data. It
+polls the tenant-protected job endpoint when an existing coordinator is active
+and shows worker-active profiles, queued profiles, eligible retry times and
+recent outcomes. `POST /api/ingest/run` remains available for controlled
+recovery clients and validates the editor and tenant, but it uses the same
+twelve-hour freshness fence rather than forcing settled profiles due. One
+active coordinator per landscape coalesces overlapping scopes. The separate
+`/api/cron/refresh` wake runs every ten minutes only to recover an existing
+coordinator dispatch; it creates no estate demand. Terminal progress/activity
+is frozen, so later pooled collection cannot reopen or rewrite an old job.
+
+`attemptedUntil` is distinct from `coverageUntil`. A source-limited channel can
+refresh recent facts from its attempt watermark without claiming older history
+or repurchasing the same unavailable window. Certified intervals merge only
+when the adapter explicitly proves them.
+
+### One-shot CLI
+
+`npm run ingest:once` is a queue dispatcher, not a direct adapter path. It
+collapses all joined landscape rows to distinct global channels, registers each
+selected channel's demand once per sharing organization, and invokes the same
+bounded queue claim used by cron. The first registration can force one manual
+refresh; later organization registrations cannot create a second crawl because
+all work is protected by the same channel lease. A channel with no landscape is
+reported as untracked and cannot be crawled through this path.
+
+`--dry-run` stops after the read-only target query. It previews the default
+90-day window (or the supplied `--since`/`--until`) and matched, eligible and
+untracked pooled channels. It does not import the writable queue, register
+demand, call a vendor or write to the database.
+
+### Ordered writes without a transaction
+
+The Neon HTTP driver issues each statement independently and does not provide a
+multi-statement transaction. The safe failure direction is re-read and repair,
+so write order is load-bearing:
+
+1. normalize and claim the fetched stable platform id;
+2. upsert the audience reading;
+3. load the follower timeline and upsert posts;
+4. upsert metric snapshots;
+5. replace posted URLs and add organization-private tag assignments;
+6. persist the channel cursor and certified watermark last; and
+7. write the ingestion audit on a best-effort basis.
+
+There is one narrow cursor-only exception to step 1. A still-running Bright Data
+stage may return no audience or posts but provide an explicit non-empty
+continuation receipt. The paid Facebook, Instagram, TikTok, X and Threads stages
+bind that receipt to the source, dataset, stage and exact attempted window. The
+runner may save it before identity is known so the next worker polls the same
+snapshot instead of triggering another paid job. A multi-stage adapter may also
+carry a profile identity already returned by the preceding stage. No observation
+is written before the stable-id gate, and a mismatched receipt fails closed.
+
+Posts, audience, snapshots and tag assignments use idempotent keys. Posted URLs
+have no suitable uniqueness constraint, so the runner deletes and reinserts the
+affected post's URLs. They can be absent for a brief interval. If any dependent
+write fails, the cursor is not advanced and the next run repeats the window.
+
+The pooled post upsert is also the raw-payload containment boundary. Arbitrary
+vendor responses are never persisted. Every platform has an explicit
+default-deny policy; only Instagram retains a compact list of validated Meta
+CDN poster and video candidates needed by the authenticated preview proxy. The
+reader still understands legacy Instagram shapes so old previews keep working
+while refreshed rows are scrubbed into the compact form.
+
+One channel's failure never aborts the batch. Every statement is chunked below
+Postgres's bind-parameter limit.
+
+### Source truth that affects scheduling
+
+- `publicSourceCredentials()` is an allowlist, not a merge of workspace keys.
+  Pooled Facebook and LinkedIn use Bright Data. Instagram, TikTok, X and Threads
+  use Bright Data whenever it is configured and EnsembleData only when it is
+  absent; X retains EnsembleData only for synchronous profile onboarding.
+  YouTube uses the deployment API key, Bluesky uses the unauthenticated public
+  appview, and Reddit uses the deployment EnsembleData token.
+- EnsembleData's X post endpoint returns Twitter-selected Highlights rather
+  than a chronological timeline. It always records
+  `terminal_source_limitation`; profile and engagement observations remain
+  useful, but post coverage is not certified.
+- A Bright Data snapshot with a live receipt is a continuation and resumes the
+  same paid job. After 24 hours, one automatic replacement is allowed and
+  counted in the cursor. A second stale snapshot gets one final receipt-only
+  poll, then fails closed for operator review; it never starts another automatic
+  paid job. A failure to persist any newly returned paid receipt is likewise a
+  permanent operator-review outcome because an automatic retry could duplicate
+  the purchase. A completed cursorless cap is a terminal source limitation.
+- Official paginated sources may certify only after reaching their true window
+  boundary. Hitting a local page or post cap without a safely persisted cursor
+  remains incomplete.
+
+The first committed migration, `drizzle/0000_collection_outcome.sql`, adds the
+outcome and attempt fields and corrects legacy false certifications. It preserves
+only legacy settled Bluesky and YouTube coverage, marks other unproved settled
+rows limited, explicitly corrects EnsembleData X Highlights, and settles only
+Facebook cap rows whose latest audit proves that exact condition.
+
+`drizzle/0001_pooled_channel_demands.sql` adds the global identity constraints
+and exact landscape-demand table. Its preflight refuses ambiguous normalized
+identity or external-id collisions and directs the operator to the read-only
+identity audit instead of silently choosing which historical row survives.
+
+`drizzle/0002_pooled_identity_invariant.sql` idempotently reasserts the database
+check that keeps every stored `identity_key` equal to its canonical
+platform/handle normalization. `0003_mean_zaran.sql` adds observation
+provenance. `0004_lucky_dagger.sql` through `0006_silent_kang.sql` add the
+durable refresh coordinator, recovery/final-state fields and exact coalesced
+request scopes. All committed migrations must succeed before application code
+from this checkout is deployed.
 
 ---
 
-## 6. Failure modes
+## 4. AI and report integrity
 
-Everything here is a thing that will happen, not a thing that might.
+### Ask
 
-| Failure | What happens | Why that is the right behaviour |
+The Ask page computes one fact sheet from the selected landscape, date window,
+platforms, companies, tags, post types and search text. It sends that exact scope
+plus a SHA-256 fingerprint. The API recomputes the sheet and returns 409 before
+model spend if the fingerprint changed.
+
+The model receives no database or browsing tools. The verifier checks every
+numeric claim against the prompt-visible fact index, requires the exact
+array-indexed path, binds the cited subject to the metric, and applies shared
+percentage guardrails. One repair turn is allowed. A second failure returns 422
+and no answer is rendered.
+
+### Briefs
+
+Briefs use the same closed fact-sheet rule and additionally require every data
+caveat to survive into the document. The first draft gets one repair attempt.
+Only an explicit passing verification can be saved. A repair provider failure or
+a second bad draft raises a verification error; unverified prose is not a
+fallback. Historical rows without `verification.ok === true` are withheld.
+
+The saved row contains the exact fact sheet, verification verdict, provider,
+model, cost, latency and repair metadata beside the prose.
+
+### Weekly Reports
+
+The report screen, sectioned CSV, PowerPoint and deliveries render from one
+stored `ReportDocument`; delivery never recomputes numbers under existing
+narrative. Report schedules store weekday, hour and IANA time zone. A delivery
+row freezes the report window, landscape, formats, recipients and destinations.
+
+The Globe.com and Boston.com Web Search tables use the official Search Console
+Search Analytics API with the report's inclusive start and end dates, Web Search
+type, query dimension and top 100 rows sorted by clicks. The two Looker Studio
+reports remain linked from the builder as a human audit trail; production does
+not replay a Google browser session. An interactive pull saves both tables and
+invalidates only the search narrative. A scheduled delivery performs the same
+pull when Search Console credentials are configured. Manual paste remains a
+fallback when the connector is intentionally absent.
+
+Email and Slack have separate durable states. Each destination is marked
+`sending` before the network call. An ambiguous network outcome becomes
+`unknown` and blocks automatic retry because the provider may already have
+accepted it. Explicit rejection remains retryable and a successful destination
+is never resent merely because another failed. The global Slack webhook fails
+closed unless `REPORT_SLACK_ORG_ID` matches the schedule organization.
+
+### Alerts
+
+Alert evaluation and event deduplication are implemented. The route records a
+fresh event before making best-effort Slack calls and isolates failure per rule.
+It does not yet provide the destination-level delivery audit used by reports.
+Its schedule is inactive, so documentation must not describe alerts as currently
+hourly in production.
+
+---
+
+## 5. Time, schedules and health
+
+All product metric windows and SQL buckets are explicitly pinned to
+`America/New_York`. Report schedules use their stored IANA zone. The date helpers
+and SQL specify the zone directly, including daylight-saving transitions; the
+deployment process's ambient `TZ` is irrelevant and must not become a required
+environment variable.
+
+`vercel.json` is the source of truth for active UTC schedules. Recurring public
+collection and same-day audience recovery are active; alert, brief and report
+delivery schedules remain separate operating decisions:
+
+| Route | UTC schedule | State |
 |---|---|---|
-| Platform API returns 5xx | Adapter throws a retryable AdapterError. That channel's run is marked failed in ingestion_runs. The other channels finish. | Three hours later the next run reaches back past the failure window and repairs it. No operator action. |
-| Token expired or revoked (401/403) | Non-retryable AdapterError. The channel fails with a readable reason, visible in Settings, Sources. | Retrying a 401 three times is a waste of quota and hides the actual fix. |
-| ENCRYPTION_KEY rotated, credentials undecryptable | The runner skips that credential with a warning and continues the batch. | Losing one platform is recoverable. Failing the whole night because one secret is unreadable is not. |
-| Rate limit (429) | The reservation budget defers the channel for up to 60 seconds, then defers it to the next run rather than failing it. | A quota crunch should delay data, not lose it. |
-| Ingest cron exceeds 300 seconds | Vercel kills the function mid-batch. Channels already written stay written, because there is no transaction to roll back and every write was an upsert. | The next run selects stalest-first, so the channels that were cut off are the first ones processed. Self-healing without a queue. |
-| Model provider unreachable or 401 | complete() retries transient failures three times with backoff, fails fast on permanent ones with a message naming the fix. No brief row is written. | A half-written brief is worse than no brief. |
-| Model output fails verification | One repair turn with the exact failing strings. If it still fails, the brief is stored with ok false and the UI renders the verification panel listing every ungrounded claim. | Nothing ships silently. The failure is on the face of the document, which is the entire point of the design. |
-| Repair turn itself throws | Caught. The first draft is kept with its original verdict. | A failed repair must not lose a usable draft. |
-| Fact sheet has thin or partial data | buildCaveats injects caveats into the sheet, the prompt requires every one to appear in the output, and verify.ts fails the brief if any is missing. | The caveat is the part a model most wants to drop and an editor most needs. |
-| Database unavailable | Route-group error boundaries render an error state instead of a stack trace. /api/health reports it to an uptime probe. | |
-| Report email or Slack delivery is explicitly rejected | That destination is marked failed and may be retried; destinations already marked succeeded are skipped. | A transient rejection must not silently drop the report or double-send the other destination. |
-| Report delivery has an ambiguous network outcome | That destination is marked unknown and automatic retry is blocked. The audit names the destination needing review. | A timeout does not prove the provider rejected the request, so retrying could duplicate it. |
-| Post deleted upstream | The row and its history remain with the last known metrics. Snapshots simply stop. | Deleting our copy would silently rewrite last week's numbers. |
-| Share token leaked | Anyone with the URL reads that dashboard. Mitigation is rotating the token. | Stated plainly because it is a real risk of the feature, not a bug. |
+| `/api/cron/refresh` | every ten minutes | active; wakes one existing coordinator only |
+| `/api/cron/ingest?mode=scheduled&limit=250&postLimit=500` | 00:00 and 12:00 | active; only route mode that opens fresh work |
+| `/api/cron/ingest?mode=recover&limit=250&postLimit=500` | minutes 5, 15, 25, 35, 45 and 55 | active; existing queue only |
+| `/api/cron/alerts` | none | implemented, inactive |
+| `/api/cron/brief` | none | implemented, inactive |
+| `/api/cron/reports` | none | implemented, inactive |
 
-The pattern across all of these: prefer stale data to wrong data, prefer partial
-completion to rollback, and put failures where a person will see them.
+The audience coverage route remains implemented but unscheduled. The two daily
+collection windows capture stock readings while recovery mode prevents slow
+vendor work from being dropped. Orphan active channels remain outside the
+health denominator. A later run cannot reconstruct a missed stock reading.
+
+`GET /api/health` is intentionally public and returns only booleans and
+aggregates:
+
+- HTTP 503 with `status: "down"` when the database cannot answer;
+- HTTP 200 with `status: "degraded"` when required configuration is missing,
+  any active demanded channel is overdue past 24 hours, or a closed audience day
+  in the trailing window is incomplete;
+- HTTP 200 with `status: "ok"` only when those checks pass.
+
+Today is excluded from the closed-day degradation test because the recovery
+sweeps still have time to act. A day is operationally complete at 98 percent of
+active demanded audience-bearing channels; Reddit user accounts are excluded
+because that source has no follower stock. `lastSuccessfulIngestAt` is the
+latest settled source-attempt boundary, including a useful partial response.
+`overdueChannels` uses only certified `coverageUntil`, so a freshly attempted but
+terminally limited source remains visible instead of being painted green.
 
 ---
 
-## 7. Scaling math
+## 6. Failure behavior
 
-Assumptions, stated so they can be argued with: a tracked company averages five
-channels and twenty posts a day across all of them. Ingest runs eight times a
-day. The refresh overlap is two days, so a post is re-read on roughly sixteen
-runs before it stops changing. The default analysis window is ninety days.
+| Failure | Durable behavior |
+|---|---|
+| Source 5xx, timeout or rate exhaustion | Retryable operational failure; channel backs off and other channels finish |
+| Invalid or revoked credential | Permanent failure when the adapter can identify it; no quota-burning retry |
+| Source returns a selected feed or cursorless cap | Useful rows land, attempted freshness advances, coverage remains uncertified, no automatic paid loop |
+| Source returns a blank, changed or already-claimed stable platform id | Permanent operator-review outcome; no observations are written and histories are not merged |
+| Serverless worker dies mid-batch | Completed statements remain; the lease expires; cursor-last ordering causes the unfinished window to be reread |
+| Database unavailable | App error boundary handles authenticated screens; health returns 503/down |
+| Model provider fails | No brief or Ask answer is shown; provider errors remain errors rather than prose |
+| Model output fails verification | One repair; a second failure returns 422 and persists nothing |
+| Report send is explicitly rejected | Failed destination may be retried without resending successful destinations |
+| Report send has ambiguous outcome | Destination becomes `unknown`; automatic retry stops for operator review |
+| Audience day closes with a gap | Health remains degraded; the missing stock is never backfilled or converted to zero |
+| Post disappears upstream | Last known row and history remain; deletion does not rewrite prior reporting |
 
-Storage estimates use roughly 1.5 KB per post row after TOAST compression of the
-raw payload, and roughly 100 bytes per metric snapshot before its index. Measure
-these against a real month before budgeting on them.
+The governing preference is stale or explicitly incomplete data over a wrong
+number, and partial repairable completion over a fake atomic guarantee.
 
-| | 10 companies | 100 companies | 1,000 companies |
-|---|---|---|---|
-| Channels | 50 | 500 | 5,000 |
-| Posts per day | 200 | 2,000 | 20,000 |
-| Posts per year | 73,000 | 730,000 | 7.3 million |
-| Metric snapshots per year | 1.2 million | 12 million | 117 million |
-| Database growth per year | under 0.5 GB | 3 to 5 GB | 35 to 45 GB |
-| Ingest wall clock per run | about 60 seconds | about 10 minutes | about 105 minutes |
-| YouTube quota used per day | about 400 of 10,000 units | about 4,000 of 10,000 | about 40,000, over quota |
-| Infrastructure per month | 25 to 40 dollars | 90 to 150 dollars | 400 to 900 dollars |
-| Metered X per month, 12 accounts per landscape | about 180 dollars | about 1,800 dollars | about 18,000 dollars |
+---
 
-### Where it actually breaks, in order
+## 7. Scaling boundaries
 
-**First break, around 200 to 250 channels: the ingest cron wall clock.** At
-concurrency four and roughly five seconds per channel run, the runner clears
-about 240 channels inside the 300 second Vercel ceiling. That is roughly 40 to 50
-companies, which is earlier than it looks and is the first thing to hit in real
-use. Three fixes in increasing order of effort: raise concurrency (bounded by
-platform rate limits, and the reservation budget already handles the contention),
-shard the cron by platform or by a hash bucket over channel ids, or move
-ingestion onto a queue and let the cron only enqueue. The queue is the right
-answer past a few hundred channels and is not needed before that.
+Read cost scales primarily with landscape size and selected window because core
+queries constrain company ids and posted dates before aggregating. Collection
+cost scales with active channels, platform latency, refresh overlap and vendor
+pricing.
 
-**Second break, around 250 YouTube channels: the free Data API quota.** Forty
-units per channel per day against a 10,000 unit daily allowance. Fixes are a
-quota increase request, which Google grants for legitimate use, or dropping the
-YouTube refresh cadence, which costs freshness and nothing else.
+The first operational ceiling is the 300-second serverless collection window,
+especially for slow purchased snapshots. The current response is a durable
+queue, ten network workers, rate gates, bounded claims and resumable vendor
+receipts. Past that ceiling, shard claims by platform or stable channel bucket,
+then move workers off the request lifecycle; do not increase overlap blindly.
 
-**Third break, and only in a shape nobody actually builds: query time.** This is
-the important nuance. Query cost scales with **landscape size**, not with total
-companies tracked. A ninety-day leaderboard over a fifteen-company landscape
-aggregates about 27,000 posts and runs in tens of milliseconds off
-posts_company_posted_idx, whether the database holds 50 companies or 5,000. The
-1,000-company case in the table above is a hundred landscapes of fifteen, not one
-landscape of a thousand. So the read path stays flat and only storage and
-ingestion grow. If someone does build a 200-company landscape, the fix is a
-materialised daily rollup per company, per platform, per day, which the schema
-already supports adding without touching a single read call site, because every
-read goes through queries.ts.
-
-**The thing that actually gets expensive is not infrastructure.** At 100 tracked
-companies the database and hosting are under 150 dollars a month and the metered
-X bill is 1,800. The paid data API is the cost model of this product, and the
-refresh overlap window is the dial that controls it. That is why it is called out
-in three separate documents and why making it a per-platform setting is the top
-item on the Next list.
-
-### What this does not do
-
-No cache tier. Server Components re-query on each render, which is fine at this
-data size and would need Next.js data cache or a materialised view at the second
-break above. No read replica. No background job queue. No search index. Every one
-of those is a real answer to a real scaling problem and none of them is a problem
-yet, and building them now would be building infrastructure for a load that does
-not exist against a product that has not proven anyone wants it.
+YouTube quota and paid-source units are source-specific ceilings and must be
+measured from ingestion audits. Database reads should move to materialized daily
+rollups only after query telemetry shows the need. A cache, replica, external
+queue or search service is justified by observed load, not by a speculative
+company count.

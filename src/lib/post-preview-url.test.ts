@@ -25,7 +25,34 @@ describe('post preview URLs', () => {
     );
   });
 
-  it('keeps non-Instagram thumbnails direct and leaves truly empty posts blank', () => {
+  it('routes TikTok posters through the same authenticated freshness proxy', () => {
+    assert.equal(postPosterUrl({
+      ...instagramReel,
+      platform: 'tiktok',
+      type: 'video',
+      permalink: 'https://www.tiktok.com/@bostonglobe/video/7666210267478379790',
+      thumbnailUrl: null,
+    }), '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview');
+  });
+
+  it('routes Threads posters and videos through the authenticated Meta CDN proxy', () => {
+    const threadsVideo = {
+      ...instagramReel,
+      platform: 'threads' as const,
+      type: 'video' as const,
+      permalink: 'https://www.threads.com/@nesn/post/DbnupqKGtuu',
+    };
+    assert.equal(
+      postPosterUrl(threadsVideo),
+      '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview',
+    );
+    assert.equal(
+      postVideoUrl(threadsVideo, 'https://video.fna.fbcdn.net/threads.mp4'),
+      '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview?kind=video',
+    );
+  });
+
+  it('keeps other platform thumbnails direct and leaves truly empty posts blank', () => {
     assert.equal(postPosterUrl({
       ...instagramReel,
       platform: 'facebook',

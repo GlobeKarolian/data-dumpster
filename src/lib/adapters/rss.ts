@@ -470,6 +470,8 @@ export const rssAdapter: ChannelAdapter = {
         audience: [],
         cursor: { ...ctx.cursor, lastRunAt: new Date().toISOString() },
         hasMore: false,
+        exhaustive: false,
+        incompleteReason: 'The RSS server returned 304 without an archive or paging cursor. It proves only that the recent feed is unchanged, not that the requested historical window is complete.',
       };
     }
 
@@ -497,9 +499,15 @@ export const rssAdapter: ChannelAdapter = {
     const oldest = posts.reduce<Date | undefined>(
       (acc, p) => (!acc || p.postedAt < acc ? p.postedAt : acc), undefined,
     );
-    if (oldest && feed.parsed.entries.length > 0 && oldest > ctx.since && posts.length === feed.parsed.entries.length) {
-      warnings.push('Every item in the feed is newer than the requested window; older posts have scrolled off. Poll this feed more often.');
-    }
+    const hitLimit = posts.length >= ctx.limit;
+    const incompleteReason = undated > 0
+      ? String(undated) + ' RSS item(s) had no usable publish date, so the requested window cannot be certified. Repair the source dates or use an archival source.'
+      : hitLimit
+        ? 'RSS reached the per-run post limit without a continuation cursor. Increase the limit or use an archival source before certifying this window.'
+        : !oldest || oldest > ctx.since
+          ? 'The RSS feed does not reach the start of the requested window and exposes no archive cursor. Older posts may have scrolled off; poll more often or use an archival source.'
+          : undefined;
+    if (incompleteReason) warnings.push(incompleteReason);
 
     return {
       posts,
@@ -520,7 +528,9 @@ export const rssAdapter: ChannelAdapter = {
         lastModified: feed.lastModified ?? null,
         lastRunAt: new Date().toISOString(),
       },
-      hasMore: false,
+      ...(incompleteReason
+        ? { hasMore: false as const, exhaustive: false as const, incompleteReason }
+        : { hasMore: false as const, exhaustive: true as const }),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   },

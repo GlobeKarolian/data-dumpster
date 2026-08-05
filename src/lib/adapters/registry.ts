@@ -65,9 +65,9 @@ export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = IMPLEMENTED_A
  *    engagement for Pages it does not administer. Until an org is approved and
  *    says so in its credentials, Facebook behaves as owned-only; after that it
  *    is comparable, with the same engagement fields as an owned Page.
- *  - **Owned only, full stop**: `tiktok` (Display API reads only the token
- *    holder; the Research API is application-gated and bars commercial use),
- *    `linkedin` (no read path for another organisation's page at any price).
+ *  - **Purchased public coverage**: `tiktok` and `linkedin`. Their official
+ *    APIs are owner/admin-only, so competitor-comparable fields come from the
+ *    deployment's approved public-data vendor.
  *
  * Each adapter's `accessNotes` says this in the UI. `docs/DATA-ACCESS.md` has
  * the costs, the approval burden and the recommended acquisition strategy.
@@ -87,10 +87,11 @@ export const UNIMPLEMENTED_REASONS: Partial<Record<Platform, string>> = {
  * The UI uses this to keep such a platform out of a competitor comparison
  * instead of charting it as zero.
  *
- * "By default" is load-bearing for Facebook and only Facebook. Two of these
- * three are permanent; the Facebook entry is a statement about paperwork, not
- * about the API, and `isOwnedOnly` lifts it once the org's credentials say Page
- * Public Content Access has been granted.
+ * "By default" is load-bearing for Facebook. Purchased-source adapters can
+ * still provide public competitor observations even though their official API
+ * remains owner-only; callers that use this legacy helper must pass the
+ * configured source context rather than equating official access with product
+ * availability.
  */
 export const OWNED_ONLY_PLATFORMS: Partial<Record<Platform, string>> = {
   facebook: 'Facebook competitor Pages need Page Public Content Access, a Meta App Review feature '
@@ -101,7 +102,6 @@ export const OWNED_ONLY_PLATFORMS: Partial<Record<Platform, string>> = {
     + 'prohibits commercial use. Competitor TikTok is therefore purchased: set a Bright Data API key '
     + 'and competitor channels read normally, with full parity on views and engagement rate by view. '
     + 'Without that key, only accounts you own can be read. See docs/DATA-ACCESS.md.',
-  linkedin: 'LinkedIn exposes no read endpoint for another organisation\'s page at any price.',
 };
 
 /** Credential values that count as "yes". Mirrors the Facebook adapter. */

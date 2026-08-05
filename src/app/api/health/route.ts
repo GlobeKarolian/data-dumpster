@@ -18,6 +18,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { apiHandler } from '@/lib/session';
 import { recentCoverage, type DayCoverage } from '@/lib/metrics/daily-coverage';
+import { isScheduledCoverageFailure } from '@/lib/metrics/daily-coverage-summary';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,11 +49,16 @@ export const GET = apiHandler(async () => {
 
     const ingest = await db.execute<PlatformRow>(sql`
       SELECT c.platform::text AS platform,
-             max(r.finished_at) FILTER (WHERE r.status IN ('succeeded', 'partial')) AS last_success,
+             max(coalesce(state.attempted_until, state.coverage_until)) AS last_success,
              count(DISTINCT c.id)::int AS channels
         FROM channels c
-        LEFT JOIN ingestion_runs r ON r.channel_id = c.id
+        LEFT JOIN channel_collection_state state ON state.channel_id = c.id
        WHERE c.active
+         AND EXISTS (
+           SELECT 1
+             FROM landscape_channel_demands demand
+            WHERE demand.channel_id = c.id
+         )
        GROUP BY c.platform
        ORDER BY c.platform
     `);
@@ -60,12 +66,19 @@ export const GET = apiHandler(async () => {
 
     const stale = await db.execute<OverdueRow>(sql`
       SELECT count(*) FILTER (
-               WHERE last_ingested_at IS NULL
-                  OR last_ingested_at < now() - interval '${sql.raw(String(STALE_AFTER_HOURS))} hours'
+               WHERE coalesce(state.attempted_until, state.coverage_until) IS NULL
+                  OR coalesce(state.attempted_until, state.coverage_until)
+                    < now() - interval '${sql.raw(String(STALE_AFTER_HOURS))} hours'
              )::int AS overdue,
              count(*)::int AS total
-        FROM channels
-       WHERE active
+        FROM channels c
+        LEFT JOIN channel_collection_state state ON state.channel_id = c.id
+       WHERE c.active
+         AND EXISTS (
+           SELECT 1
+             FROM landscape_channel_demands demand
+            WHERE demand.channel_id = c.id
+         )
     `);
     overdue = stale.rows[0]?.overdue ?? 0;
     activeChannels = stale.rows[0]?.total ?? 0;
@@ -82,13 +95,13 @@ export const GET = apiHandler(async () => {
   /*
    * A closed day that was never fully collected is the failure worth paging on.
    *
-   * Today is excluded: it is still open and the coverage sweep has until
-   * midnight Eastern to finish it. Yesterday and earlier are final, and a gap
+   * Today is excluded because its twice-daily collection windows and recovery
+   * work may still be in flight. Yesterday and earlier are final, and a gap
    * there is permanent, so it degrades the service status rather than being
    * left as a line in a log nobody reads.
    */
   const closedDays = coverage.slice(1);
-  const incompleteClosedDays = closedDays.filter((d) => !d.complete).length;
+  const incompleteClosedDays = closedDays.filter(isScheduledCoverageFailure).length;
   const status = !database
     ? 'down'
     : (!configured || overdue > 0 || incompleteClosedDays > 0) ? 'degraded' : 'ok';

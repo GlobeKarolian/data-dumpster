@@ -18,7 +18,11 @@
  * what the model said but what was verified at the time it said it.
  */
 import type { FactSheet } from '@/lib/metrics/contract';
-import { unavailableMetricField } from './prompts';
+import {
+  availableBreakdownForPrompt,
+  PRINTED_PERCENT_CHANGE_GUARDRAILS,
+  unavailableMetricField,
+} from './prompts';
 import { METRIC_DEFS } from '@/lib/metrics/definitions';
 import { METRIC_KEYS, type MetricKey } from '@/lib/types';
 
@@ -59,9 +63,24 @@ export interface BriefVerification extends NumericGroundingVerification {
   checkedAt: string;
 }
 
+/** Numeric and citation verdict for a short answer over one fact sheet. */
+export interface FactSheetAnswerVerification extends NumericGroundingVerification {
+  /** Grounded figures whose cited path did not support the claim. */
+  miscited: string[];
+  stats: { total: number; grounded: number; cited: number };
+}
+
 /* --------------------------------------------------------- fact-sheet index */
 
 type NumericUnit = 'number' | 'percent' | 'currency';
+type NumericSubject = MetricKey
+  | 'engagementRate'
+  | 'days'
+  | 'rank'
+  | 'shareOfPosts'
+  | 'lift'
+  | 'outlierScore'
+  | 'zScore';
 
 export interface NumericSourceEntry {
   path: string;
@@ -75,6 +94,8 @@ export interface NumericSourceEntry {
   percentRepresentation?: 'display' | 'fraction';
   /** Written precision of rendered material; absent for raw fact-sheet values. */
   tolerance?: number;
+  /** What the number measures, used to reject equal-valued but unrelated citations. */
+  subject?: NumericSubject;
 }
 
 const METRIC_KEY_SET = new Set<string>(METRIC_KEYS);
@@ -113,6 +134,37 @@ function factNumberUnit(
     : 'number';
 }
 
+function factNumberSubject(
+  key: string | undefined,
+  metric: MetricKey | undefined,
+  insideMetricValues: boolean,
+): NumericSubject | undefined {
+  const directMetric = asMetricKey(key);
+  if (directMetric) return directMetric;
+  if (
+    metric
+    && (
+      insideMetricValues
+      || (key !== undefined && METRIC_VALUE_FACT_KEYS.has(key))
+      || key === 'changePct'
+    )
+  ) {
+    return metric;
+  }
+  switch (key) {
+    case 'days': return 'days';
+    case 'rank': return 'rank';
+    case 'postCount': return 'posts';
+    case 'followersAtPost': return 'audience';
+    case 'medianEngagement': return 'engagementTotal';
+    case 'shareOfPosts': return 'shareOfPosts';
+    case 'lift': return 'lift';
+    case 'outlierScore': return 'outlierScore';
+    case 'zScore': return 'zScore';
+    default: return undefined;
+  }
+}
+
 /** Every finite number in the fact sheet, with the path a citation would use. */
 export function indexFactNumbers(facts: FactSheet): NumericSourceEntry[] {
   const out: NumericSourceEntry[] = [];
@@ -129,11 +181,13 @@ export function indexFactNumbers(facts: FactSheet): NumericSourceEntry[] {
         const dedupe = path + '=' + node;
         if (!seen.has(dedupe)) {
           const unit = factNumberUnit(key, metric, insideMetricValues);
+          const subject = factNumberSubject(key, metric, insideMetricValues);
           seen.add(dedupe);
           out.push({
             path,
             value: node,
             unit,
+            ...(subject ? { subject } : {}),
             ...(unit === 'percent'
               ? { percentRepresentation: 'fraction' as const }
               : {}),
@@ -169,8 +223,20 @@ export function indexFactNumbers(facts: FactSheet): NumericSourceEntry[] {
          */
         if (unavailableMetricField(record, k)) continue;
         const childMetric = asMetricKey(k) ?? recordMetric;
+        if (k === 'breakdown') {
+          const measured = availableBreakdownForPrompt(record, v);
+          if (measured) {
+            walk(
+              measured,
+              path ? path + '.' + k : k,
+              k,
+              childMetric,
+              true,
+            );
+          }
+          continue;
+        }
         const childInsideMetricValues = insideMetricValues
-          || k === 'breakdown'
           || k === 'spark';
         walk(
           v,
@@ -207,6 +273,22 @@ const NUMBER_RE = new RegExp(
   'g',
 );
 
+/*
+ * Fact paths use dotted object keys and numeric array indexes. A character
+ * class such as `[^\]]*` stops at the first array bracket and truncates a path
+ * like facts.leaderboards.posts[0].value. Keep the grammar explicit so the
+ * citation extracted for verification is the exact path the prompt rendered.
+ */
+const FACT_PATH_PATTERN = 'facts(?:\\.[A-Za-z_$][A-Za-z0-9_$]*|\\[\\d+\\])*';
+
+function factCitationPattern(): RegExp {
+  return new RegExp('\\[(' + FACT_PATH_PATTERN + ')\\]', 'g');
+}
+
+function factCitations(text: string): string[] {
+  return Array.from(text.matchAll(factCitationPattern()), (match) => match[1]);
+}
+
 const MONTHS = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?'
   + '|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
 
@@ -214,7 +296,7 @@ const MONTHS = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|j
 function stripNonClaims(markdown: string): string {
   return markdown
     // Citations: [facts.leaderboards.engagementTotal[0].value]
-    .replace(/\[facts[^\]]*\]/g, ' ')
+    .replace(factCitationPattern(), ' ')
     // Markdown links and images: the URL is not a claim.
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     // Fenced and inline code.
@@ -236,6 +318,127 @@ function stripNonClaims(markdown: string): string {
     // A day of the month is a location in time, not a measurement.
     .replace(new RegExp('\\b(' + MONTHS + ')\\.?\\s+\\d{1,2}(st|nd|rd|th)?\\b', 'gi'), ' ')
     .replace(new RegExp('\\b\\d{1,2}(st|nd|rd|th)?\\s+(' + MONTHS + ')\\b', 'gi'), ' ');
+}
+
+type SubjectCue = { subject: NumericSubject; pattern: RegExp };
+
+/*
+ * Numeric equality is necessary but not sufficient. Seven days and seven
+ * posts are different facts. These deliberately narrow cues identify an
+ * explicitly named metric close to a claim; if prose stays generic, the
+ * verifier falls back to path/value/unit checks instead of guessing intent.
+ */
+const SUBJECT_CUES: SubjectCue[] = [
+  {
+    subject: 'engagementRateByFollower',
+    pattern: /\b(?:engagement rate (?:by|per) followers?|follower(?:-based)? engagement rate)\b/gi,
+  },
+  {
+    subject: 'engagementRateByView',
+    pattern: /\b(?:engagement rate (?:by|per) views?|view(?:-based)? engagement rate)\b/gi,
+  },
+  {
+    subject: 'engagementPerPost',
+    pattern: /\b(?:engagement per post|average engagement(?: per post)?)\b/gi,
+  },
+  {
+    subject: 'viewsPerPost',
+    pattern: /\b(?:views? per post|average views? per post)\b/gi,
+  },
+  {
+    subject: 'postsPerDay',
+    pattern: /\b(?:posts? per day|daily (?:post|posting) (?:rate|cadence|volume))\b/gi,
+  },
+  {
+    subject: 'postsPerWeek',
+    pattern: /\b(?:posts? per week|weekly (?:post|posting) (?:rate|cadence|volume))\b/gi,
+  },
+  {
+    subject: 'audienceGrowthRate',
+    pattern: /\b(?:audience|follower) growth rate\b/gi,
+  },
+  {
+    subject: 'audienceNetChange',
+    pattern: /\b(?:(?:audience|follower) net change|followers? (?:gained|added|lost)|(?:gained|added|lost) followers?)\b/gi,
+  },
+  {
+    subject: 'shareOfEngagement',
+    pattern: /\bshare of engagement\b/gi,
+  },
+  {
+    subject: 'shareOfVoice',
+    pattern: /\bshare of voice\b/gi,
+  },
+  {
+    subject: 'shareOfPosts',
+    pattern: /\bshare of posts\b/gi,
+  },
+  {
+    subject: 'engagementRate',
+    pattern: /\bengagement rate\b/gi,
+  },
+  {
+    subject: 'engagementTotal',
+    pattern: /\b(?:total )?engagements?|reactions?\b/gi,
+  },
+  { subject: 'views', pattern: /\bviews?\b/gi },
+  { subject: 'applause', pattern: /\b(?:applause|likes?|favorites?|hearts?)\b/gi },
+  { subject: 'conversation', pattern: /\b(?:conversation|comments?|replies)\b/gi },
+  { subject: 'amplification', pattern: /\b(?:amplification|shares?|reposts?|retweets?)\b/gi },
+  { subject: 'saves', pattern: /\b(?:saves?|bookmarks?)\b/gi },
+  {
+    subject: 'audience',
+    pattern: /\b(?:audience|followers?|following)\b/gi,
+  },
+  {
+    subject: 'posts',
+    pattern: /\b(?:posts?|published|publishing|posted)\b/gi,
+  },
+  { subject: 'days', pattern: /\bdays?\b/gi },
+  { subject: 'rank', pattern: /\b(?:rank(?:ed|ing)?|place(?:d)?)\b/gi },
+  { subject: 'lift', pattern: /\blift\b/gi },
+  { subject: 'outlierScore', pattern: /\boutlier score\b/gi },
+  { subject: 'zScore', pattern: /\bz(?:-| )?score\b/gi },
+];
+
+function distanceFromClaim(
+  cueStart: number,
+  cueEnd: number,
+  claimStart: number,
+  claimEnd: number,
+): number {
+  if (cueEnd <= claimStart) return claimStart - cueEnd;
+  if (cueStart >= claimEnd) return cueStart - claimEnd;
+  return 0;
+}
+
+function subjectForClaim(
+  sentence: string,
+  claimStart: number,
+  claimEnd: number,
+): NumericSubject | undefined {
+  let best: { subject: NumericSubject; distance: number; priority: number } | undefined;
+  SUBJECT_CUES.forEach((cue, priority) => {
+    cue.pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = cue.pattern.exec(sentence)) !== null) {
+      const distance = distanceFromClaim(
+        match.index,
+        match.index + match[0].length,
+        claimStart,
+        claimEnd,
+      );
+      if (distance > 36) continue;
+      if (
+        !best
+        || distance < best.distance
+        || (distance === best.distance && priority < best.priority)
+      ) {
+        best = { subject: cue.subject, distance, priority };
+      }
+    }
+  });
+  return best?.subject;
 }
 
 function splitSentences(text: string): string[] {
@@ -311,10 +514,12 @@ function candidatesFor(
 function matchEntry(
   entries: NumericSourceEntry[],
   candidates: Candidate[],
+  subject?: NumericSubject,
 ): NumericSourceEntry | null {
   for (const c of candidates) {
     for (const e of entries) {
       if (e.unit !== undefined && e.unit !== c.unit) continue;
+      if (subject && e.subject && !subjectsCompatible(subject, e.subject)) continue;
       if (
         e.unit === 'percent'
         && c.percentRepresentation !== (e.percentRepresentation ?? 'display')
@@ -324,6 +529,12 @@ function matchEntry(
     }
   }
   return null;
+}
+
+function subjectsCompatible(claim: NumericSubject, source: NumericSubject): boolean {
+  if (claim === source) return true;
+  return claim === 'engagementRate'
+    && (source === 'engagementRateByFollower' || source === 'engagementRateByView');
 }
 
 function nearestEntry(
@@ -360,6 +571,7 @@ export function indexMaterialNumbers(
     const sign = signRaw === '-' || signRaw === '−' ? -1 : 1;
     const candidates = candidatesFor(sign, mantissa, suffix, currencyRaw === '$')
       .filter((candidate) => candidate.percentRepresentation !== 'fraction');
+    const subject = subjectForClaim(source, match.index, match.index + match[0].length);
     for (const candidate of candidates) {
       const path = root + '[' + index + ']';
       const dedupe = path + '=' + candidate.value + ':' + candidate.unit
@@ -372,6 +584,7 @@ export function indexMaterialNumbers(
           unit: candidate.unit,
           percentRepresentation: candidate.percentRepresentation,
           tolerance: candidate.tolerance,
+          ...(subject ? { subject } : {}),
         });
       }
     }
@@ -421,8 +634,16 @@ type CoreVerification = NumericGroundingVerification & {
 type VerificationOptions = {
   sourceLabel: string;
   requireCitations: boolean;
-  citationFreePathPrefixes?: string[];
 };
+
+/*
+ * A deterministic checker cannot let "three posts" disappear merely because
+ * the extractor only parsed digits. Reject spelled-out quantities and let the
+ * bounded repair pass rewrite them as cited numeric claims. This intentionally
+ * includes "one": prose can use "a" or "the only" when it is not making a
+ * measurable claim.
+ */
+const SPELLED_QUANTITY_RE = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen|both)\b/gi;
 
 /**
  * Shared numeric-verification engine. Callers define the allowed numeric
@@ -441,12 +662,26 @@ function verifyAgainstEntries(
   const unverified: string[] = [];
   const violations: string[] = [];
   const miscited: string[] = [];
+  const entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
 
   sentences.forEach((original) => {
     const sentence = stripNonClaims(original);
-    const citedPaths = Array.from(original.matchAll(/\[(facts[^\]]*)\]/g))
-      .map((match) => match[1].trim());
+    const citedPaths = factCitations(original);
     const display = original.length > 240 ? original.slice(0, 240) + '\u2026' : original;
+    SPELLED_QUANTITY_RE.lastIndex = 0;
+    for (const word of sentence.matchAll(SPELLED_QUANTITY_RE)) {
+      violations.push(
+        'Spelled-out quantity "' + word[0] + '" cannot be verified. Use digits and an exact '
+        + 'supporting citation, or remove the quantity: "' + display + '"',
+      );
+    }
+    const parsed: {
+      raw: string;
+      candidates: Candidate[];
+      primary: number;
+      subject?: NumericSubject;
+      globalHit: NumericSourceEntry | null;
+    }[] = [];
 
     NUMBER_RE.lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -459,50 +694,98 @@ function verifyAgainstEntries(
       if (candidates.length === 0) continue;
 
       const primary = candidates[0].value;
-      if (suffix === '%' && Math.abs(primary) > 1000) {
+      if (
+        suffix === '%'
+        && (
+          primary > PRINTED_PERCENT_CHANGE_GUARDRAILS.maximum
+          || primary < PRINTED_PERCENT_CHANGE_GUARDRAILS.minimum
+        )
+      ) {
         violations.push(
           'Printed a percent change of ' + raw + ', which the honesty rules require be described '
           + 'qualitatively (near-zero baseline): "' + sentence.slice(0, 160) + '"',
         );
       }
 
-      const hit = matchEntry(entries, candidates);
+      const subject = subjectForClaim(sentence, match.index, match.index + rawFull.length);
+      parsed.push({
+        raw,
+        candidates,
+        primary,
+        subject,
+        globalHit: matchEntry(entries, candidates, subject),
+      });
+    }
+
+    /*
+     * The prompt requires citation paths in claim order. Assign each available
+     * path to the claim in the same position. Numeric
+     * caveats have no exemption: the prompt requires them to be paraphrased
+     * qualitatively unless the number has a real NUMBER INDEX path.
+     */
+    const assignedCitations = new Map<number, string>();
+    if (citedPaths.length === parsed.length) {
+      citedPaths.forEach((path, index) => assignedCitations.set(index, path));
+    } else {
+      let citationIndex = 0;
+      parsed.forEach((claim, index) => {
+        const path = citedPaths[citationIndex];
+        if (path) assignedCitations.set(index, path);
+        citationIndex += 1;
+      });
+    }
+
+    parsed.forEach((parsedClaim, index) => {
+      const citedPath = assignedCitations.get(index);
+      const citedEntry = citedPath ? entriesByPath.get(citedPath) : undefined;
+      const citedHit = citedEntry
+        ? matchEntry([citedEntry], parsedClaim.candidates, parsedClaim.subject)
+        : null;
+      const hit = citedHit ?? parsedClaim.globalHit;
       const claim: NumericClaim = {
         text: display,
-        raw,
-        value: primary,
-        found: Boolean(hit),
-        citedPath: citedPaths[0],
+        raw: parsedClaim.raw,
+        value: parsedClaim.primary,
+        found: Boolean(parsedClaim.globalHit),
+        ...(citedPath ? { citedPath } : {}),
         matchedPath: hit?.path,
-        nearest: hit ? undefined : nearestEntry(entries, primary),
+        nearest: parsedClaim.globalHit
+          ? undefined
+          : nearestEntry(entries, parsedClaim.primary),
       };
       claims.push(claim);
 
-      if (!hit) {
+      if (!parsedClaim.globalHit) {
         unverified.push(
-          raw + ' does not appear in ' + options.sourceLabel
+          parsedClaim.raw + ' does not appear in ' + options.sourceLabel
           + (claim.nearest
             ? ' (closest: ' + claim.nearest.path + ' = ' + claim.nearest.value + ')'
             : '')
           + ' — "' + claim.text + '"',
         );
-        continue;
       }
 
-      const citationFree = options.citationFreePathPrefixes?.some(
-        (prefix) => hit.path.startsWith(prefix),
-      ) ?? false;
-      if (citationFree) continue;
-
-      if (citedPaths.length > 0 && !citedPaths.includes(hit.path)) {
+      if (!options.requireCitations) return;
+      if (!citedPath) {
+        violations.push('Uncited figure ' + parsedClaim.raw + ' — "' + claim.text + '"');
+      } else if (!citedEntry) {
         miscited.push(
-          raw + ' matched ' + hit.path + ' but was cited as ' + citedPaths.join(', ')
+          parsedClaim.raw + ' cited ' + citedPath
+          + ', but that path was not exposed in the prompt'
           + ' — "' + claim.text + '"',
         );
-      } else if (options.requireCitations && citedPaths.length === 0) {
-        violations.push('Uncited figure ' + raw + ' — "' + claim.text + '"');
+      } else if (!citedHit) {
+        const numericAtPath = matchEntry([citedEntry], parsedClaim.candidates);
+        const reason = numericAtPath && parsedClaim.subject && citedEntry.subject
+          ? ' describes ' + citedEntry.subject + ', while the claim describes '
+            + parsedClaim.subject
+          : ' contains ' + citedEntry.value + ', which does not support the stated value';
+        miscited.push(
+          parsedClaim.raw + ' cited ' + citedPath + ', which' + reason
+          + ' — "' + claim.text + '"',
+        );
       }
-    }
+    });
   });
 
   const grounded = claims.filter((claim) => claim.found).length;
@@ -544,6 +827,41 @@ export function verifyNumbersAgainstMaterial(
 }
 
 /**
+ * Verify an Ask answer without forcing it to repeat every fact-sheet caveat.
+ *
+ * A short answer must carry any relevant caveat, but relevance depends on the
+ * question and is not safely decidable with string overlap. Numeric grounding
+ * and exact citation semantics remain absolute and deterministic here.
+ */
+export function verifyFactSheetAnswer(
+  answer: string,
+  facts: FactSheet,
+): FactSheetAnswerVerification {
+  const result = verifyAgainstEntries(
+    answer,
+    indexFactNumbers(facts),
+    {
+      sourceLabel: 'the fact sheet',
+      requireCitations: true,
+    },
+  );
+
+  return {
+    ok: result.ok,
+    claims: result.claims,
+    unverified: result.unverified,
+    violations: result.violations,
+    miscited: result.miscited,
+    stats: {
+      total: result.stats.total,
+      grounded: result.stats.grounded,
+      cited: result.cited,
+    },
+    checkedAt: result.checkedAt,
+  };
+}
+
+/**
  * Check a generated brief against the fact sheet it was generated from.
  *
  * Never throws. A verification pass that can fail is a verification pass that
@@ -551,16 +869,12 @@ export function verifyNumbersAgainstMaterial(
  * and an unparseable brief simply has no grounded claims.
  */
 export function verifyBrief(markdown: string, facts: FactSheet): BriefVerification {
-  const caveatEntries = (facts.caveats ?? []).flatMap((caveat, index) => (
-    indexMaterialNumbers(caveat, 'facts.caveats[' + index + ']')
-  ));
   const result = verifyAgainstEntries(
     markdown,
-    [...indexFactNumbers(facts), ...caveatEntries],
+    indexFactNumbers(facts),
     {
       sourceLabel: 'the fact sheet',
       requireCitations: true,
-      citationFreePathPrefixes: ['facts.caveats['],
     },
   );
 

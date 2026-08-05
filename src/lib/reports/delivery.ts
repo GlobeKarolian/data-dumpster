@@ -34,6 +34,7 @@ import {
   type ReportExportFormat,
 } from './schedule';
 import { assertReportNarrativeVerified } from './narrative-verification';
+import { isSearchConsoleConfigured, pullSearchConsoleTables } from './search-console';
 
 export type ReportScheduleRow = typeof reportSchedules.$inferSelect;
 type ReportDeliveryRow = typeof reportDeliveries.$inferSelect;
@@ -403,14 +404,32 @@ async function reportDocument(
     .limit(1);
   if (!org) throw new Error('The schedule belongs to an organization that no longer exists.');
 
+  let manual = readManual(row.manual);
+  const narrative = readNarrative(row.narrative);
+  if (isSearchConsoleConfigured()) {
+    const searchTables = await pullSearchConsoleTables({
+      start: row.periodStart,
+      end: row.periodEnd,
+    });
+    manual = { ...manual, tables: { ...manual.tables, ...searchTables } };
+    delete narrative.search;
+    const [updated] = await db
+      .update(weeklyReports)
+      .set({ manual, narrative, updatedAt: new Date() })
+      .where(and(eq(weeklyReports.id, row.id), eq(weeklyReports.orgId, claim.orgId)))
+      .returning();
+    if (!updated) throw new Error('The Search Console tables could not be saved to the report.');
+    row = updated;
+  }
+
   const doc: ReportDocument = {
     title: row.title,
     orgName: org.name,
     period: { start: row.periodStart, end: row.periodEnd },
     dataNote: row.dataNote,
     computed: readComputed(row.computed),
-    manual: readManual(row.manual),
-    narrative: readNarrative(row.narrative),
+    manual,
+    narrative,
   };
   return { reportId: row.id, doc };
 }

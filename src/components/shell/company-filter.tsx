@@ -4,6 +4,7 @@ import * as React from 'react';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { useUrlState } from '@/components/common/use-url-state';
 import { companyColor } from '@/components/charts/theme';
+import type { Platform } from '@/lib/types';
 
 export interface CompanyOption {
   id: string;
@@ -49,7 +50,7 @@ export function CompanyFilter({
 export function PlatformFilter({
   options,
 }: {
-  options: { value: string; label: string; color?: string }[];
+  options: { value: string; label: string; color?: string; platform?: Platform }[];
 }) {
   const { getList, setParams } = useUrlState();
   const value = getList('platforms');

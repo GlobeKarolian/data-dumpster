@@ -3,19 +3,19 @@ import {
   Bell, Building2, Cpu, LayoutDashboard, LayoutGrid,
   MessageSquare, Radio, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
 } from 'lucide-react';
-import { PLATFORM_COLORS, PLATFORM_LABELS, type Platform } from '@/lib/types';
+import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
 /** Platforms that get their own overview screen, in the order newsrooms use them. */
 export const NAV_PLATFORMS: Platform[] = [
-  'facebook', 'instagram', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky', 'reddit',
+  'facebook', 'instagram', 'linkedin', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky', 'reddit',
 ];
 
 export interface NavItem {
   href: string;
   label: string;
   icon?: LucideIcon;
-  /** Platform rows carry a brand dot instead of an icon. */
-  dotColor?: string;
+  /** Platform rows carry their recognizable network mark. */
+  platform?: Platform;
   /** Match child routes as active, e.g. /settings/models under /settings. */
   matchPrefix?: boolean;
 }
@@ -35,7 +35,7 @@ export const NAV_SECTIONS: NavSection[] = [
       ...NAV_PLATFORMS.map((p) => ({
         href: '/' + p,
         label: PLATFORM_LABELS[p],
-        dotColor: PLATFORM_COLORS[p],
+        platform: p,
       })),
       { href: '/leaderboard', label: 'Leaderboards', icon: Trophy },
     ],

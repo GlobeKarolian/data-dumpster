@@ -17,9 +17,10 @@ export const maxDuration = 300;
  * The ordinary ingest cron is a schedule, which is a plan; this is the check
  * that the plan worked, run while there is still time to act on the answer.
  *
- * Timing is the whole design. It is scheduled at 01:00 and 03:00 UTC, which is
- * 20:00 or 21:00 Eastern depending on daylight saving, and 22:00 or 23:00 for
- * the second pass. Both are safely before Eastern midnight year-round, so a
+ * Timing is the whole design. It is scheduled at 01:00 and 03:15 UTC, which is
+ * 20:00 or 21:00 Eastern depending on daylight saving, and 22:15 or 23:15 for
+ * the second pass. The 15-minute offset keeps the second sweep clear of the
+ * 03:00 ingestion run. Both finish before Eastern midnight year-round, so a
  * channel found missing can still be collected on the day it is missing from.
  * A check that runs the next morning is not a safeguard, it is a post-mortem.
  *
@@ -29,7 +30,11 @@ export const maxDuration = 300;
  */
 
 interface RunnerModule {
-  runCollectionQueue: (opts: { maxChannels: number; postLimit: number }) => Promise<unknown>;
+  runCollectionQueue: (opts: {
+    maxChannels: number;
+    postLimit: number;
+    channelIds: readonly string[];
+  }) => Promise<unknown>;
 }
 
 function isRunnerModule(mod: unknown): mod is RunnerModule {
@@ -55,14 +60,19 @@ async function handle(req: NextRequest): Promise<Response> {
    * cleared so a worker killed mid-run earlier today is not still holding them.
    */
   const ids = before.map((g) => g.channelId);
+  const channelIdList = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
   await db.execute(sql`
     UPDATE channel_collection_state
        SET status = 'queued',
            next_attempt_at = now() - interval '1 hour',
            lease_until = NULL,
            lease_token = NULL
-     WHERE channel_id = ANY(${ids}::uuid[])
+     WHERE channel_id IN (${channelIdList})
        AND (lease_until IS NULL OR lease_until <= now())
+       AND outcome IS DISTINCT FROM 'permanent_failure'::collection_outcome
   `);
 
   let ran = false;
@@ -71,7 +81,11 @@ async function handle(req: NextRequest): Promise<Response> {
     if (isRunnerModule(runner)) {
       // postLimit is small on purpose. This pass exists to capture a follower
       // count before midnight; back-history can wait for the ordinary cron.
-      await runner.runCollectionQueue({ maxChannels: 60, postLimit: 50 });
+      await runner.runCollectionQueue({
+        maxChannels: 60,
+        postLimit: 50,
+        channelIds: ids,
+      });
       ran = true;
     }
   } catch (err) {

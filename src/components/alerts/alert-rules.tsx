@@ -71,7 +71,15 @@ export interface AlertRuleRecord {
   destinations: { type?: string }[];
 }
 
-export function AlertRules({ rules, landscapeId }: { rules: AlertRuleRecord[]; landscapeId: string }) {
+export function AlertRules({
+  rules,
+  landscapeId,
+  automationEnabled,
+}: {
+  rules: AlertRuleRecord[];
+  landscapeId: string;
+  automationEnabled: boolean;
+}) {
   const router = useRouter();
   const [creating, setCreating] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -101,7 +109,9 @@ export function AlertRules({ rules, landscapeId }: { rules: AlertRuleRecord[]; l
         <div>
           <CardTitle>Alert rules</CardTitle>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Standing questions, evaluated on a schedule and delivered to Slack.
+            {automationEnabled
+              ? 'Standing questions, evaluated on a schedule and delivered to Slack.'
+              : 'Configure rules now; automatic evaluation is paused at the deployment level.'}
           </p>
         </div>
         <Button size="sm" variant="primary" onClick={() => setCreating((v) => !v)}>
@@ -109,6 +119,12 @@ export function AlertRules({ rules, landscapeId }: { rules: AlertRuleRecord[]; l
           New rule
         </Button>
       </CardHeader>
+
+      {!automationEnabled ? (
+        <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-300">
+          Dispatcher paused. Rules can be saved, but they will remain paused and cannot fire automatically.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
@@ -120,6 +136,7 @@ export function AlertRules({ rules, landscapeId }: { rules: AlertRuleRecord[]; l
         <div className="border-b border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
           <AlertRuleForm
             landscapeId={landscapeId}
+            automationEnabled={automationEnabled}
             onDone={() => {
               setCreating(false);
               router.refresh();
@@ -145,7 +162,7 @@ export function AlertRules({ rules, landscapeId }: { rules: AlertRuleRecord[]; l
                   hideLabel
                   label={'Enable ' + rule.name}
                   checked={rule.enabled}
-                  disabled={busyId === rule.id}
+                  disabled={!automationEnabled || busyId === rule.id}
                   onChange={(next) => mutate(rule.id, 'PATCH', { enabled: next })}
                 />
               </div>
@@ -190,10 +207,12 @@ export function AlertRules({ rules, landscapeId }: { rules: AlertRuleRecord[]; l
 
 function AlertRuleForm({
   landscapeId,
+  automationEnabled,
   onDone,
   onCancel,
 }: {
   landscapeId: string;
+  automationEnabled: boolean;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -220,7 +239,7 @@ function AlertRuleForm({
           name: name.trim() || KIND_COPY[kind].label,
           kind,
           landscapeId,
-          enabled: true,
+          enabled: automationEnabled,
           config: {
             thresholdPct: Math.max(0, Number(thresholdPct) || 0) / 100,
             outlierMultiple: Number(outlierMultiple) || 4,
@@ -298,6 +317,7 @@ function AlertRuleForm({
             options={ADAPTER_SUPPORTED_PLATFORMS.map((p: Platform) => ({
               value: p,
               label: PLATFORM_LABELS[p],
+              platform: p,
             }))}
             value={platforms}
             onChange={setPlatforms}
@@ -328,7 +348,7 @@ function AlertRuleForm({
       <div className="flex items-center gap-2">
         <Button type="submit" variant="primary" size="sm" disabled={saving}>
           {saving ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-          Create rule
+          {automationEnabled ? 'Create rule' : 'Save paused rule'}
         </Button>
         <Button type="button" size="sm" onClick={onCancel}>
           Cancel

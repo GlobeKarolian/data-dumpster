@@ -118,5 +118,25 @@ export const POST = apiHandler(async (req: NextRequest) => {
     );
   }
 
-  return Response.json({ ...created, companyIds: memberIds }, { status: 201 });
+  let collectionQueued = 0;
+  try {
+    const until = new Date();
+    const { enqueueLandscapeCollection } = await import('@/lib/adapters/collection-queue');
+    const collection = await enqueueLandscapeCollection({
+      orgId,
+      landscapeId: created.id,
+      since: new Date(until.getTime() - 90 * 86_400_000),
+      until,
+    });
+    collectionQueued = collection.queued;
+  } catch (error) {
+    // The landscape is already committed. Collection reconciliation is
+    // idempotent and the next refresh/dispatcher will repair this safely.
+    console.error('[data-dumpster:landscape] initial collection enqueue failed', error);
+  }
+
+  return Response.json(
+    { ...created, companyIds: memberIds, collectionQueued },
+    { status: 201 },
+  );
 });

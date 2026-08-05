@@ -388,11 +388,15 @@ you lose the room.
 "I want to raise this before you find it, because it is the part of the plan with
 real reputational exposure and I do not think the legal exposure is the main issue.
 
-There is no sanctioned way to get competitor data from Facebook, TikTok or
-LinkedIn in 2026. Meta closed the tool that used to provide it and its replacement
-excludes for-profit companies by policy. TikTok's research programme excludes us
-too. So there are exactly two options: buy from a vendor that collects public pages
-without permission, or go without and label the gap.
+Facebook has a sanctioned route through Page Public Content Access after App
+Review; Data Dumpster currently uses Bright Data for existing pooled profiles.
+TikTok's research programme excludes this commercial use, and LinkedIn's official
+organization APIs are owned-only, so those competitor paths require an approved
+purchased public-data source. Data Dumpster implements Bright Data for both,
+with LinkedIn limited to followers, posts, likes and comments and every history
+window source-limited. The decision is therefore source-by-source: approve the
+purchased path with provenance and spend controls, or disable it and label the
+gap.
 
 My read on legal risk is low. We would be a customer, not a collector. The data is
 public engagement counts on organizational accounts. We would not republish it or
@@ -405,15 +409,17 @@ us specifically. The defence is correct and boring, and boring defences do not
 survive headlines.
 
 So here is what I would propose. Ask counsel. Tell newsroom leadership before
-somebody else does. If either says no, we run the sanctioned-only version, we label
-three platforms as gaps in the product itself, and the tool costs 150 a month
-instead of 250. That is a genuinely acceptable outcome, not a consolation prize.
+somebody else does. If either says no to a purchased path, disable that path and
+label the gap in the product itself. Do not substitute an owner credential or
+invent a fixed cost from the July research estimate. That is a genuinely
+acceptable outcome, not a consolation prize.
 
-One more thing you should know. Every commercial tool that shows Facebook,
-LinkedIn or TikTok competitor data is getting it the same way. Including the one we
-pay for. If we decline on principle we are holding ourselves to a standard our
-current vendor almost certainly does not meet. I think that is a defensible choice
-for a newsroom. It should be made on purpose, not by accident."
+One more thing you should know. A commercial tool can obtain Facebook through
+PPCA or a purchased source; TikTok and LinkedIn competitor views require a
+commercial agreement or public-page collection outside their official owned
+APIs. Ask the incumbent for exact provenance rather than assuming it. If we
+decline purchased collection on principle, that is a defensible choice for a
+newsroom. It should be made on purpose, not by accident."
 
 ---
 

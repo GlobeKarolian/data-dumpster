@@ -11,13 +11,15 @@ interface PostPreviewRef {
 const MOTION_TYPES = new Set<PostType>(['video', 'reel', 'short', 'live']);
 
 /**
- * Instagram's image CDN sends Cross-Origin-Resource-Policy: same-origin and its
- * signed URLs expire. Browser-facing Instagram media therefore always goes
- * through the authenticated post-id proxy, which can refresh the current poster
- * from the canonical permalink without exposing an arbitrary URL parameter.
+ * Instagram and TikTok both issue signed, expiring media URLs. Browser-facing
+ * posters therefore go through the authenticated post-id proxy, which can
+ * resolve a fresh public preview without exposing an arbitrary URL parameter.
  */
 export function postPosterUrl(post: PostPreviewRef): string | null {
-  if (post.platform === 'instagram' && (post.thumbnailUrl || post.permalink)) {
+  if (
+    (post.platform === 'instagram' || post.platform === 'tiktok' || post.platform === 'threads')
+    && (post.thumbnailUrl || post.permalink)
+  ) {
     return '/api/posts/' + encodeURIComponent(post.id) + '/preview';
   }
   return post.thumbnailUrl;
@@ -32,9 +34,11 @@ export function postVideoUrl(
   post: Pick<PostPreviewRef, 'id' | 'platform' | 'type'>,
   storedMediaUrl: string | null,
 ): string | null {
-  if (post.platform === 'instagram' && MOTION_TYPES.has(post.type)) {
+  if (
+    (post.platform === 'instagram' || post.platform === 'threads')
+    && MOTION_TYPES.has(post.type)
+  ) {
     return '/api/posts/' + encodeURIComponent(post.id) + '/preview?kind=video';
   }
   return storedMediaUrl;
 }
-

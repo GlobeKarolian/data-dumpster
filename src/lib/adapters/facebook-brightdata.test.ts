@@ -5,6 +5,7 @@ import {
   fetchPagePosts,
   mapFacebookVendorPost,
 } from './facebook-brightdata';
+import { collectionOutcomeForFetch } from './runner';
 
 const RANGE = {
   since: new Date('2026-07-01T00:00:00Z'),
@@ -13,6 +14,7 @@ const RANGE = {
 
 function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    delegate_page_id: 'facebook-page-1',
     post_id: 'facebook-post-1',
     date_posted: '2026-07-17T19:57:00Z',
     url: 'https://www.facebook.com/example/posts/1',
@@ -102,6 +104,61 @@ describe('Bright Data Facebook post creative', () => {
     assert.equal(result.exhaustive, false);
     assert.match(result.incompleteReason ?? '', /without a continuation cursor/);
   });
+
+  it('does not treat a short completed snapshot as proof of historical exhaustion', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify([
+      row({ post_id: 'facebook-post-1' }),
+    ]), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await fetchPagePosts('example', 'test-key', { ...RANGE, limit: 2 });
+
+    assert.equal(result.posts.length, 1);
+    assert.equal(result.exhaustive, false);
+    assert.match(result.incompleteReason ?? '', /no terminal cursor or completeness marker/i);
+  });
+
+  it('rejects rows that do not identify a stable Facebook Page', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify([
+      row({ delegate_page_id: null, page_id: null }),
+    ]), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await assert.rejects(
+      fetchPagePosts('example', 'test-key', { ...RANGE, limit: 2 }),
+      /without a stable Page id.*No observations were accepted/i,
+    );
+  });
+
+  it('keeps an existing Page identity when the vendor explicitly reports no posts in-range', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify([{
+      error: 'Posts for the specified period were not found',
+      error_code: 'dead_page',
+      input: {
+        url: 'https://www.facebook.com/example',
+        num_of_posts: 200,
+        start_date: '07-01-2026',
+        end_date: '07-31-2026',
+      },
+    }]), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await fetchPagePosts('example', 'test-key', { ...RANGE, limit: 200 });
+
+    assert.equal(result.profile, undefined);
+    assert.equal(result.posts.length, 0);
+    assert.equal(result.exhaustive, false);
+    assert.match(result.incompleteReason ?? '', /no Facebook posts.*source limited/i);
+  });
+
+  it('does not generalize other vendor error rows into an empty period', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify([{
+      error: 'The requested Page is private',
+      error_code: 'dead_page',
+    }]), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await assert.rejects(
+      fetchPagePosts('example', 'test-key', { ...RANGE, limit: 200 }),
+      /without a stable Page id.*No observations were accepted/i,
+    );
+  });
 });
 
 describe('resumable snapshots', () => {
@@ -114,15 +171,10 @@ describe('resumable snapshots', () => {
     assert.match(err.message, /sd_abc123/);
   });
 
-  it('treats a filled post cap as a completeness caveat, not a blocking error', () => {
-  // Mirrors the runner's decision for exhaustive === false. Globe Rhode
-  // Island's Page was marked Blocked for the offence of having 200+ posts,
-  // which meant nothing would ever collect it again.
-  const exhaustive = false;
-  const status = 'partial';
-  const retryable = status === 'partial';
-  assert.equal(retryable, true);
-    assert.ok(exhaustive === false && retryable,
-      'a capped page must stay in the queue rather than being retired');
+  it('settles a cursorless filled cap as terminal-incomplete', () => {
+    assert.equal(collectionOutcomeForFetch({
+      hasMore: false,
+      exhaustive: false,
+    }), 'terminal_source_limitation');
   });
 });

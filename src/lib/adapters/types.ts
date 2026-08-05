@@ -7,6 +7,24 @@
  */
 import type { Platform, PostType } from '@/lib/types';
 
+/**
+ * The durable meaning of one collection attempt.
+ *
+ * `partial` and `failed` are presentation/audit statuses; they are not precise
+ * enough for scheduling. In particular, a source that cannot expose a complete
+ * timeline must not be treated like either a cursor the queue can follow or a
+ * transient network failure it should keep buying again.
+ */
+export const COLLECTION_OUTCOMES = [
+  'certified_complete',
+  'continuation',
+  'terminal_source_limitation',
+  'retryable_operational_failure',
+  'permanent_failure',
+] as const;
+
+export type CollectionOutcome = typeof COLLECTION_OUTCOMES[number];
+
 /** A post as the rest of the system understands it, regardless of origin. */
 export interface NormalizedPost {
   externalId: string;
@@ -69,24 +87,36 @@ export interface FetchContext {
   signal?: AbortSignal;
 }
 
-export interface FetchResult {
+interface FetchResultBase {
   posts: NormalizedPost[];
   audience: NormalizedAudience[];
   profile?: AdapterProfile;
   /** New cursor to persist. Merged over the existing cursor. */
   cursor?: Record<string, unknown>;
-  /** True when more data is available and the caller should schedule another run. */
-  hasMore?: boolean;
-  /**
-   * False when the source hit a hard vendor cap and exposes no continuation.
-   * Such a run may still land useful rows, but it must never certify the
-   * requested window as complete.
-   */
-  exhaustive?: boolean;
-  /** Actionable reason paired with exhaustive=false. */
-  incompleteReason?: string;
   warnings?: string[];
 }
+
+/**
+ * Completeness is deliberately explicit. An adapter may certify the attempted
+ * window only by returning `exhaustive: true`. A source limitation must carry
+ * an actionable reason; omission must never be interpreted as certification.
+ */
+type FetchCompleteness =
+  | {
+      /** A certified window cannot also advertise more rows. */
+      hasMore: false;
+      exhaustive: true;
+      incompleteReason?: never;
+    }
+  | {
+      /** True only when a durable cursor can continue this same attempted window. */
+      hasMore: boolean;
+      exhaustive: false;
+      /** Actionable explanation of the cap, selected feed, or source limitation. */
+      incompleteReason: string;
+    };
+
+export type FetchResult = FetchResultBase & FetchCompleteness;
 
 export interface CredentialField {
   key: string;
@@ -101,7 +131,7 @@ export interface ChannelAdapter {
   displayName: string;
   /** Human-readable note shown in Settings about what access this needs. */
   accessNotes: string;
-  /** Credential fields this adapter needs. Empty array = works with no auth. */
+  /** Fields that a Settings surface may offer. Deployment-managed sources can leave this empty. */
   credentialFields: CredentialField[];
   /** Documented quota, used by the scheduler to pace runs. */
   rateLimit: { callsPerWindow: number; windowSeconds: number };

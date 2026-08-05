@@ -1,7 +1,7 @@
 # Data access: what Data Dumpster can actually see, what it costs, and what to do about it
 
 **Audience:** CTO, CPO, and whoever signs the data contracts.
-**Status:** current as of July 2026. Every figure is dated and sourced. Where I
+**Status:** current as of 4 August 2026. Every figure is dated and sourced. Where I
 am not confident, I say so in the line itself rather than in a footnote.
 
 The short version: **the competitive social data market got materially worse
@@ -16,8 +16,16 @@ competitor data was unobtainable through sanctioned channels and unpurchasable a
 any price. That was wrong. Meta's **Page Public Content Access** feature grants
 exactly that access, through App Review. It is slow, conditional and revocable,
 but it exists, and it should have been applied for in 2024. Section 2.1 is the
-corrected account. The claims about the Meta Content Library, TikTok's Research
-API and LinkedIn are unchanged and still hold.
+corrected account. The official-access limits for the Meta Content Library,
+TikTok's Research API and LinkedIn still hold; the implemented purchased-source
+routing is now recorded separately below.
+
+**Status update, 3 August 2026.** Boston Globe Media's Tech Provider Access
+Verification is verified. Meta treats that verification as independent of App
+Review and access levels, so it does not evidence PPCA production approval. The
+available records do not establish PPCA's production status, the app remains
+unpublished, and the App Review submission/decision state must be read from
+Meta's dashboard rather than inferred from Access Verification.
 
 ---
 
@@ -30,34 +38,36 @@ do not control. That distinction is the entire story.
 |---|---|---|---|---|---|---|
 | **Bluesky** | Full: posts, likes, replies, reposts, quotes, followers | **Full, identical to owned** | AT Protocol public appview, `public.api.bsky.app` | **$0** | **None.** No key, no application, no account | ~3,000 req / 5 min per IP (observed, not contractually documented) |
 | **YouTube** | Full public stats + owner-only Analytics if we add OAuth | **Full public stats**: views, likes, comments, subscribers | Data API v3 | **$0** | Google Cloud project, enable one API. Minutes | 10,000 units/day per project. A channel refresh is ~3 units per 50 videos |
-| **X / Twitter** | Everything incl. impressions | **Posts, likes, replies, retweets, quotes, bookmarks. No impressions** | API v2 | **Metered since Feb 2026**, reportedly ~$0.005 per post read, hard cap ~2M reads/mo. Legacy Basic ~$200/mo (~10k reads) and Pro ~$5,000/mo (~1M reads) closed to new signups; Basic subscribers migrated to metering from 1 June 2026. Enterprise from ~$42k/mo. **Confidence: medium — these come from secondary sources, not X's own page, and X has revised pricing repeatedly** | Developer account + payment. Days | Legacy Basic was 5 timeline requests / 15 min. Under metering the binding constraint is spend, not requests |
-| **Instagram** | Full: posts, likes, comments, **saves, reach** | **Thin.** Followers, media count, and recent media with likes, comments, caption, permalink. Business/Creator accounts only. **No saves, no reach, no Stories, nothing for Personal accounts** | Graph API v21.0 `business_discovery` edge, queried through an IG account we own | **$0** beyond a Meta app | Meta app + App Review for `instagram_basic` and `instagram_manage_insights`. Weeks | Percentage-of-window model, not a call count. `x-app-usage` reports burn against a rolling hour |
-| **Facebook** | Full: posts, reactions, comments, shares; impressions via a separate per-post insights call | **Public Page posts, reactions, comments and shares, once approved for Page Public Content Access.** No impressions, no reach, no saves | Graph API v21.0. Owned Pages via `/{page-id}/posts`; competitor Pages via `/{page-id}/feed` under PPCA | **$0** for both. PPCA costs review time, not money | Meta app + App Review for `pages_read_engagement` (owned). For competitors, App Review for **Page Public Content Access** plus business verification and possibly additional signed contracts. Weeks, and it can be refused | As Instagram. Meta publishes no PPCA-specific quota and recommends a system user token to avoid throttling |
-| **TikTok** | Full: videos, views, likes, comments, shares, followers | **Nothing available to a commercial product** | Display API v2 for owned. Research API for competitors is academic/non-profit only | **$0** for owned | Owned: developer app + OAuth consent, days. Research API: written application, case-by-case review, **for-profit organisations are ineligible** | Not publicly guaranteed; revised without notice |
-| **LinkedIn** | Full and unusually deep: impressions, clicks, likes, comments, shares, LinkedIn's own engagement rate, follower demographics | **Nothing, at any price** | Marketing API / Community Management API, versioned REST | **$0** for owned | Marketing Developer Platform or Community Management API application + review. **Weeks, and can be refused.** Tokens are 60-day member OAuth and must be refreshed | Per-app and per-member daily quotas, published per endpoint |
-| **Threads** | Owned only | Nothing | Threads API | $0 | Meta app | — (no adapter yet) |
-| **Reddit** | **Public user submissions**: score, comments and crossposts. No trustworthy user follower stock, views or saves | **Public subreddit posts**: the same post metrics plus current community member count | EnsembleData `/reddit/user/posts` and `/reddit/subreddit/posts` | Purchased vendor units; subreddit pages cost 2 units when verified 30 Jul 2026; user-page cost has not been measured | **Legal/vendor-contract review.** Reddit's current terms require permission and a contract for commercial use; a third-party vendor does not make that question disappear | Both feeds are cursor-paginated; 25 rows were observed per call, so do not assume a fixed page size |
+| **X / Twitter** | Official owner access can include impressions, but owner credentials are excluded from pooled rows | **Bright Data when configured; otherwise EnsembleData's selected Highlights feed.** Public profile and engagement facts are useful, but neither observed source has certified an exact requested timeline | Current pooled source: Bright Data, with EnsembleData for synchronous onboarding and no-Bright collection. Official API v2 is not the pooled route | Purchased-source units | Legal/procurement approval and spend controls | A paid Bright stage never falls through to EnsembleData. EnsembleData Highlights are always source-limited |
+| **Instagram** | Official owner access can include saves and reach, but owner credentials are excluded from pooled rows | **Bright Data when configured; EnsembleData only when Bright Data is absent.** Public account and media fields; no public saves or reach | Current pooled source: Bright Data or no-Bright EnsembleData fallback. Meta owner and Business Discovery credentials are excluded from pooled work | Purchased-source units | Legal/procurement approval and vendor retention/provenance review | A started or failed Bright stage never changes vendor |
+| **Facebook** | Full: posts, reactions, comments, shares; impressions via a separate per-post insights call | **Currently purchased through Bright Data, with explicit completeness status.** The sanctioned first-party route is public Page posts, reactions, comments and shares after PPCA approval. No impressions, reach or saves | Current pooled source: Bright Data. Future approved source: Graph API `/{page-id}/feed` under PPCA. Owned Graph reads are isolated from pooled rows | Purchased-source units today; Graph calls are $0 after approval. PPCA costs review time, not API fees | PPCA App Review plus business verification and possibly additional contracts. Tech Provider Access Verification is verified but does not satisfy this gate | Meta publishes no PPCA-specific quota and recommends a system user token to avoid throttling; Bright Data has separate spend and snapshot limits |
+| **TikTok** | Official owner access is available, but owner credentials are excluded from pooled rows | **Bright Data when configured; EnsembleData only when Bright Data is absent.** Public videos, views and engagement | Current pooled source: Bright Data or no-Bright EnsembleData fallback. The Research API does not permit this commercial use | Purchased-source units | Legal/procurement approval; official Research access is not a commercial product path | A started or failed Bright stage never changes vendor |
+| **LinkedIn** | Official owned analytics can include impressions, clicks, shares and demographics, but admin credentials are excluded from pooled rows | **Bright Data company and company-post datasets:** follower stock, posts, likes and comments | Current pooled source: Bright Data. Official Marketing and Community Management APIs remain owned-only | Purchased-source units | Legal/procurement approval; owned support also requires organization-private storage and verified bindings | No public shares, saves, views, reach or impressions. The cursorless source has no exhaustion marker, so history is always source-limited |
+| **Threads** | The official API is owned-only and owner credentials are excluded from pooled rows | **Bright Data when configured; EnsembleData only when Bright Data is absent.** Public posts, engagement and audience | Current pooled source: Bright Data or no-Bright EnsembleData fallback | Purchased-source units | Legal/procurement approval | A started or failed Bright stage never changes vendor |
+| **Reddit** | **Public publisher-user submissions**: score, comments and crossposts. No trustworthy user follower stock, views or saves | The same publisher-user feed; retained legacy subreddit rows remain readable but new sources are user accounts | EnsembleData `/reddit/user/posts` | Purchased vendor units; user-page cost has not been measured | **Legal/vendor-contract review.** Reddit's current terms require permission and a contract for commercial use; a third-party vendor does not make that question disappear | The user feed is cursor-paginated; observed pages contained 25 rows, so do not assume a fixed page size |
 
-Reddit is implemented through EnsembleData rather than Reddit's first-party Data
-API. Before production collection, confirm in writing that the vendor agreement
-covers this commercial use and that Boston Globe Media accepts the residual
-platform-terms risk. The adapter is deliberately honest about the limits:
-subreddit audience is the latest `subreddit_subscribers` stock, user-account
-audience is blank, applause is the vote-fuzzed score, and view- or save-based
-metrics are blank. The user endpoint was verified against `u/bostonglobe` on
-30 July 2026. It returns `author_fullname` for stable identity but no user
-profile image or follower count. A post's `subreddit_subscribers` belongs to
-the community containing that post and is never used as the author's audience.
+Reddit publisher-user collection is implemented through EnsembleData rather than
+Reddit's first-party Data API. Before production collection, confirm in writing
+that the vendor agreement covers this commercial use and that Boston Globe Media
+accepts the residual platform-terms risk. The adapter is deliberately honest
+about the limits: user-account audience is blank, applause is the vote-fuzzed
+score, and view- or save-based metrics are blank. The user endpoint was verified
+against `u/bostonglobe` on 30 July 2026. It returns `author_fullname` for stable
+identity but no user profile image or follower count. Retained legacy subreddit
+rows may contain `subreddit_subscribers`; that stock belongs to the community
+and is never used as the author's audience.
 Current policy references: [Reddit Data API Terms](https://redditinc.com/policies/data-api-terms)
 and [Reddit's commercial-use guidance](https://support.reddithelp.com/hc/en-us/articles/14945211791892-Developer-Platform-Accessing-Reddit-Data).
 
 ### What is missing from every row
 
-No platform except LinkedIn and owned Meta/TikTok gives us **impressions for
-content we do not own.** That means `engagementRateByView` is undefined for
-essentially every competitor, everywhere. Data Dumpster's headline comparability
-metric is `engagementRateByFollower` precisely because it is the only rate that
-can be computed for a competitor on more than one platform.
+No current public competitor source gives us **impressions for content we do not
+own.** LinkedIn's public Bright Data path is limited to follower stock, posts,
+likes and comments; its deeper official analytics are owner-only. That means
+`engagementRateByView` is undefined for essentially every competitor, everywhere.
+Data Dumpster's headline comparability metric is `engagementRateByFollower`
+precisely because it is the only rate that can be computed for a competitor on
+more than one platform.
 
 ---
 
@@ -124,7 +134,9 @@ that an app approved for PPCA cannot request it. Do not apply for both.
   write-up, not Meta, so treat it as indicative.
 - Rejections on restricted features are common and are usually about the
   demonstration, not the idea. The reviewer has to be able to test the feature
-  in your live app. If they cannot, the whole submission fails.
+  in the submitted review build. Before approval, use only controlled Pages
+  whose administrators are app-role users. If the path is not reproducible, the
+  submission fails.
 - Once approved, the rate limits are strict enough that a competitor backfill has
   to be paced. The adapter caps competitor paging at five pages per run for this
   reason.
@@ -159,12 +171,11 @@ Facebook data from the day we are approved forward. It does not get us history.
 
 **The practical consequence for Data Dumpster:** Facebook competitor data is
 obtainable through PPCA, on a timeline measured in weeks and conditional on
-passing App Review. Until then Facebook is owned-only and the product says so.
-Instagram competitor data is separate and unaffected: PPCA is a Pages feature and
-grants nothing on Instagram, so Instagram competitors still come only from the
-Graph `business_discovery` edge, which returns a thin public subset and which
-Meta has never committed to maintaining. All three paths are implemented in
-`src/lib/adapters/meta.ts` and the adapter's `accessNotes` say so in the UI.
+passing App Review. Until then the pooled runner buys public Facebook data from
+Bright Data and records its completeness; it does not use an owner token or a
+PPCA token. Instagram competitor data is separate and unaffected: PPCA is a
+Pages feature and grants nothing on Instagram. Instagram Public Content Access
+is hashtag search only, not arbitrary competitor-account timelines.
 
 There is a European angle worth knowing about but not counting on: the Digital
 Services Act Article 40 vetted-researcher pathway came into force in late 2025
@@ -173,7 +184,13 @@ does not help a US commercial newsroom, and it is not a product route.
 
 ---
 
-## 3. What X actually costs now
+## 3. Official X API cost research (not the current pooled route)
+
+Data Dumpster currently collects X through Bright Data when configured and
+through EnsembleData only when Bright Data is absent; EnsembleData remains the
+synchronous onboarding helper in either case. Both live exact-window tests were
+source-limited. The official API figures below are retained as dated acquisition
+research, not as the application's operative routing or cost model.
 
 X changed its model in **February 2026**, moving from subscription tiers to
 metered credits. My understanding of the current shape, from secondary sources
@@ -192,11 +209,10 @@ rather than X's own pricing page:
 revised pricing at least three times since 2023. **Do not sign anything off this
 table. Log into the developer portal and read the current rate.**
 
-### What that means in practice for a newsroom landscape
+### What the official option would mean for a newsroom landscape
 
-The metered model is, counter-intuitively, *better* for us than Basic was. The
-cost is proportional to what we read rather than a flat fee against a cap we
-would blow through.
+If BGM chooses the official API later, its cost would be proportional to what we
+read rather than a flat fee against a cap we would blow through.
 
 Worked example, one landscape of 12 competitor X accounts averaging 25 posts a
 day:
@@ -208,16 +224,13 @@ day:
 | New posts + refresh the trailing 7 days daily | ~72,000 | **~$360** |
 | Refresh a 30-day window daily (naive) | ~270,000 | **~$1,350** |
 
-This is exactly why `src/lib/adapters/twitter.ts` keeps a `since_id` high-water
-mark on the channel cursor, excludes retweets, and never pages speculatively.
-The default two-day refresh overlap in the runner puts us near the second row.
-**The refresh window is the single biggest cost lever in this system.** It is a
-constant in `runner.ts` and it should be a per-platform setting before this goes
-to production.
+This table would make the refresh window the main cost lever for an official X
+integration. It does not describe spend by the current Bright Data or
+EnsembleData paths; measure those from ingestion audits and vendor billing.
 
-Also note: `impression_count` is only populated for the authenticating account.
-Every competitor X channel has views of 0, and that is "unknown", not "nobody
-saw it".
+Also note: official `impression_count` is only populated for the authenticating
+account. Every public source must carry missing metric availability explicitly;
+an absent view or impression count is unknown, not measured zero.
 
 ---
 
@@ -245,9 +258,9 @@ refreshed hourly is well inside the free quota. The gap is share counts, removed
 from the API years ago, and impressions, which are owner-only. We report 0 and
 label it "not available on YouTube" rather than pretending it is zero.
 
-**The strategic read:** build the official-API core on these two, treat X and
-purchased public-data vendors as metered supplements, and get the PPCA
-application in so Facebook joins the comparable set. Data Dumpster deliberately
+**The strategic read:** keep the official public core on these two, treat every
+purchased source as an approved, metered dependency, and get the PPCA
+application in as a possible future Facebook source. Data Dumpster deliberately
 does not ingest RSS; posted-URL analysis connects social activity back to the
 journalism without creating a second publishing dataset.
 
@@ -263,7 +276,9 @@ hypothesis.**
 **Owned channels: customer OAuth.** Rival IQ asks customers to connect their own
 Facebook Pages, Instagram Business accounts, LinkedIn pages and TikTok accounts.
 This is almost certainly how they get saves, reach, impressions and click data
-for the customer's own channels. Same mechanism as ours; there is no other one.
+for the customer's own channels. It is the mechanism Data Dumpster's future
+owned-native stream would require; the current pooled runner excludes those
+credentials.
 
 **Instagram competitors: Business Discovery.** Their Instagram competitor
 metrics are limited to followers, posts, likes and comments — exactly the
@@ -306,44 +321,48 @@ AI, and newsroom-native analysis they have no reason to build.
 
 ## 6. Recommended acquisition strategy for Boston Globe Media
 
-### Pay for
+### Approve the implemented public-source stack
 
-**X, on the metered plan.** It is the only paid source that returns genuinely
-comparable competitor data, and metering makes the spend controllable. Budget
-**$150 to $400 a month** for a landscape of a dozen competitor accounts with a
-three-day engagement refresh window. Start at a two-day window, watch the actual
-read count in `ingestion_runs.api_calls`, and tune from there. Do not buy a
-legacy tier even if offered one; the cap is the trap.
+- **Bright Data** is the existing-Facebook source and the configured primary for
+  Instagram, TikTok, X, Threads and LinkedIn.
+- **EnsembleData** remains the Reddit publisher-user feed, X onboarding helper,
+  and no-Bright fallback for Instagram, TikTok, X and Threads.
+- **YouTube and Bluesky** remain on sanctioned public interfaces.
+- **No paid-stage failover:** once a Bright Data stage starts, its receipt is
+  resumed. A failed paid stage does not switch vendors and risk a second charge.
 
-**Nothing else, initially.** There is no second paid source worth the money
-until we have run the free ones for a quarter and know what is actually missing.
+Every purchased path needs a recorded Legal/procurement decision, spend controls
+and source provenance. LinkedIn public coverage is deliberately narrow:
+followers, posts, likes and comments only, with history always source-limited.
 
-### Cover with owned tokens
+### Future owned-native work, outside pooled collection
 
-Connect Globe Media's own accounts and get the deep owned-channel data that
-competitors cannot see about us either:
+Owner tokens can unlock deeper first-party data, but they are excluded from the
+pooled runner until organization-private observations and verified credential
+bindings exist:
 
 - **Facebook Pages** — Globe, Boston.com, STAT. `pages_read_engagement`.
-- **Instagram Business** — same brands. Also supplies the querying account for
-  competitor `business_discovery` lookups, so this one is load-bearing twice.
+- **Instagram Business** — same brands, for owned-native insights only.
 - **LinkedIn organization pages** — the richest owned data of any platform here:
   impressions, clicks, and LinkedIn's own engagement rate. Start the Marketing
   Developer Platform application early; it takes weeks and can be refused.
-- **TikTok** — Display API OAuth per account. Note that TikTok access tokens
-  last 24 hours; the adapter refreshes them automatically, but the refresh token
-  must be stored.
+- **TikTok** — Display API OAuth per account, after private storage and binding
+  gates are complete.
 - **YouTube** — the public key covers competitors. Adding owner OAuth for our
   own channels would additionally unlock shares and impressions via YouTube
   Analytics. Worth doing in phase two.
 
-### Apply for, starting now
+### PPCA application status and next work
 
 **Page Public Content Access.** This is free, it is the only sanctioned route to
-Facebook competitor data, and the cost is calendar time. Start it in week one,
-because the clock does not run until the submission is in. The prerequisites are
-a Meta app in Live mode, a verified Business, a privacy policy URL, and a working
-Facebook competitor feature the reviewer can actually test. The adapter is built;
-what remains is the review. `docs/META-PPCA-APPLICATION.md` has the detail.
+Facebook competitor data, and the cost is calendar time. Tech Provider Access
+Verification is verified, but that is independent of App Review and grants no
+PPCA access. Confirm the current App Review state in Meta's dashboard. Prepare a
+testable app, a 1024-pixel icon, business verification, privacy and data-handling
+answers, one recent successful call and one distinct 1080p recording per
+requested item. Submit while the app remains in Development mode; switch to Live
+only after approval and production validation. `docs/META-PPCA-APPLICATION.md`
+is the authoritative checklist.
 
 Do not apply for Page Public Metadata Access alongside it. Meta's documentation
 says PPCA supersedes it and that an app requesting or holding PPCA cannot request
@@ -353,10 +372,11 @@ the metadata feature.
 
 Label these in the product. Do not fill them with estimates.
 
-- **Facebook competitors until PPCA is granted.** This one is temporary and it is
-  our own timeline, not a platform limitation. Label it as pending review, not as
-  impossible. If review is refused, it becomes a real blind spot and the fallback
-  is section 9.1 of `DATA-VENDORS.md`.
+- **First-party Facebook coverage until PPCA is granted.** Public competitor
+  coverage currently comes from Bright Data and must retain the vendor's
+  completeness warning and provenance. Label the official Meta source as
+  unavailable, not the entire Facebook platform as empty. Bright Data remains
+  the approved current source for existing profiles unless policy changes.
 
 - **TikTok competitors.** The official commercial APIs do not provide the
   competitive view this product needs. Purchased public-data vendors can fill
@@ -368,17 +388,19 @@ Label these in the product. Do not fill them with estimates.
 - **Instagram competitor saves, reach and Stories.** Business Discovery does not
   serve them.
 
-### Estimated monthly data cost
+### Data-cost accounting
 
-| Line item | Monthly | Confidence |
-|---|---|---|
-| Bluesky | $0 | High |
-| YouTube Data API | $0 | High |
-| Meta Graph API, owned + IG discovery | $0 | High |
-| LinkedIn Marketing API, owned | $0 | High |
-| TikTok Display API, owned | $0 | High |
-| X API, metered, 12 competitors, 3-day refresh | **~$180** | Medium — depends entirely on X's current rate and our refresh window |
-| **Total data acquisition** | **~$180/month** | Medium |
+| Source | Cost treatment |
+|---|---|
+| Bluesky public appview | $0 |
+| YouTube Data API | $0 within quota |
+| Bright Data | Measure actual snapshot/record spend across Facebook, Instagram, TikTok, X, Threads and LinkedIn |
+| EnsembleData | Measure actual units for Reddit plus any no-Bright fallback use |
+
+Do not reuse the historical official-X estimate as the current acquisition
+budget. The operative total depends on configured vendors, demanded windows,
+snapshot continuations and the number of active channels; read it from vendor
+billing and ingestion audits.
 
 Infrastructure is separate and small: Neon Postgres and Vercel for a workload
 this size land in the tens of dollars a month, plus whatever the org already
@@ -388,10 +410,10 @@ means AI cost is the org's existing contract, not a markup.
 **For comparison**, Rival IQ's published plans have historically run from
 roughly $240 to roughly $560 a month per seat-tier, though I have not verified
 2026 pricing and they quote enterprise separately. **Low confidence on the
-current number.** The point is not that we are cheaper. The point is that the
-data acquisition cost of running this system is small enough that it is not a
-reason to buy instead of build; the reasons to build are control of the AI, the
-honesty of the numbers, and the newsroom-specific analysis.
+current number.** Do not claim a cost advantage until Bright Data and
+EnsembleData spend has been measured under the live demand set. The reasons to
+build are control of the AI, the honesty of the numbers, and newsroom-specific
+analysis.
 
 ---
 
@@ -400,57 +422,52 @@ honesty of the numbers, and the newsroom-specific analysis.
 Things in the code that exist because of the above, listed so nobody
 "simplifies" them later:
 
-- **`registry.ts` exports `OWNED_ONLY_PLATFORMS` and `isOwnedOnly`.** The UI
-  must use these to keep TikTok and LinkedIn out of competitor comparisons
-  rather than charting them as zero. Facebook is in that map too, but
-  conditionally: `isOwnedOnly('facebook', credentials)` returns false once the
-  org sets `ppcaApproved`, which is the one entry in the map that describes
-  paperwork rather than an API limit.
+- **`publicSourceCredentials()` is an explicit deployment allowlist.** It routes
+  pooled work independently of workspace owner credentials: Bright Data for
+  existing Facebook and configured Instagram, TikTok, X, Threads and LinkedIn;
+  EnsembleData for Reddit, X onboarding and the no-Bright fallbacks; official
+  public interfaces for YouTube and Bluesky.
 - **Every adapter carries `accessNotes`** and Settings renders it. If a platform
   cannot answer a question, the person configuring it finds out then, not from a
   confusing chart three weeks later.
-- **The runner injects `cursor.__isOwned`** so the Facebook, Instagram, TikTok
-  and LinkedIn adapters can pick an owned or competitor read path, and strips
-  double-underscore keys before persisting the cursor. On Facebook that flag
-  chooses between `/{page-id}/posts` with the Page token and `/{page-id}/feed`
-  with the PPCA token.
+- **The pooled runner injects `cursor.__isOwned = false`** and strips
+  double-underscore keys before persisting the cursor. Facebook therefore uses
+  Bright Data with the current deployment allowlist. The Meta adapter contains
+  an owned/PPCA Graph path for direct or future isolated use, but the pooled
+  runner supplies neither owner nor PPCA credentials.
 - **`views` of 0 means "not exposed", never "no views"**, on YouTube, Bluesky,
   Facebook, and competitor X and Instagram. `engagementRateByView` is stored as
   NULL rather than 0 when views are 0, so the metrics layer can tell the
   difference.
-- **The X adapter uses `since_id`, excludes retweets, and caps pages.** Each of
-  those is money.
+- **Paid Bright Data receipts are source- and stage-bound.** A live receipt is
+  resumed, and a failed paid stage never falls through to EnsembleData.
 - **The refresh overlap window in `runner.ts` is the main cost dial.** It is
-  currently a two-day constant. It should become a per-platform setting before
-  production.
+  currently a two-day constant. It should become a per-platform cost control.
 
 ## 8. Environment variables
 
-`.env.example` documents the platform credentials. Three additional variables
-are read by the runner and should be added to it:
+`.env.example` documents both deployment public sources and retained owner/admin
+configuration. `BRIGHTDATA_API_KEY` activates the purchased primary paths.
+`ENSEMBLEDATA_TOKEN` activates Reddit, the X onboarding helper and the no-Bright
+fallbacks. `META_IG_USER_ID`, TikTok owner tokens, LinkedIn admin tokens and Meta
+owner/PPCA tokens are not pooled-source switches; the public allowlist excludes
+them.
 
-- `META_IG_USER_ID` — the Instagram Business account id our token belongs to.
-  Required for competitor Business Discovery lookups, not just for reading our
-  own account.
-- `TIKTOK_ACCESS_TOKEN` and `TIKTOK_REFRESH_TOKEN` — per-account OAuth tokens.
-  Per-org credentials in Settings are the better home for these; the environment
-  fallback exists for single-org deployments.
-
-The two Facebook PPCA credentials are deliberately per-org only and have no
-environment fallback, because "is this organisation approved for PPCA" is a fact
-about an organisation, not about a deployment:
+The Meta adapter still exposes two PPCA fields for direct and legacy callers:
 
 - `ppcaApproved` — set to `true` only once Meta App Review has actually granted
-  the feature. Until then, competitor Facebook channels fail with an explanation
-  rather than returning an empty result.
+  the feature.
 - `ppcaAccessToken` — the token used to read Pages we do not administer. Meta
   recommends a system user access token here specifically to avoid rate limiting.
   Falls back to the main Page token if blank.
 
-Per-org credentials stored in `platform_credentials` always win over the
-environment. They are AES-256-GCM encrypted at rest by `src/lib/crypto.ts`, and
-the runner skips and warns about a credential it cannot decrypt rather than
-failing the whole batch.
+Neither field is consumed by normal pooled collection. Do not set an
+organization credential or add an ad hoc environment fallback to activate
+PPCA: the public observations are deployment-wide, while owner tokens can expose
+private fields that must never enter pooled rows. After approval, release a
+deployment-wide public credential binding only after the provenance,
+source-scoped cursor, field-allowlist and owned-data-isolation gates in
+`docs/META-PPCA-APPLICATION.md` and `docs/OWNED-DATA-ISOLATION.md` pass.
 
 ---
 

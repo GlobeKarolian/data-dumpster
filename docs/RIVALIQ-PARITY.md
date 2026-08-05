@@ -76,6 +76,10 @@ misleading rows when a company's configured site does not match the domains it
 publishes. Data Dumpster should copy the evidence chain and delivery workflow,
 not those failure modes.
 
+Data Dumpster collection opens automatically twice per day. Intermediate
+recovery workers finish already-queued vendor receipts and retries without
+making settled profiles eligible for additional paid crawls.
+
 ## Next build order
 
 1. **Post library tagging:** add tagged/untagged, include/exclude and AND/OR tag

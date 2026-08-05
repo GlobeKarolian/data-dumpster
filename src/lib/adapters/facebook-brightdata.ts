@@ -155,6 +155,19 @@ export interface FacebookVendorResult {
   incompleteReason?: string;
 }
 
+/**
+ * Bright Data represents an empty requested date range as an error row. The
+ * observed production shape is `error_code: "dead_page"` with the much more
+ * specific message below, even though the Page itself is alive. Treat only
+ * that exact semantic as an empty, uncertified source response. Other error
+ * rows still fail closed so a removed/private/wrong Page cannot be mistaken
+ * for a measured zero.
+ */
+function isExplicitEmptyPeriod(row: Record<string, unknown>): boolean {
+  return str(row.error_code)?.toLowerCase() === 'dead_page'
+    && /posts for the specified period were not found/i.test(str(row.error) ?? '');
+}
+
 export async function fetchPagePosts(
   handle: string,
   apiKey: string,
@@ -191,10 +204,14 @@ export async function fetchPagePosts(
   const posts: NormalizedPost[] = [];
   let followers = 0;
   let profile: AdapterProfile | undefined;
+  let explicitEmptyPeriodRows = 0;
+  let errorRows = 0;
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
     if (isErrorRow(row)) {
+      errorRows += 1;
+      if (isExplicitEmptyPeriod(row)) explicitEmptyPeriodRows += 1;
       const why = rowError(row);
       if (why) warnings.push('Facebook row error for ' + handle + ': ' + why);
       continue;
@@ -205,8 +222,10 @@ export async function fetchPagePosts(
     const f = num(pick(row, ['page_followers', 'followers']));
     if (f > followers) followers = f;
     if (!profile) {
+      const externalId = str(pick(row, ['delegate_page_id', 'page_id']));
+      if (!externalId) continue;
       profile = {
-        externalId: str(pick(row, ['delegate_page_id', 'page_id'])) ?? handle,
+        externalId,
         handle,
         displayName: str(pick(row, ['page_name'])),
         avatarUrl: str(pick(row, ['page_logo', 'avatar_image_url'])) ?? null,
@@ -231,22 +250,38 @@ export async function fetchPagePosts(
   if (posts.length === 0 && rows.length > 0 && warnings.length === 0) {
     warnings.push('Facebook for ' + handle + ': rows returned but none fell inside the requested window.');
   }
-  if (!profile && rows.length === 0) {
+  if (!profile) {
+    if (errorRows > 0 && explicitEmptyPeriodRows === errorRows) {
+      const incompleteReason = 'Bright Data reported no Facebook posts for ' + handle
+        + ' inside the requested dates, but its snapshot exposes no terminal completeness '
+        + 'marker. Existing Page identity is retained and the window remains source limited.';
+      warnings.push(incompleteReason);
+      return {
+        posts,
+        audience,
+        warnings,
+        exhaustive: false,
+        incompleteReason,
+      };
+    }
     throw new AdapterError(
-      'Bright Data returned nothing for the Facebook Page ' + handle + '.',
+      rows.length === 0
+        ? 'Bright Data returned nothing for the Facebook Page ' + handle + '.'
+        : 'Bright Data returned Facebook rows for ' + handle
+          + ' without a stable Page id. No observations were accepted.',
       { platform: PLATFORM, retryable: false },
     );
   }
 
-  // Bright Data exposes no page cursor on this dataset. Exactly filling the
-  // requested cap means older posts may exist, so the useful rows are stored
-  // but the window cannot be certified complete.
-  const exhaustive = rows.length < requestedPosts;
-  const incompleteReason = exhaustive
-    ? undefined
-    : 'Bright Data returned its ' + requestedPosts
-      + '-post Facebook cap without a continuation cursor; the selected window may be incomplete.';
-  if (incompleteReason) warnings.push(incompleteReason);
+  // Snapshot completion proves that the paid job finished, not that the
+  // vendor exhausted the account's historical window. This dataset exposes no
+  // terminal cursor or completeness field, so even a short result stays
+  // explicitly uncertified.
+  const incompleteReason = rows.length >= requestedPosts
+    ? 'Bright Data returned its ' + requestedPosts
+      + '-post Facebook cap without a continuation cursor; the selected window may be incomplete.'
+    : 'Bright Data completed the Facebook snapshot but exposed no terminal cursor or completeness marker, so the requested historical window cannot be certified.';
+  warnings.push(incompleteReason);
 
-  return { posts, audience, profile, warnings, exhaustive, incompleteReason };
+  return { posts, audience, profile, warnings, exhaustive: false, incompleteReason };
 }

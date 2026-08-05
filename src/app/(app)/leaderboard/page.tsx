@@ -101,23 +101,29 @@ export default async function LeaderboardPage({
           <div className="flex min-w-0 gap-2.5">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
             <div>
-              <p className="text-sm font-semibold">
-                Rankings are locked until collection is complete
-              </p>
+              <p className="text-sm font-semibold">Rankings include partial coverage</p>
               <p className="mt-1 max-w-4xl text-xs leading-relaxed text-amber-800 dark:text-amber-300">
                 {coverage
                   ? coverage.ingestedChannels + ' of ' + coverage.totalChannels
                     + ' active profiles cover the selected window. '
                     + coverage.collectingChannels + ' are queued or collecting, '
                     + coverage.neverAttemptedChannels + ' have not started, and '
-                    + coverage.failedChannels + ' failed.'
+                    + coverage.limitedChannels + ' are limited by their source. '
+                    + coverage.partialChannels + ' have partial or stale coverage. '
+                    + coverage.failedChannels + ' failed ('
+                    + coverage.blockedChannels + ' need configuration or operator action).'
                   : 'Data Dumpster could not verify collection coverage, so it will not publish rankings.'}
                 {coverage && coverage.focusTotalChannels > 0
                   && coverage.focusIngestedChannels < coverage.focusTotalChannels
                   ? ' The focus company has ' + coverage.focusIngestedChannels + ' of '
-                    + coverage.focusTotalChannels + ' profiles complete for this window.'
+                    + coverage.focusTotalChannels + ' profiles complete for this window'
+                    + (coverage.focusLimitedChannels > 0
+                      ? ', with ' + coverage.focusLimitedChannels + ' source-limited '
+                        + (coverage.focusLimitedChannels === 1 ? 'profile' : 'profiles')
+                      : '')
+                    + '.'
                   : ''}
-                {' Rankings appear only after every profile is complete, so missing data can never become a fake zero or an understated total.'}
+                {' Measured values are ranked now, but incomplete totals are marked partial and their WoW change is withheld. Unavailable profiles remain blank rather than becoming zero.'}
               </p>
             </div>
           </div>
@@ -130,7 +136,7 @@ export default async function LeaderboardPage({
         </div>
       ) : null}
 
-      {coverageComplete ? GROUPS.map((group) => (
+      {GROUPS.map((group) => (
         <PageSection key={group.title} title={group.title} description={group.description}>
           <div className="grid gap-3 xl:grid-cols-2">
             {group.metrics.map((metric) => {
@@ -149,7 +155,7 @@ export default async function LeaderboardPage({
             })}
           </div>
         </PageSection>
-      )) : null}
+      ))}
     </div>
   );
 }

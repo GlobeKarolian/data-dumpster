@@ -20,7 +20,7 @@ export function CrossChannelTabs() {
   return (
     <nav
       aria-label="Cross-channel sections"
-      className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+      className="relative border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
     >
       <div className="flex min-w-0 flex-nowrap overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => {
@@ -45,6 +45,10 @@ export function CrossChannelTabs() {
           );
         })}
       </div>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white via-white/90 to-transparent lg:hidden dark:from-zinc-950 dark:via-zinc-950/90"
+      />
     </nav>
   );
 }

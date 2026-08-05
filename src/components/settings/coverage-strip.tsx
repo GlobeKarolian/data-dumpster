@@ -20,8 +20,10 @@ export function CoverageStrip({ days }: { days: DayCoverage[] }) {
   // Newest first from the query; render oldest to newest, like a calendar.
   const ordered = [...days].reverse();
   const closed = ordered.slice(0, -1);
-  const missed = closed.filter((d) => !d.complete);
+  const scheduledClosed = closed.filter((d) => d.activeChannels > 0);
+  const missed = scheduledClosed.filter((d) => !d.complete);
   const today = ordered[ordered.length - 1];
+  const hasScheduledClosedDays = scheduledClosed.length > 0;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -38,14 +40,20 @@ export function CoverageStrip({ days }: { days: DayCoverage[] }) {
         <p
           className={cn(
             'pb-num text-[11px] font-medium',
-            missed.length === 0
+            hasScheduledClosedDays && missed.length === 0
               ? 'text-emerald-700 dark:text-emerald-400'
-              : 'text-red-700 dark:text-red-400',
+              : hasScheduledClosedDays
+                ? 'text-red-700 dark:text-red-400'
+                : 'text-zinc-500 dark:text-zinc-400',
           )}
         >
-          {missed.length === 0
-            ? `${closed.length} of ${closed.length} closed days complete`
-            : `${missed.length} of ${closed.length} closed days incomplete`}
+          {!hasScheduledClosedDays
+            ? today.activeChannels > 0
+              ? 'Audience history starts today'
+              : 'Collection has not started'
+            : missed.length === 0
+              ? `${scheduledClosed.length} of ${scheduledClosed.length} scheduled days complete`
+              : `${missed.length} of ${scheduledClosed.length} scheduled days incomplete`}
         </p>
       </div>
 
@@ -59,13 +67,16 @@ export function CoverageStrip({ days }: { days: DayCoverage[] }) {
               title={
                 `${d.day}: ${d.observedChannels} of ${d.activeChannels} channels (${pct}%)`
                 + (isToday ? ' — still collecting today' : '')
-                + (!isToday && !d.complete ? ' — permanently incomplete' : '')
+                + (!isToday && d.activeChannels === 0 ? ' — collection was not scheduled' : '')
+                + (!isToday && d.activeChannels > 0 && !d.complete ? ' — permanently incomplete' : '')
               }
               className={cn(
                 'h-6 w-6 rounded-sm border',
                 isToday
                   ? 'border-dashed border-zinc-400 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800'
-                  : d.complete
+                  : d.activeChannels === 0
+                    ? 'border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900'
+                    : d.complete
                     ? 'border-emerald-600/30 bg-emerald-500/80'
                     : d.ratio >= 0.5
                       ? 'border-amber-600/30 bg-amber-400/80'
@@ -82,7 +93,9 @@ export function CoverageStrip({ days }: { days: DayCoverage[] }) {
 
       <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">
         {'Oldest to newest. The dashed square is today, which is still open until midnight. '}
-        {missed.length > 0
+        {!hasScheduledClosedDays
+          ? 'Gray days are before collection began; they are historical context, not failed runs.'
+          : missed.length > 0
           ? 'Incomplete days are listed as measurement notes on any report covering them.'
           : 'A sweep re-queues anything uncollected at 8pm and 10pm, while the day can still be saved.'}
       </p>

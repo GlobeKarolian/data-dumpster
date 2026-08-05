@@ -175,9 +175,11 @@ function statusTone(status: string): 'positive' | 'critical' | 'warning' | 'neut
 export function ScheduleManager({
   landscapeId,
   canEdit,
+  automationEnabled,
 }: {
   landscapeId: string;
   canEdit: boolean;
+  automationEnabled: boolean;
 }) {
   const [items, setItems] = React.useState<ReportScheduleRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -237,7 +239,7 @@ export function ScheduleManager({
           dayOfWeek: draft.dayOfWeek,
           hour: draft.hour,
           timeZone: draft.timeZone,
-          enabled: draft.enabled,
+          enabled: automationEnabled ? draft.enabled : false,
         }),
       });
       if (!response.ok) {
@@ -351,7 +353,9 @@ export function ScheduleManager({
         <div>
           <CardTitle>Scheduled delivery</CardTitle>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Send the finished weekly report as PowerPoint and CSV without opening the app.
+            {automationEnabled
+              ? 'Send the finished weekly report as PowerPoint and CSV without opening the app.'
+              : 'Configure delivery and use Run now; the automatic dispatcher is currently paused.'}
           </p>
         </div>
         {canEdit ? (
@@ -369,6 +373,12 @@ export function ScheduleManager({
           </Button>
         ) : null}
       </CardHeader>
+
+      {!automationEnabled ? (
+        <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-300">
+          Automatic delivery is off for this deployment. Saved schedules remain paused; Run now still works.
+        </p>
+      ) : null}
 
       {error ? (
         <p
@@ -390,8 +400,9 @@ export function ScheduleManager({
       {creating ? (
         <div className="border-b border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
           <ScheduleForm
-            initial={EMPTY_DRAFT}
+            initial={{ ...EMPTY_DRAFT, enabled: automationEnabled }}
             saving={busyId === 'new'}
+            automationEnabled={automationEnabled}
             onSave={async (draft) => {
               try {
                 await save(draft);
@@ -428,7 +439,7 @@ export function ScheduleManager({
                     hideLabel
                     label={(schedule.enabled ? 'Pause ' : 'Enable ') + schedule.name}
                     checked={schedule.enabled}
-                    disabled={!canEdit || busyId !== null}
+                    disabled={!automationEnabled || !canEdit || busyId !== null}
                     onChange={(enabled) => void toggle(schedule, enabled)}
                   />
                 </div>
@@ -438,6 +449,7 @@ export function ScheduleManager({
                       {schedule.name}
                     </span>
                     {!schedule.enabled ? <Badge tone="outline">Paused</Badge> : null}
+                    {!automationEnabled ? <Badge tone="warning">Dispatcher paused</Badge> : null}
                     {schedule.formats.map((format) => (
                       <Badge key={format} tone="neutral">{format.toUpperCase()}</Badge>
                     ))}
@@ -516,6 +528,7 @@ export function ScheduleManager({
                   <ScheduleForm
                     initial={scheduleDraft(schedule)}
                     saving={busyId === schedule.id}
+                    automationEnabled={automationEnabled}
                     onSave={async (draft) => {
                       try {
                         await save(draft, schedule.id);
@@ -598,11 +611,13 @@ export function ScheduleManager({
 function ScheduleForm({
   initial,
   saving,
+  automationEnabled,
   onSave,
   onCancel,
 }: {
   initial: ScheduleDraft;
   saving: boolean;
+  automationEnabled: boolean;
   onSave: (draft: ScheduleDraft) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -729,9 +744,12 @@ function ScheduleForm({
           />
           <Toggle
             checked={draft.enabled}
+            disabled={!automationEnabled}
             onChange={(enabled) => setDraft((current) => ({ ...current, enabled }))}
             label="Turn on this schedule"
-            description="You can pause it later without deleting the settings."
+            description={automationEnabled
+              ? 'You can pause it later without deleting the settings.'
+              : 'The deployment dispatcher is off, so this schedule will be saved paused.'}
           />
         </div>
       </div>

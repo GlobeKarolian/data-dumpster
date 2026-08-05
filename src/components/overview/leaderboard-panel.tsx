@@ -36,6 +36,7 @@ export function LeaderboardPanel({
   showPlatformBreakdown = false,
 }: LeaderboardPanelProps) {
   const def = METRIC_DEFS[metric];
+  const partialRows = rows.filter((row) => row.available && row.complete === false).length;
   return (
     <Panel
       className={className}
@@ -44,6 +45,13 @@ export function LeaderboardPanel({
       error={error}
       note={def.caveat}
     >
+      {partialRows > 0 ? (
+        <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-300">
+          {partialRows === 1
+            ? '1 measured company has partial source coverage. Its total and rank are provisional; WoW change is withheld.'
+            : partialRows + ' measured companies have partial source coverage. Their totals and ranks are provisional; WoW change is withheld.'}
+        </p>
+      ) : null}
       <BarLeaderboard
         rows={rows}
         metric={metric}

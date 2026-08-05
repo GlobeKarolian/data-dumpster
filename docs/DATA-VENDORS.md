@@ -7,6 +7,17 @@ will sell us on top of that.
 **Not legal advice.** Section 7 discusses case law. I am not a lawyer. Run the
 scraping question past BGM counsel before signing anything.
 
+**Implementation update, 4 August 2026.** The July market research and quoted
+prices remain dated evidence; its proposed stack and build order are superseded.
+The implemented policy uses Bright Data for existing Facebook and as the primary
+source for Instagram, TikTok, X, Threads and LinkedIn whenever configured.
+EnsembleData remains the Reddit publisher-user feed, the synchronous X onboarding
+helper, and the no-Bright fallback for Instagram, TikTok, X and Threads. A live
+or failed paid Bright Data stage never falls through to another vendor. YouTube
+and Bluesky stay on sanctioned public interfaces. LinkedIn public collection is
+implemented through Bright Data and exposes only follower stock, posts, likes
+and comments; its history is always source-limited.
+
 ---
 
 ## 0. The answer, up front
@@ -28,9 +39,10 @@ analysis and benchmarking". It is App Review plus business verification, it take
 weeks, and it can be refused. But it is free, it is first-party, and it is the
 route a newsroom should try first. See `docs/META-PPCA-APPLICATION.md`.
 
-TikTok and LinkedIn are unchanged. TikTok's Research API bars commercial use and
-LinkedIn has no competitor read path at any price. Those two gaps are still
-scrape-or-nothing.
+TikTok and LinkedIn's **official APIs** are unchanged: TikTok's Research API bars
+this commercial use and LinkedIn's official organization APIs are owned-only.
+They are not current product gaps, because approved purchased public-data paths
+exist and Data Dumpster now implements them through Bright Data.
 
 The market splits four ways:
 
@@ -59,8 +71,9 @@ Ask any vendor exactly this:
 If the answer requires an OAuth token from the target account, the vendor is a
 publishing tool and cannot do competitive intelligence. Everything else in a
 sales deck is noise. Vendors will answer "yes, we support competitor analytics"
-because their platform has a competitor tab that is fed by whatever the platform
-APIs allow, which for Facebook and LinkedIn is nothing.
+because their platform has a competitor tab that may be fed by a purchased
+public-data source. Facebook also has the PPCA route after approval; LinkedIn's
+official API remains owned-only.
 
 ---
 
@@ -116,7 +129,8 @@ them which they meant. Neither is a multi-platform aggregator.
 `DATA-ACCESS.md` used to list Facebook, TikTok and LinkedIn competitors as three
 structural blind spots unobtainable through sanctioned channels. That was wrong
 about Facebook: **Page Public Content Access covers it, sanctioned and free,
-subject to App Review.** It remains right about TikTok and LinkedIn.
+subject to App Review.** TikTok and LinkedIn still lack the needed official
+commercial competitor route, but purchased public-data coverage exists for both.
 
 So the vendors below fill two genuine gaps, not three. The Facebook endpoints are
 still listed because they matter as a fallback if PPCA review is refused, and
@@ -135,7 +149,9 @@ ScrapeCreators, verified from their own endpoint documentation:
 | **Instagram competitors beyond business_discovery** | 15 endpoints incl. reels with view counts | More than the Graph API discovery edge gives us | Saves and reach still unavailable. Nobody has them |
 
 Bright Data covers the same three gaps through Facebook Pages Posts by Profile
-URL, LinkedIn posts by company URL, and the TikTok profile and posts scrapers.
+URL, LinkedIn company and company-post datasets, and the TikTok profile and post
+datasets. Those are not merely candidates now: they are the implemented paths
+for existing Facebook, LinkedIn and configured TikTok collection.
 
 **This is the single most consequential finding in this document.** The claim in
 `DATA-ACCESS.md` that Facebook, TikTok and LinkedIn competitor data is
@@ -289,14 +305,23 @@ not to a zero. Data Dumpster is already built this way, which is fortunate.
 
 There is a coherent line to draw, and I recommend drawing it explicitly:
 
-1. **Sanctioned first.** Bluesky, YouTube, RSS, owned Meta/TikTok/LinkedIn tokens, Instagram business_discovery, and the paid X API cover everything they can cover. All free or metered, all first-party.
-2. **One vendor, narrowly scoped, for the three structural gaps.** Facebook, LinkedIn and TikTok competitor **posts and public engagement counts for organizational accounts only**. Nothing about people. No comments text at first. No archives.
-3. **Label it in the product.** The adapter's `accessNotes` says the data is vendor-sourced and unofficial. Section 7 of `DATA-ACCESS.md` already establishes the honesty-about-provenance pattern. Extend it: a chart fed by a scraping vendor should say so.
-4. **Kill switch.** If the vendor is sued, or the newsroom objects, the adapter is one file and one registry line. Removing it degrades three platforms to labelled gaps and breaks nothing else.
+1. **Sanctioned public sources where they serve the product.** Bluesky uses the
+   public appview and YouTube uses Data API v3. RSS is retired.
+2. **One approved purchased primary.** Bright Data serves existing Facebook and,
+   whenever configured, Instagram, TikTok, X, Threads and LinkedIn public
+   collection. LinkedIn is restricted to followers, posts, likes and comments,
+   and its history is always source-limited.
+3. **A narrow secondary, not paid-stage failover.** EnsembleData serves Reddit
+   publisher-user feeds, X onboarding, and Instagram/TikTok/X/Threads only when
+   Bright Data is absent. Once Bright Data returns a paid receipt or fails after
+   starting a paid stage, the adapter never switches vendors.
+4. **Label and govern every purchased path.** Preserve provenance and coverage,
+   limit collection to organizational public data, and require explicit Legal,
+   editorial and procurement approval plus a deployment kill switch.
 
-If BGM legal is not comfortable with step 2, the fallback is the sanctioned-only
-stack in section 9.2, which still ships a real product and costs about $150 a
-month. That is a genuinely acceptable outcome, not a consolation prize.
+If BGM does not approve a purchased path, disable that path and render a labelled
+gap. Do not silently substitute an owner credential, another vendor or measured
+zero.
 
 ---
 
@@ -328,13 +353,19 @@ clock now, which is free, and to be better on everything that is not history.
 
 ---
 
-## 9. Recommended stack for Data Dumpster
+## 9. July 2026 recommended stack (superseded)
+
+This section preserves the cost comparison that informed the original decision.
+It is not the operative stack: it predates the Bright Data adapters, durable
+snapshot receipts, the LinkedIn public adapter and the retirement of RSS. Use
+the 4 August implementation update above for current routing, and measure current
+spend from vendor billing and ingestion audits rather than these estimates.
 
 Scale assumption throughout: **10 companies tracked across 6 platforms**, daily
 ingestion, three-day engagement refresh window, newsroom accounts posting roughly
 20 to 25 times a day on the busy platforms.
 
-### 9.1 Recommended: sanctioned core plus one narrow vendor
+### 9.1 Original recommendation: sanctioned core plus one narrow vendor
 
 | Layer | Source | Platforms | Monthly | Confidence |
 |---|---|---|---|---|
@@ -364,7 +395,7 @@ three is priced for a different customer. Apify is fine but you pay a platform
 subscription plus per-result fees to a third-party actor author, which is two
 counterparties instead of one.
 
-### 9.2 Fallback: sanctioned-only, if legal says no
+### 9.2 Original fallback: sanctioned-only, if legal says no
 
 | Layer | Monthly |
 |---|---|
@@ -406,7 +437,12 @@ The two dials that actually move the bill:
 
 ---
 
-## 10. Migration: which adapters to build, in what order
+## 10. July 2026 migration proposal (superseded)
+
+This proposal is retained to explain the earlier design decision. The product
+was implemented differently: Bright Data is the purchased primary, its async
+receipts are durable, the LinkedIn competitor adapter exists, and source
+selection follows the policy at the top of this document.
 
 ### 10.1 One correction to the framing
 
@@ -464,17 +500,19 @@ keeps the kill switch to one credential deletion rather than a code change.
 
 ---
 
-## 11. Bottom line
+## 11. Current bottom line
 
 | Question | Answer |
 |---|---|
-| Is there one vendor for everything, including competitors? | Yes: **ScrapeCreators**, or **Bright Data** if we want an enterprise counterparty. Both are scraping-based. There is no sanctioned equivalent and there will not be one |
+| What is the implemented purchased primary? | **Bright Data** for existing Facebook and for Instagram, TikTok, X, Threads and LinkedIn whenever configured |
+| Where does EnsembleData remain? | Reddit publisher-user feeds, synchronous X onboarding, and no-Bright fallback collection for Instagram, TikTok, X and Threads |
+| Can a failed Bright Data stage fall through? | **No.** A live receipt is resumed, and a paid stage that has started or failed never switches vendor |
+| Is LinkedIn competitor collection implemented? | **Yes.** Bright Data company and company-post datasets provide follower stock, posts, likes and comments. Shares, saves, views, reach and impressions are unavailable; history is always source-limited |
 | Do the publishing aggregators help? | **No.** Ayrshare, Unipile and Mixpost are owned-account only, by design. Phyllo has a non-OAuth tier worth one call but is priced and shaped for influencer discovery |
 | Do the listening suites help? | Not at this scale. $27k to $130k a year to feed an internal tool built to avoid a $519/month bill |
 | Can we buy the official research data? | **No.** Meta Content Library and TikTok Research API both exclude for-profit organizations. A commercial newsroom does not qualify |
-| What does the recommended stack cost? | **Approximately $175/month, budget $200.** X API $110 to $150, ScrapeCreators $25 to $47, everything else $0 |
-| What if legal says no to scraping? | **$150/month**, sanctioned only, with Facebook, TikTok and LinkedIn competitors labelled as gaps. Still a shippable product |
-| What do we build first? | X Owned Reads, then the vendor client with TikTok, then LinkedIn, then Facebook |
+| What does the current stack cost? | Not established by the July estimates. Read Bright Data and EnsembleData billing under the actual demand set |
+| What if Legal says no to a purchased path? | Disable that path and show a labelled gap; do not substitute owner credentials, another vendor after paid work begins, or zero |
 
 ---
 

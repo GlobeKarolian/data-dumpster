@@ -2,11 +2,13 @@
 
 import * as React from 'react';
 import { ExternalLink, X } from 'lucide-react';
-import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/types';
+import { PLATFORM_LABELS } from '@/lib/types';
 import { cn, compactNumber } from '@/lib/utils';
 import { formatDateTime, truncate } from '@/components/ui/format';
 import { Badge } from '@/components/ui/badge';
 import type { StoryDto, StoryPostDto } from './types';
+import { storySupportsCompetitiveConclusions } from '@/lib/stories/confidence';
+import { PlatformIcon } from '@/components/ui/platform-icon';
 
 /**
  * Cohesion, said out loud.
@@ -110,6 +112,10 @@ export interface StoryDetailProps {
 export function StoryDetail({ story, onClose, className }: StoryDetailProps) {
   const outlets = React.useMemo(() => groupByOutlet(story.posts), [story.posts]);
   const band = cohesionBand(story.cohesion);
+  const supportsConclusions = storySupportsCompetitiveConclusions(
+    story.cohesion,
+    story.companies.length,
+  );
 
   const firstAt = new Date(story.firstPostedAt).getTime();
   const lastAt = new Date(story.lastPostedAt).getTime();
@@ -157,9 +163,14 @@ export function StoryDetail({ story, onClose, className }: StoryDetailProps) {
 
         <section className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Who got there first
+            {supportsConclusions ? 'Who got there first' : 'Competitive conclusions withheld'}
           </p>
-          {breaker ? (
+          {!supportsConclusions ? (
+            <p className="mt-1 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+              This grouping is below the confidence threshold. The timeline remains available for
+              review, but Data Dumpster will not name a breaker, chaser, or engagement winner.
+            </p>
+          ) : breaker ? (
             <p className="mt-1 text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">
               <span className="font-semibold text-zinc-900 dark:text-zinc-100">{breaker.name}</span>
               {' posted first at '}
@@ -171,7 +182,7 @@ export function StoryDetail({ story, onClose, className }: StoryDetailProps) {
           ) : (
             <p className="mt-1 text-xs text-zinc-500">No posts in this cluster.</p>
           )}
-          {winner ? (
+          {supportsConclusions && winner ? (
             <p className="mt-2 text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">
               <span className="font-semibold text-zinc-900 dark:text-zinc-100">{winner.name}</span>
               {' took the most engagement, '}
@@ -226,7 +237,7 @@ export function StoryDetail({ story, onClose, className }: StoryDetailProps) {
                   </p>
                   <p className="pb-num shrink-0 text-[11px] text-zinc-500 dark:text-zinc-500">
                     {index === 0
-                      ? 'broke it'
+                      ? supportsConclusions ? 'broke it' : 'earliest in group'
                       : '+' + durationLabel(outlet.firstAt - outlets[0].firstAt)}
                   </p>
                 </div>
@@ -237,11 +248,7 @@ export function StoryDetail({ story, onClose, className }: StoryDetailProps) {
                       className="rounded border border-zinc-200 px-2 py-1.5 dark:border-zinc-800"
                     >
                       <div className="flex items-center gap-1.5">
-                        <span
-                          aria-hidden
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: PLATFORM_COLORS[post.platform] }}
-                        />
+                        <PlatformIcon platform={post.platform} className="h-3 w-3" />
                         <span className="pb-num truncate text-[11px] text-zinc-500 dark:text-zinc-500">
                           {PLATFORM_LABELS[post.platform] + ' · ' + formatDateTime(post.postedAt)}
                         </span>

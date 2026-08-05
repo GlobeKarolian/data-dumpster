@@ -86,7 +86,8 @@ export function InfoTip({
         type="button"
         aria-label={'How ' + label + ' is calculated'}
         className={cn(
-          'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors',
+          'relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors',
+          "after:absolute after:-inset-2 after:content-['']",
           'hover:text-accent-600 dark:text-zinc-600 dark:hover:text-accent-500',
         )}
       >

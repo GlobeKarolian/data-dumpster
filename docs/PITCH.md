@@ -2,6 +2,16 @@
 
 **Matt Karolian, July 2026**
 
+**Historical pitch, source status corrected 4 August 2026.** The build-time,
+line-count and ninety-day-plan claims below describe the July artifact. The
+source-access absolutes have been corrected to match the current checkout:
+Bright Data is the purchased primary for existing Facebook and for configured
+Instagram, TikTok, X, Threads and LinkedIn collection; EnsembleData serves
+Reddit publisher-user feeds, X onboarding and no-Bright fallbacks for Instagram,
+TikTok, X and Threads. A paid Bright stage never switches vendors after it
+starts or fails. YouTube and Bluesky use sanctioned public interfaces, and RSS
+is retired.
+
 I built a working competitive intelligence platform for Boston Globe Media in an
 afternoon. This document is why, what it argues, and what I would do with the
 first ninety days of a CTO or CPO role.
@@ -37,10 +47,13 @@ for the same attention, and whether that attention eventually converts.
 
 Almost nobody can answer that, because answering it requires competitive data,
 and competitive social data got materially harder to obtain between 2024 and
-2026. CrowdTangle closed in August 2024 and its replacement excludes for-profit
-organisations by policy. X moved to metered pricing. TikTok's research access
-bars commercial use. LinkedIn has never had a competitor read path and never will.
-The full accounting is in "docs/DATA-ACCESS.md" and it is not encouraging.
+2026. CrowdTangle closed in August 2024, though Meta's Page Public Content Access
+still offers an approval-gated Facebook route. TikTok's research access bars
+this commercial use, and LinkedIn's official organization APIs are owned-only.
+Purchased public-data paths exist for all three; Data Dumpster currently uses
+Bright Data for existing Facebook and public LinkedIn company pages, plus the
+other configured platforms described above. The full accounting is in
+"docs/DATA-ACCESS.md".
 
 So the position for Globe Media is this. The Globe has something most metros do
 not, which is a real direct-subscription business and multiple distinct brands
@@ -118,11 +131,12 @@ document is the artifact I would point at, not the line count.
 
 ### What is in it
 
-Eight platform adapters behind one interface (Facebook, Instagram, X, YouTube,
-TikTok, LinkedIn, Bluesky, RSS) with a registry that makes adding a platform one
-file and one line. An idempotent ingestion runner that chunks writes under the
-Postgres bind-parameter limit, isolates failures per channel, and records every
-run with its API call count. A Postgres schema built around the distinction
+The current checkout has nine platform adapters behind one interface (Facebook,
+Instagram, X, YouTube, TikTok, LinkedIn, Threads, Reddit and Bluesky). RSS is
+retired. An idempotent ingestion runner chunks writes under the Postgres
+bind-parameter limit, isolates failures per channel, preserves paid Bright Data
+receipts without cross-vendor failover, and records every run with its source
+outcome and API call count. A Postgres schema built around the distinction
 between audience as a stock and post engagement as a flow. A metric layer that
 every read in the product goes through, with the dictionary and its caveats
 rendered in the UI. Cross-channel and per-platform overviews, leaderboards, a
@@ -149,8 +163,11 @@ No production data. It has never run against a real Globe account. The seed
 creates the shape of the workspace and deliberately creates zero metrics, because
 a seeded number that looks real is a number somebody eventually puts in a deck.
 
-No Facebook, TikTok or LinkedIn competitor data, because that data does not exist
-for a commercial organisation in 2026 and no amount of engineering conjures it.
+At the original July snapshot, purchased competitor paths had not been wired.
+They are now: existing Facebook uses Bright Data; configured TikTok uses Bright
+Data with EnsembleData only when Bright is absent; and LinkedIn uses Bright Data
+company and company-post datasets. LinkedIn exposes followers, posts, likes and
+comments only, and every history window remains source-limited.
 
 ---
 
@@ -189,11 +206,12 @@ Ollama for material that should never leave the building. Switching models is a
 text field. When a better model ships on a Tuesday, you switch on Tuesday.
 
 **I write down what a system cannot do, in the system.** Every adapter carries
-accessNotes that render in the UI. The registry exports OWNED_ONLY_PLATFORMS so
-the product can refuse to chart a competitor comparison it cannot honestly make.
-Views of 0 means "not exposed", never "nobody saw it", and the metrics layer
-stores NULL rather than 0 so the distinction survives into every query. Every one
-of those is a small decision and together they are the difference between a tool
+accessNotes that render in the UI. Pooled collection uses an explicit deployment
+public-source allowlist, so a workspace owner credential cannot silently supply
+a competitor chart. Source-limited histories remain visibly incomplete. Views
+of 0 means "not exposed", never "nobody saw it", and the metrics layer stores
+NULL rather than 0 so the distinction survives into every query. Every one of
+those is a small decision and together they are the difference between a tool
 people trust twice and a tool people trust once.
 
 **I am specific about uncertainty.** "docs/DATA-ACCESS.md" labels its X pricing
@@ -214,10 +232,11 @@ nobody adopts.
 
 ### Days 1 to 30: make it real and make it small
 
-**Deploy it and start the clock.** Bluesky, YouTube and RSS need no approvals and
-no procurement. Deploy on those three in week one. The reason for urgency is that
-history cannot be bought retroactively, and every week of delay is a week of
-comparison data that will not exist next year.
+**Deploy it and start the clock.** Bluesky needs no credential and YouTube needs
+a free official API key. RSS is retired. Purchased paths require an explicit
+Legal/procurement decision and spend controls before collection. The reason for
+urgency is that history cannot be bought retroactively, and every week of delay
+is a week of comparison data that will not exist next year.
 
 **Start the approvals that take weeks.** Meta App Review for owned Pages and
 Instagram Business, and the LinkedIn Marketing Developer Platform application.
@@ -263,11 +282,11 @@ checked, precision and recall written down. It carries evidence and confidence b
 design; nobody has verified that the design works on this content. If it is not
 good enough, say so and leave rule-based tagging on.
 
-**Roll out Reddit.** The adapter now tracks user-account submissions plus
-communities through EnsembleData. It maps score, comments and crossposts, and
-adds member count only for communities. Confirm commercial-use coverage with
-Legal, then attach the newsroom accounts and relevant communities and measure
-cost.
+**Roll out Reddit.** New collection tracks publisher-user submissions through
+EnsembleData and maps score, comments and crossposts without inventing user
+audience. Retained legacy subreddit rows remain readable, but communities are
+not new sources. Confirm commercial-use coverage with Legal, then attach the
+newsroom accounts and measure cost.
 
 **Day 60 test:** six of eight social team members active weekly, alert
 acknowledgement above 50 percent, and at least one publishing decision that
@@ -364,18 +383,19 @@ closed. What the artifact demonstrates is judgement about architecture, honesty
 and product decisions. It does not demonstrate operational maturity, and I would
 not claim it does.
 
-**"You cannot get Facebook, TikTok or LinkedIn competitor data. That is half the
-product missing."**
+**"Facebook, TikTok and LinkedIn official APIs do not give you the competitor
+product you need. Is half the product missing?"**
 
-It is a real limitation and it is not mine. Nobody selling you a tool in 2026 has
-sanctioned Facebook competitor data, because CrowdTangle closed and its
-replacement excludes commercial organisations by policy. The difference is that I
-label the gap and a vendor charts a zero. Ask any vendor in a bake-off where their
-TikTok competitor data comes from. The Research API bars commercial use and the
-Display API only reads the token holder, so there are three possible answers and
-two of them are scraped data. I would not buy scraped data for a newsroom's own
-measurement, because it breaks without warning and it is not defensible if
-somebody asks where the number came from.
+No, but the distinction between official and purchased data is load-bearing.
+Facebook has an approval-gated sanctioned route through Page Public Content
+Access; existing pooled profiles currently use Bright Data. TikTok uses Bright
+Data when configured and EnsembleData only when Bright is absent. LinkedIn uses
+Bright Data company and company-post datasets, limited to followers, posts,
+likes and comments, with no certified historical exhaustion. These paths are
+implemented, not automatically authorized: Legal and procurement must approve
+them, provenance and coverage stay visible, and a paid Bright Data stage never
+falls through to a second vendor after it starts or fails. If a path is not
+approved, the honest result is a labelled gap rather than an owner token or zero.
 
 **"Rival IQ has a decade of history. You have zero."**
 

@@ -9,6 +9,9 @@
     "lint": "eslint",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
+    "db:audit-channel-identities": "tsx scripts/audit-channel-identities.ts",
+    "db:audit-owned-contamination": "tsx scripts/audit-owned-contamination.ts",
+    "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed": "tsx scripts/seed.ts",
@@ -16,6 +19,7 @@
     "ingest:once": "tsx scripts/ingest.ts"
   },
   "dependencies": {
+    "@icons-pack/react-simple-icons": "^13.13.0",
     "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",

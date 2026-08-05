@@ -2,6 +2,16 @@
 
 **Audience:** whoever signs for either one.
 
+**Dating note, updated 4 August 2026.** The Rival IQ prices and original Data
+Dumpster cost model remain a July snapshot. The operative source policy has
+changed: Bright Data is the purchased primary for existing Facebook and for
+Instagram, TikTok, X, Threads and LinkedIn whenever configured; EnsembleData is
+the Reddit publisher-user source, X onboarding helper and no-Bright fallback for
+Instagram, TikTok, X and Threads. A paid Bright stage never falls through after
+it starts or fails. YouTube and Bluesky remain official public sources. Current
+vendor spend must be measured rather than inferred from the historical X-only
+estimate below.
+
 **Bottom line up front.** On pure cost, buying Rival IQ is cheaper than
 maintaining Data Dumpster, once an engineer's fully loaded time is counted honestly.
 The case for building does not rest on cost and anyone who tells you it does has
@@ -95,8 +105,9 @@ Rival IQ's problem. They also carry the Meta App Review and platform partnership
 burden, so a customer OAuths into an already-approved app instead of spending
 weeks in review. That is a genuine, underrated advantage and it is worth money.
 
-**Time to value.** A trial gets you charts this afternoon. Data Dumpster needs a
-database, a deploy, and, for anything past Bluesky and RSS, API approvals.
+**Time to value.** A trial gets you charts this afternoon. Data Dumpster is live,
+but every purchased source still needs explicit Legal/procurement approval,
+configuration and ongoing coverage monitoring.
 
 ---
 
@@ -139,10 +150,10 @@ unrestricted, free competitor data, that is a meaningful gap.
 **Confidence: high that it is not on their channels page; medium that they have
 not shipped it since.**
 
-**RSS and posted-URL analysis as first-class inputs.** What a competitor
-published, on which desk, at what cadence, and what they are driving traffic to.
-This is the newsroom-native part, and it is also the only workable substitute for
-the Facebook competitor data everybody lost in 2024.
+**Posted-URL analysis as a first-class input.** What a competitor is driving
+traffic to, on which desk and at what cadence. This is the newsroom-native part.
+RSS is deliberately retired; social post URLs supply the publishing connection
+without creating a second, engagement-free dataset.
 
 **No per-seat cost.** Every person at the Globe can have a login. The tool gets
 cheaper per user as it succeeds, rather than more expensive.
@@ -160,12 +171,18 @@ monthly.
 
 ### Cash costs
 
+The table below is the original July estimate and is retained for the decision
+record. Its X-API assumption is not current routing, and its subtotal is not a
+current budget. The live source mix has Bright Data spend across six platforms
+and EnsembleData spend for Reddit or no-Bright fallbacks; use vendor billing and
+ingestion audits to replace these rows before making a purchase decision.
+
 | Line | Monthly | Confidence |
 |---|---|---|
 | Vercel, Pro tier, 1 to 2 seats | 20 to 40 | High |
 | Neon Postgres, Launch tier, under 5 GB | 19 to 30 | High |
-| Bluesky, YouTube, RSS, Meta owned, LinkedIn owned, TikTok owned | 0 | High |
-| X API, metered, 12 competitor accounts, 3-day refresh window | about 180 | Medium. Depends on X's current rate and the refresh window |
+| Bluesky, YouTube and the then-planned owner APIs | 0 | Historical assumption |
+| X API, metered, 12 competitor accounts, 3-day refresh window | about 180 | Historical assumption; not the current X route |
 | Model inference, 50 briefs plus ask and tagging, mid-tier model | 5 to 15 | High. Derived from published prices in docs/BYO-MODEL.md |
 | **Cash subtotal** | **225 to 265** | |
 
@@ -242,8 +259,10 @@ Compressed, for a slide.
 | | Data Dumpster | Rival IQ |
 |---|---|---|
 | Competitive metrics on open platforms | Yes | Yes |
-| Facebook competitor data | No, and says so | Thin, post-CrowdTangle |
-| TikTok and LinkedIn competitor data | No, and says so | Present, provenance unclear |
+| Facebook competitor data | Bright Data for existing pooled profiles; new onboarding temporarily disabled | Thin, post-CrowdTangle |
+| TikTok competitor data | Bright Data when configured; EnsembleData only when Bright Data is absent | Present, provenance unclear |
+| LinkedIn competitor data | Bright Data public company pages: followers, posts, likes and comments; history always source-limited | Present, provenance unclear |
+| X and Threads competitor data | Bright Data when configured; EnsembleData only when Bright Data is absent | X present; Threads not listed in the July audit |
 | Bluesky | Yes | Not on their channels page |
 | History depth | From today | Up to 24 months, decade behind it |
 | Social listening | No | Yes |
@@ -316,9 +335,11 @@ it buys three things: the history and benchmark panels Data Dumpster cannot prod
 running check on whether Data Dumpster's numbers agree with a commercial tool's, and a
 fallback if the build stalls.
 
-Run Data Dumpster in parallel on the free sources: Bluesky, YouTube and RSS. No
-procurement, no API applications, no approvals. Start the history clock on day
-one, because that clock is the one thing that cannot be bought later.
+Run Data Dumpster in parallel on the sanctioned public sources: Bluesky and
+YouTube. Keep purchased Bright Data and EnsembleData paths disabled until their
+Legal/procurement decisions and spend controls are recorded. Start the history
+clock on approved sources immediately, because that clock is the one thing that
+cannot be bought later.
 
 At the end of the quarter, three questions answer it. Which tool did people
 actually open. Did the AI governance argument ever come up in a real situation, or

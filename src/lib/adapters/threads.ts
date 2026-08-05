@@ -17,11 +17,16 @@
 import { AdapterError } from './types';
 import type {
   AdapterProfile, ChannelAdapter, FetchContext, FetchResult,
-  NormalizedAudience, NormalizedPost,
+  NormalizedAudience,
 } from './types';
 import { DATASETS, scrapeSync, rowError, isErrorRow } from '@/lib/vendors/brightdata';
-import { extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
+import { toDayString } from './util/normalize';
 import type { Platform } from '@/lib/types';
+import {
+  clearBrightDataReceipt,
+  pendingBrightDataStage,
+  runBrightDataStage,
+} from './brightdata-receipt';
 
 const PLATFORM: Platform = 'threads';
 
@@ -50,28 +55,18 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
-function toDate(v: unknown): Date | undefined {
-  if (typeof v === 'number') {
-    const d = new Date(v < 1e12 ? v * 1000 : v);
-    return Number.isNaN(d.getTime()) ? undefined : d;
-  }
-  if (typeof v === 'string') {
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? undefined : d;
-  }
-  return undefined;
-}
-
 function profileUrl(handle: string): string {
   return 'https://www.threads.com/@' + handle;
 }
 
 function requireVendorKey(credentials: Record<string, string>): string {
-  const key = credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+  const key = credentials.brightDataApiKey?.trim() || '';
   if (!key) {
     throw new AdapterError(
-      'Threads needs a Bright Data API key. The official Threads API only reads the account that '
-      + 'granted the token, so there is no sanctioned competitor path. See docs/DATA-ACCESS.md.',
+      'Threads public collection requires a Bright Data API key or, when Bright Data is '
+      + 'unconfigured, an EnsembleData token. The official Threads API only reads the account that '
+      + 'granted the token, so it cannot supply competitor-comparable profiles. See '
+      + 'docs/DATA-ACCESS.md.',
       { platform: PLATFORM, retryable: false },
     );
   }
@@ -83,11 +78,12 @@ async function readProfile(
   apiKey: string,
   onApiCall?: () => void,
   signal?: AbortSignal,
+  resumeSnapshotId?: string,
 ): Promise<Record<string, unknown>> {
   const rows = await scrapeSync(
     DATASETS.threadsProfile,
     [{ url: profileUrl(handle) }],
-    { apiKey, platform: PLATFORM, onApiCall, signal },
+    { apiKey, platform: PLATFORM, onApiCall, signal, resumeSnapshotId },
   );
   const row = rows.find((r) => isRecord(r) && !isErrorRow(r));
   if (!isRecord(row)) {
@@ -101,8 +97,16 @@ async function readProfile(
 }
 
 function toProfile(row: Record<string, unknown>, handle: string): AdapterProfile {
+  const externalId = str(pick(row, ['profile_id', 'id']));
+  if (!externalId) {
+    throw new AdapterError(
+      'Bright Data returned a Threads profile for @' + handle
+        + ' without a stable platform id. No observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
   return {
-    externalId: str(pick(row, ['profile_id', 'id'])) ?? handle,
+    externalId,
     handle,
     displayName: str(pick(row, ['profile_name', 'full_name'])),
     avatarUrl: str(pick(row, ['profile_picture', 'profile_pic_url'])) ?? null,
@@ -116,19 +120,29 @@ function toProfile(row: Record<string, unknown>, handle: string): AdapterProfile
   };
 }
 
+async function resolveViaEnsemble(handle: string, token: string): Promise<AdapterProfile> {
+  const { resolveId } = await import('./threads-ensemble');
+  return (await resolveId(handle, token)).profile;
+}
+
 export const threadsAdapter: ChannelAdapter = {
   platform: PLATFORM,
   displayName: 'Threads',
   accessNotes:
-    'Purchased public data only. The official Threads API reads exclusively the account that granted '
-    + 'the token, so there is no sanctioned route to a competitor and no owned-versus-competitor '
-    + 'split to make here. With a Bright Data API key, any public Threads account returns followers, '
+    'Purchased public data only. Bright Data is used exclusively when it is configured. '
+    + 'EnsembleData is used only when Bright Data is not configured; a failed or cancelled paid '
+    + 'Bright Data stage is never retried through EnsembleData. '
+    + 'The official Threads API reads exclusively the account that granted the token, so there is no '
+    + 'sanctioned route to a competitor and no owned-versus-competitor split to make here. Public '
+    + 'vendor reads return followers, '
     + 'post text, likes, replies, reshares and shares. Threads publishes no view count to anyone, so '
     + 'views are always 0. Handles match the Instagram handle, because a Threads account is created '
     + 'from an Instagram login.',
   credentialFields: [
+    { key: 'ensembleDataToken', label: 'EnsembleData token', secret: true, required: false,
+      help: 'Secondary public source used only when Bright Data is not configured.' },
     { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
-      help: 'The only route to Threads data. Falls back to the BRIGHTDATA_API_KEY environment variable.' },
+      help: 'Primary pooled public Threads source.' },
   ],
   // Vendor-paced rather than platform-paced: this is about not queueing work
   // faster than it drains, since each read takes tens of seconds.
@@ -164,103 +178,148 @@ export const threadsAdapter: ChannelAdapter = {
   },
 
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
-    const row = await readProfile(handle, requireVendorKey(credentials));
-    return toProfile(row, handle);
+    // Callers supply the public-source allowlist. Do not reach around it to
+    // deployment environment variables or change vendors after a paid failure.
+    const token = credentials.ensembleDataToken?.trim() || '';
+    const apiKey = credentials.brightDataApiKey?.trim() || '';
+
+    if (apiKey) {
+      return toProfile(await readProfile(handle, apiKey), handle);
+    }
+    if (token) return await resolveViaEnsemble(handle, token);
+
+    throw new AdapterError(
+      'Adding or verifying a Threads channel requires an EnsembleData token or a Bright Data API key.',
+      { platform: PLATFORM, retryable: false },
+    );
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
-    // Preferred vendor first. The profile id is cached on the cursor so only
-    // the first run for a channel pays for the handle-to-id search.
-    const token = ctx.credentials.ensembleDataToken ?? process.env.ENSEMBLEDATA_TOKEN ?? '';
-    if (token) {
+    const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
+    if (
+      pendingStage !== undefined
+      && pendingStage !== 'threads-profile'
+      && pendingStage !== 'threads-posts'
+    ) {
+      throw new AdapterError(
+        'Threads has a Bright Data receipt for unknown stage "' + pendingStage
+          + '". Reconcile the receipt before starting another paid snapshot.',
+        { platform: PLATFORM, retryable: false },
+      );
+    }
+
+    const token = ctx.credentials.ensembleDataToken?.trim() || '';
+    const apiKey = ctx.credentials.brightDataApiKey?.trim() || '';
+    if (pendingStage !== undefined && !apiKey) {
+      throw new AdapterError(
+        'Threads has a paid Bright Data snapshot waiting to resume, but the Bright Data API key is '
+          + 'unavailable. Restore the key before collecting this account through another source.',
+        { platform: PLATFORM, retryable: false },
+      );
+    }
+
+    if (token && !apiKey && pendingStage === undefined) {
       const { resolveId, fetchPosts } = await import('./threads-ensemble');
       const { id, profile, audience } = await resolveId(
         ctx.handle, token, ctx.onApiCall, ctx.signal,
       );
-      const { posts, warnings } = await fetchPosts(id, ctx.handle, token, {
+      const result = await fetchPosts(id, ctx.handle, token, {
         since: ctx.since,
         until: ctx.until,
         onApiCall: ctx.onApiCall,
         signal: ctx.signal,
       });
       return {
-        posts,
+        posts: result.posts,
         audience: audience ? [audience] : [],
         profile,
         cursor: { source: 'ensembledata', threadsId: id, lastRunAt: new Date().toISOString() },
-        hasMore: false,
-        warnings,
+        ...(result.exhaustive
+          ? { hasMore: false as const, exhaustive: true as const }
+          : {
+              hasMore: false as const,
+              exhaustive: false as const,
+              incompleteReason: result.incompleteReason
+                ?? 'EnsembleData did not certify the requested Threads window and exposed no continuation cursor.',
+            }),
+        warnings: result.warnings,
       };
     }
 
-    const apiKey = requireVendorKey(ctx.credentials);
-    const row = await readProfile(ctx.handle, apiKey, ctx.onApiCall, ctx.signal);
-    const profile = toProfile(row, ctx.handle);
-    const warnings: string[] = [];
+    if (!apiKey) requireVendorKey(ctx.credentials);
 
-    const followers = profile.followers ?? 0;
-    const audience: NormalizedAudience[] = followers > 0
-      ? [{ day: toDayString(new Date()), followers, extra: {} }]
-      : [];
+    {
+      let profile: AdapterProfile | undefined;
+      let audience: NormalizedAudience[] = [];
+      const warnings: string[] = [];
 
-    const list = Array.isArray(row.threads) ? row.threads : [];
-    const posts: NormalizedPost[] = [];
-    let oldest: Date | null = null;
+      if (pendingStage !== 'threads-posts') {
+        const profileStage = await runBrightDataStage(ctx, {
+        platform: PLATFORM,
+        stage: 'threads-profile',
+        datasetId: DATASETS.threadsProfile,
+      }, async (resumeSnapshotId) => await readProfile(
+        ctx.handle,
+        apiKey,
+        ctx.onApiCall,
+        ctx.signal,
+        resumeSnapshotId,
+        ));
+        if (profileStage.kind === 'continuation') return profileStage.result;
+        profile = toProfile(profileStage.value, ctx.handle);
+        warnings.push(...profileStage.warnings);
 
-    for (const item of list) {
-      if (!isRecord(item)) continue;
-      const postedAt = toDate(pick(item, ['post_date', 'date_posted', 'timestamp']));
-      if (!postedAt) continue;
-      if (!oldest || postedAt < oldest) oldest = postedAt;
-      if (postedAt < ctx.since || postedAt > ctx.until) continue;
+        const followers = profile.followers ?? 0;
+        audience = followers > 0
+          ? [{ day: toDayString(new Date()), followers, extra: {} }]
+          : [];
+      } else if (!ctx.externalId?.trim()) {
+        throw new AdapterError(
+          'Threads post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+            + ' cannot resume because the pooled channel has no verified stable platform id. '
+            + 'Reconcile the profile identity before retrying; no observations were written.',
+          { platform: PLATFORM, retryable: false },
+        );
+      }
 
-      const text = str(pick(item, ['post_content_formatted', 'post_content'])) ?? '';
+      const postsContext = pendingStage === 'threads-profile'
+        ? { ...ctx, cursor: { ...ctx.cursor, ...clearBrightDataReceipt() } }
+        : ctx;
+      const { fetchThreadsPostsByProfile } = await import('./threads-brightdata');
+      const postsStage = await runBrightDataStage(postsContext, {
+        platform: PLATFORM,
+        stage: 'threads-posts',
+        datasetId: DATASETS.threadsPosts,
+      }, async (resumeSnapshotId) => await fetchThreadsPostsByProfile(
+        ctx.handle,
+        apiKey,
+        {
+          since: ctx.since,
+          until: ctx.until,
+          limit: ctx.limit,
+          onApiCall: ctx.onApiCall,
+          signal: ctx.signal,
+          resumeSnapshotId,
+        },
+      ), profile, audience);
+      if (postsStage.kind === 'continuation') return postsStage.result;
+      warnings.push(...postsStage.warnings, ...postsStage.value.warnings);
 
-      // These rows carry no stable post id, so derive a deterministic one from
-      // the account and timestamp. The upsert key depends on it being stable.
-      const externalId = str(pick(item, ['post_id', 'id']))
-        ?? profile.externalId + ':' + postedAt.toISOString();
-
-      posts.push({
-        externalId,
-        postedAt,
-        type: 'text',
-        text,
-        permalink: str(pick(item, ['url', 'post_url'])) ?? profile.profileUrl ?? null,
-        mediaUrl: null,
-        thumbnailUrl: null,
-        durationSec: null,
-        language: null,
-        hashtags: extractHashtags(text),
-        mentions: extractMentions(text),
-        urls: extractUrls(text),
-        applause: num(pick(item, ['likes', 'likes_amount'])),
-        conversation: num(pick(item, ['comments_amount', 'replies'])),
-        // Reshares and off-platform shares are distinct actions that both mean
-        // amplification. Summed here, preserved separately in raw.
-        amplification: num(pick(item, ['reshare_amount'])) + num(pick(item, ['share_amount'])),
-        saves: 0,
-        views: 0,
-        raw: item,
-      });
+      return {
+        posts: postsStage.value.posts,
+        audience,
+        ...(profile ? { profile } : {}),
+        cursor: {
+          source: 'brightdata',
+          ...clearBrightDataReceipt(),
+          lastRunAt: new Date().toISOString(),
+        },
+        hasMore: false,
+        exhaustive: false,
+        incompleteReason: postsStage.value.incompleteReason,
+        warnings,
+      };
     }
-
-    if (oldest && oldest > ctx.since) {
-      warnings.push(
-        'Threads for @' + ctx.handle + ': the vendor returned ' + list.length + ' recent posts reaching '
-        + 'back to ' + toDayString(oldest) + ', which does not cover the requested window. Older posts '
-        + 'are missing rather than absent.',
-      );
-    }
-
-    return {
-      posts,
-      audience,
-      profile,
-      cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
-      hasMore: false,
-      warnings,
-    };
   },
 };
 

@@ -1,6 +1,6 @@
 import type { AnalyticsQuery, MetricKey } from '@/lib/types';
 import type {
-  FactSheet, MetricsApi, PostsQuery, SummaryResult,
+  FactSheet, MetricsApi, PostsQuery, SummaryResult, TopPostsQuery,
 } from '@/lib/metrics/contract';
 import type {
   IngestionCoverage,
@@ -84,6 +84,13 @@ export async function loadPosts(q: PostsQuery & { orgId?: string }) {
     },
     { items: [], total: 0, page: 1, pageSize: q.pageSize ?? 25 },
   );
+}
+
+export async function loadTopPostsByPlatform(q: TopPostsQuery & { orgId?: string }) {
+  return tryQuery(async () => {
+    const api = await metricsApi();
+    return api.getTopPostsByPlatform(q);
+  }, []);
 }
 
 export async function loadPostedUrls(q: ScopedQuery & { groupBy?: 'domain' | 'url' }) {

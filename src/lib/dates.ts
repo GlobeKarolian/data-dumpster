@@ -4,9 +4,9 @@ import type { Granularity, DateRange } from './types';
  * The zone every window boundary and every bucket is expressed in.
  *
  * This is not a preference, it is a correctness requirement. All SQL bucketing
- * runs `AT TIME ZONE 'America/New_York'`, while the helpers in this file use
- * date-fns, which works in the SERVER's zone. On Vercel that is UTC, and the
- * two disagreed by four hours.
+ * runs `AT TIME ZONE 'America/New_York'`, and every helper below uses an
+ * `Intl.DateTimeFormat` pinned to the same zone. The process's ambient time zone
+ * is deliberately irrelevant.
  *
  * The symptom was quiet and specific: a post published at 00:30 Eastern fell
  * inside the fetched range but bucketed to the previous Eastern day, which was
@@ -15,20 +15,9 @@ import type { Granularity, DateRange } from './types';
  * columns did not sum to the number printed above them. The weekly report
  * window was shifted the same four hours, running Sunday 20:00 to Sunday 19:59.
  *
- * `TZ=America/New_York` is set on the deployment so date-fns and Postgres agree.
- * `assertReportZone` exists so a deploy that loses that variable says so rather
- * than silently shifting every window again.
+ * Keep new date logic on these helpers rather than ambient-local Date methods.
  */
 export const REPORT_TIME_ZONE = 'America/New_York';
-
-/** What the process actually resolved to. Reported by /api/health. */
-export function currentTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-export function timeZoneMatchesReportZone(): boolean {
-  return currentTimeZone() === REPORT_TIME_ZONE;
-}
 
 /* ------------------------------------------------ zone-aware primitives */
 

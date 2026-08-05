@@ -1,21 +1,14 @@
 /**
- * LinkedIn — Marketing API, owned organization pages only.
+ * LinkedIn — Bright Data public company pages, with the official Marketing API
+ * retained only as an administrator-authorized fallback.
  *
- * THIS IS AN OWNED-CHANNEL-ONLY INTEGRATION AND ALWAYS WILL BE.
- *
- * LinkedIn publishes no read endpoint for another organisation's page at any
- * price. There is no equivalent of Instagram's Business Discovery, no research
- * tier, no enterprise SKU that unlocks a competitor's post-level engagement.
- * Access to organizationalEntityShareStatistics is granted per organization
- * URN, and the grant comes from an administrator of that page authorising your
- * app through OAuth. A competitor is by definition not going to do that.
- *
- * So the honest framing for the product: LinkedIn tells you how your own page
- * is doing, in real depth: impressions, clicks, engagement rate, follower
- * demographics. It tells you nothing about anyone else. Any LinkedIn
- * competitive benchmark you have seen in another tool is either that vendor's
- * own aggregate across its customers' owned pages, or it is scraped. We do
- * neither.
+ * LinkedIn's official API does not expose competitor organization pages. The
+ * pooled competitive route therefore uses Bright Data's public company and
+ * company-post datasets. Those rows expose public follower stock, posts, likes
+ * and comments. They do not expose shares, saves, views, reach or impressions,
+ * and a completed snapshot does not certify that the historical feed was
+ * exhausted. The adapter preserves those limitations instead of inventing
+ * zeros or claiming complete coverage.
  *
  * ACCESS BURDEN, stated because it is the real cost here rather than money:
  * the Community Management API and the Marketing Developer Platform both
@@ -44,6 +37,17 @@ import {
 } from './types';
 import { asArray, asCount, asDate, asRecord, asString, fetchJson } from './util/request';
 import { classifyPostType, extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
+import { DATASETS } from '@/lib/vendors/brightdata';
+import {
+  clearBrightDataReceipt,
+  pendingBrightDataStage,
+  profileFromBrightDataReceipt,
+  runBrightDataStage,
+} from './brightdata-receipt';
+import {
+  fetchLinkedInCompanyPosts,
+  fetchLinkedInCompanyProfile,
+} from './linkedin-brightdata';
 
 const PLATFORM: Platform = 'linkedin';
 const API = 'https://api.linkedin.com/rest';
@@ -290,7 +294,7 @@ function readPost(raw: Record<string, unknown>): RawPost | undefined {
   };
 }
 
-/** Walk /rest/posts?q=author newest-first, stopping when we cross the window. */
+/** Walk /rest/posts?q=author until the LAST_MODIFIED edge is exhausted. */
 async function fetchPosts(
   orgUrn: string,
   token: string,
@@ -319,14 +323,11 @@ async function fetchPosts(
     });
 
     const elements = asArray(body.elements);
-    let oldestOnPage: Date | undefined;
-
     for (const element of elements) {
       const rec = asRecord(element);
       if (!rec) continue;
       const post = readPost(rec);
       if (!post) continue;
-      if (!oldestOnPage || post.postedAt < oldestOnPage) oldestOnPage = post.postedAt;
       if (post.postedAt < ctx.since || post.postedAt > ctx.until) continue;
       collected.push(post);
     }
@@ -338,7 +339,9 @@ async function fetchPosts(
     }
 
     if (elements.length < POSTS_PAGE_SIZE) break;
-    if (oldestOnPage && oldestOnPage < ctx.since) break;
+    // Do not stop on publication time. This endpoint is ordered by
+    // LAST_MODIFIED, so an old post edited today can precede a newer post that
+    // has not been edited. Only exhausting the edge certifies the window.
     start += elements.length;
     if (pages >= MAX_PAGES) hasMore = true;
   }
@@ -464,34 +467,134 @@ function toNormalizedPost(raw: RawPost, stats: ShareStats | undefined, orgId: st
   };
 }
 
+function requireBrightDataKey(credentials: Record<string, string>): string {
+  const key = credentials.brightDataApiKey?.trim();
+  if (!key) {
+    throw new AdapterError(
+      'Public LinkedIn collection requires the deployment Bright Data API key.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+  return key;
+}
+
+async function fetchPublicLinkedIn(
+  ctx: FetchContext,
+  apiKey: string,
+): Promise<FetchResult> {
+  const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
+  if (
+    pendingStage !== undefined
+    && pendingStage !== 'linkedin-profile'
+    && pendingStage !== 'linkedin-posts'
+  ) {
+    throw new AdapterError(
+      'LinkedIn has a Bright Data receipt for unknown stage "' + pendingStage
+        + '". Reconcile the receipt before starting another paid snapshot.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+
+  let profile: AdapterProfile | undefined = pendingStage === 'linkedin-posts'
+    ? profileFromBrightDataReceipt(ctx.cursor)
+    : undefined;
+  let audience: NormalizedAudience | undefined;
+  const warnings: string[] = [];
+
+  if (pendingStage === 'linkedin-posts' && !profile) {
+    throw new AdapterError(
+      'LinkedIn post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+        + ' has no bound profile identity. Refusing to apply paid rows to a pooled profile; '
+        + 'operator reconciliation is required.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+
+  if (pendingStage !== 'linkedin-posts') {
+    const profileStage = await runBrightDataStage(ctx, {
+      platform: PLATFORM,
+      stage: 'linkedin-profile',
+      datasetId: DATASETS.linkedinCompany,
+    }, async (resumeSnapshotId) => await fetchLinkedInCompanyProfile(ctx.handle, apiKey, {
+      onApiCall: ctx.onApiCall,
+      signal: ctx.signal,
+      resumeSnapshotId,
+    }));
+    if (profileStage.kind === 'continuation') return profileStage.result;
+    ({ profile, audience } = profileStage.value);
+    warnings.push(...profileStage.value.warnings, ...profileStage.warnings);
+  } else if (!ctx.externalId?.trim()) {
+    throw new AdapterError(
+      'LinkedIn post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+        + ' cannot resume because the pooled channel has no verified stable platform id. '
+        + 'Reconcile the profile identity before retrying; no observations were written.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+
+  const postsContext = pendingStage === 'linkedin-profile'
+    ? { ...ctx, cursor: { ...ctx.cursor, ...clearBrightDataReceipt() } }
+    : ctx;
+  const postsStage = await runBrightDataStage(postsContext, {
+    platform: PLATFORM,
+    stage: 'linkedin-posts',
+    datasetId: DATASETS.linkedinCompanyPosts,
+  }, async (resumeSnapshotId) => await fetchLinkedInCompanyPosts(ctx.handle, apiKey, {
+    since: ctx.since,
+    until: ctx.until,
+    limit: ctx.limit,
+    expectedCompanyHandle: profile?.handle ?? ctx.handle,
+    onApiCall: ctx.onApiCall,
+    signal: ctx.signal,
+    resumeSnapshotId,
+  }), profile, audience ? [audience] : []);
+  if (postsStage.kind === 'continuation') return postsStage.result;
+
+  const result = postsStage.value;
+  warnings.push(...result.warnings, ...postsStage.warnings);
+  return {
+    posts: result.posts,
+    audience: audience ? [audience] : [],
+    ...(profile ? { profile } : {}),
+    cursor: {
+      source: 'brightdata',
+      ...clearBrightDataReceipt(),
+      lastVendorReadAt: new Date().toISOString(),
+    },
+    hasMore: false,
+    exhaustive: false,
+    incompleteReason: result.incompleteReason,
+    warnings,
+  };
+}
+
 /* ------------------------------------------------------------- adapter */
 
 export const linkedinAdapter: ChannelAdapter = {
   platform: PLATFORM,
   displayName: 'LinkedIn',
   accessNotes:
-    'Owned organization pages only. NO COMPETITOR DATA IS AVAILABLE AT ANY PRICE. LinkedIn has no '
-    + 'public read endpoint for another organisation\'s page, no research tier and no enterprise SKU '
-    + 'that unlocks one. Statistics are authorised per organization URN by an administrator of that '
-    + 'page, so a competitor would have to grant you access. This is an owned-channel-only '
-    + 'integration and there is no version of it that is not. '
-    + 'Requires Marketing Developer Platform or Community Management API approval, which takes an '
+    'Pooled public company pages use Bright Data. Public competitor coverage includes follower '
+    + 'stock, post content, likes and comments. The dataset does not expose public shares, saves, '
+    + 'views, reach or impressions, and it does not certify historical exhaustion, so LinkedIn '
+    + 'windows remain visibly source-limited rather than being presented as complete. '
+    + 'The official API remains an optional administrator-authorized path for a future org-private '
+    + 'owned-insights store. It requires Marketing Developer Platform or Community Management API '
+    + 'approval, which takes an '
     + 'application and weeks of review, plus a member OAuth token with r_organization_social and '
     + 'rw_organization_admin. Tokens last 60 days and must be refreshed. '
     + 'What you do get for your own pages is unusually good: impressions, clicks, likes, comments, '
     + 'shares and LinkedIn\'s own engagement rate per post. Saves are not exposed. '
     + 'Every request carries a LinkedIn-Version header in YYYYMM form and LinkedIn retires versions '
     + 'after about a year, so expect to bump apiVersion in Settings roughly annually.',
-  credentialFields: [
-    { key: 'accessToken', label: 'Access token', secret: true, required: true,
-      help: 'Member OAuth token from an admin of the page, with r_organization_social and rw_organization_admin.' },
-    { key: 'apiVersion', label: 'API version', required: false,
-      help: 'YYYYMM, for example 202606. Leave blank to use the built-in default. Change this when LinkedIn returns 426.' },
-  ],
-  // LinkedIn applies both a per-application and a per-member daily quota and
-  // publishes them per endpoint in the developer portal. This is a conservative
-  // pacing figure for the scheduler, not a documented ceiling.
-  rateLimit: { callsPerWindow: 500, windowSeconds: 86_400 },
+  // The pooled source is deployment-managed. Do not invite an organization to
+  // paste an administrator token into Settings while owned observations have
+  // no organization-private destination.
+  credentialFields: [],
+  // Bright Data is asynchronous and the client separately polls each saved
+  // receipt. This local gate only prevents one worker wave from stampeding the
+  // trigger endpoint; vendor spend and concurrency remain the binding limits.
+  rateLimit: { callsPerWindow: 100, windowSeconds: 60 },
   worksUnauthenticated: false,
 
   /**
@@ -537,6 +640,12 @@ export const linkedinAdapter: ChannelAdapter = {
   },
 
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
+    const brightDataKey = credentials.brightDataApiKey?.trim();
+    if (brightDataKey) {
+      const { profile } = await fetchLinkedInCompanyProfile(handle, brightDataKey);
+      return profile;
+    }
+
     const token = requireToken(credentials);
     const version = apiVersion(credentials);
     const org = await resolveOrganization(handle, token, version);
@@ -554,21 +663,16 @@ export const linkedinAdapter: ChannelAdapter = {
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
+    const brightDataKey = ctx.credentials.brightDataApiKey?.trim();
+    if (brightDataKey) return await fetchPublicLinkedIn(ctx, brightDataKey);
+
+    if (ctx.cursor.__isOwned === false) {
+      requireBrightDataKey(ctx.credentials);
+    }
+
     const token = requireToken(ctx.credentials);
     const version = apiVersion(ctx.credentials);
     const warnings: string[] = [];
-
-    // An explicitly non-owned LinkedIn channel is a configuration error, not a
-    // transient failure: nothing about it will ever succeed, and saying so
-    // clearly is more useful than a 403 from LinkedIn three calls later.
-    if (ctx.cursor.__isOwned === false) {
-      throw new AdapterError(
-        'LinkedIn competitor pages cannot be read. "' + ctx.handle + '" is not marked as an owned '
-        + 'channel and LinkedIn exposes no endpoint for another organisation\'s page at any price. '
-        + 'See docs/DATA-ACCESS.md.',
-        { platform: PLATFORM, retryable: false },
-      );
-    }
 
     const org = await resolveOrganization(ctx.externalId ?? ctx.handle, token, version, ctx);
     const orgUrn = organizationUrn(org.id);
@@ -619,7 +723,16 @@ export const linkedinAdapter: ChannelAdapter = {
         apiVersion: version,
         lastRunAt: new Date().toISOString(),
       },
-      hasMore,
+      ...(hasMore
+        ? {
+            // /rest/posts exposes an offset, but this adapter does not yet
+            // persist it. Calling the same window again would restart at zero,
+            // so this is a terminal limitation rather than a continuation.
+            hasMore: false as const,
+            exhaustive: false as const,
+            incompleteReason: 'LinkedIn reached the per-run post or page limit without a persisted offset. Add resumable offset paging before treating this requested window as complete.',
+          }
+        : { hasMore: false as const, exhaustive: true as const }),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   },

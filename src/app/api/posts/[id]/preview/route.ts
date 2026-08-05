@@ -1,11 +1,16 @@
 import type { NextRequest } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { landscapeCompanies, landscapes, posts } from '@/db/schema';
 import {
   allowedInstagramRedirect,
+  allowedTikTokRedirect,
+  isAllowedTikTokMediaUrl,
+  isAllowedTikTokPermalink,
   storedInstagramPreviewCandidates,
+  storedThreadsPreviewCandidates,
+  storedTikTokPosterCandidates,
   type PostPreviewKind,
 } from '@/lib/post-preview-source';
 import { apiHandler, AuthError, HttpError, requireOrg } from '@/lib/session';
@@ -27,9 +32,10 @@ const MAX_REDIRECTS = 3;
 const UPSTREAM_TIMEOUT_MS = 12_000;
 
 interface PreviewRecord {
-  platform: 'instagram';
+  platform: 'instagram' | 'tiktok' | 'threads';
   thumbnailUrl: string | null;
   mediaUrl: string | null;
+  permalink: string | null;
   raw: Record<string, unknown> | null;
 }
 
@@ -56,6 +62,7 @@ async function cancelBody(response: Response): Promise<void> {
 
 async function fetchWithValidatedRedirects(
   source: string,
+  platform: PreviewRecord['platform'],
   kind: PostPreviewKind,
   range: string | null,
   signal: AbortSignal,
@@ -80,12 +87,38 @@ async function fetchWithValidatedRedirects(
     }
 
     if (!REDIRECT_STATUSES.has(response.status)) return response;
-    const next = allowedInstagramRedirect(current, response.headers.get('location'));
+    const next = platform === 'tiktok'
+      ? allowedTikTokRedirect(current, response.headers.get('location'))
+      : allowedInstagramRedirect(current, response.headers.get('location'));
     await cancelBody(response);
     if (!next || redirects === MAX_REDIRECTS) return null;
     current = next;
   }
   return null;
+}
+
+async function freshTikTokPoster(
+  permalink: string | null,
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (!isAllowedTikTokPermalink(permalink)) return null;
+
+  const query = new URLSearchParams({ url: permalink });
+  try {
+    const response = await fetch('https://www.tiktok.com/oembed?' + query.toString(), {
+      headers: { accept: 'application/json' },
+      signal,
+      cache: 'force-cache',
+      next: { revalidate: 21_600 },
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
+    const thumbnail = (body as Record<string, unknown>).thumbnail_url;
+    return isAllowedTikTokMediaUrl(thumbnail) ? thumbnail : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readPoster(response: Response): Promise<ArrayBuffer | null> {
@@ -139,12 +172,13 @@ function baseResponseHeaders(kind: PostPreviewKind, contentType: string): Header
   });
 }
 
-async function visibleInstagramPost(postId: string, orgId: string): Promise<PreviewRecord | null> {
+async function visiblePreviewPost(postId: string, orgId: string): Promise<PreviewRecord | null> {
   const [row] = await db
     .select({
       platform: posts.platform,
       thumbnailUrl: posts.thumbnailUrl,
       mediaUrl: posts.mediaUrl,
+      permalink: posts.permalink,
       raw: posts.raw,
     })
     .from(posts)
@@ -152,12 +186,20 @@ async function visibleInstagramPost(postId: string, orgId: string): Promise<Prev
     .innerJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
     .where(and(
       eq(posts.id, postId),
-      eq(posts.platform, 'instagram'),
+      or(
+        eq(posts.platform, 'instagram'),
+        eq(posts.platform, 'tiktok'),
+        eq(posts.platform, 'threads'),
+      ),
       eq(landscapes.orgId, orgId),
     ))
     .limit(1);
 
-  return row?.platform === 'instagram' ? row as PreviewRecord : null;
+  return row?.platform === 'instagram'
+    || row?.platform === 'tiktok'
+    || row?.platform === 'threads'
+    ? row as PreviewRecord
+    : null;
 }
 
 export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
@@ -169,23 +211,34 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
     throw new HttpError(416, 'Only one valid byte range may be requested.', 'invalid_range');
   }
 
-  const post = await visibleInstagramPost(postId, orgId);
+  const post = await visiblePreviewPost(postId, orgId);
   if (!post) {
     throw new AuthError('not_found', 'That post does not exist in this workspace.');
   }
 
-  const candidates = storedInstagramPreviewCandidates(post, kind)
-    .slice(0, kind === 'poster' ? 12 : 6);
-  if (candidates.length === 0) {
-    throw new AuthError('not_found', 'No stored preview is available for that post.');
+  if (kind === 'video' && post.platform === 'tiktok') {
+    throw new AuthError('not_found', 'No proxied video preview is available for that post.');
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
+    const candidates = post.platform === 'instagram'
+      ? storedInstagramPreviewCandidates(post, kind).slice(0, kind === 'poster' ? 12 : 6)
+      : post.platform === 'threads'
+        ? storedThreadsPreviewCandidates(post, kind).slice(0, kind === 'poster' ? 12 : 6)
+        : [
+          await freshTikTokPoster(post.permalink, controller.signal),
+          ...storedTikTokPosterCandidates(post),
+        ].filter((candidate): candidate is string => Boolean(candidate));
+    if (candidates.length === 0) {
+      throw new AuthError('not_found', 'No public preview is available for that post.');
+    }
+
     for (const candidate of candidates) {
       const upstream = await fetchWithValidatedRedirects(
         candidate,
+        post.platform,
         kind,
         requestedRange,
         controller.signal,
@@ -236,7 +289,7 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
 
   throw new HttpError(
     502,
-    'The stored preview could not be read from Instagram.',
+    'The public preview could not be read from ' + (post.platform === 'instagram' ? 'Instagram' : 'TikTok') + '.',
     'preview_unavailable',
   );
 });

@@ -29,6 +29,7 @@ export function AppShell({
   role: Role;
   children: React.ReactNode;
 }) {
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const searchParams = useSearchParams();
   const requested = searchParams.get('landscape');
   const active =
@@ -38,7 +39,7 @@ export function AppShell({
     null;
 
   return (
-    <div className="flex min-h-dvh">
+    <div className="flex min-h-dvh w-full max-w-full">
       <Sidebar
         landscapes={landscapes.map((l) => ({
           id: l.id,
@@ -47,16 +48,21 @@ export function AppShell({
           companyCount: l.companyCount,
         }))}
         activeLandscapeId={active?.id ?? null}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex w-0 min-w-0 max-w-full flex-1 flex-col">
         <Topbar
           companies={active?.companies ?? []}
           focusCompanyId={active?.focusCompanyId ?? null}
           landscapeName={active?.name ?? null}
           landscapeId={active?.id ?? null}
           role={role}
+          onOpenNavigation={() => setMobileNavOpen(true)}
         />
-        <main className="min-w-0 flex-1 px-4 py-5 lg:px-6">{children}</main>
+        <main className="w-full min-w-0 max-w-full flex-1 px-4 py-5 lg:px-6">
+          {children}
+        </main>
       </div>
     </div>
   );

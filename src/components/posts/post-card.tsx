@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {
-  ExternalLink, Flame, Heart, ImageOff, MessageCircle, Play, Repeat2,
+  ExternalLink, FileText, Flame, Heart, ImageOff, MessageCircle, Play, Repeat2,
 } from 'lucide-react';
 import type { PostDto } from '@/lib/metrics/contract';
 import { postPosterUrl } from '@/lib/post-preview-url';
@@ -62,10 +62,13 @@ export function PostCard({
   post,
   className,
   onSelect,
+  rank,
 }: {
   post: PostDto;
   className?: string;
   onSelect?: (post: PostDto) => void;
+  /** Optional rank inside the current visible top-post set. */
+  rank?: number;
 }) {
   const outlier = post.outlierScore !== null && post.outlierScore > OUTLIER_THRESHOLD;
   const previewUrl = postPosterUrl(post);
@@ -85,7 +88,7 @@ export function PostCard({
       tabIndex={onSelect ? 0 : undefined}
       aria-label={onSelect ? 'View post details for ' + post.company.name : undefined}
       className={cn(
-        'flex h-full flex-col rounded-lg border border-zinc-200 bg-white p-3 transition-colors',
+        'flex h-full min-w-0 flex-col rounded-lg border border-zinc-200 bg-white p-3 transition-colors',
         'hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700',
         onSelect && [
           'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
@@ -95,43 +98,74 @@ export function PostCard({
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">{post.company.name}</p>
-          <div className="mt-0.5 flex items-center gap-2">
-            <PlatformBadge platform={post.platform} />
-            <span className="pb-num text-[11px] text-zinc-400">{formatDateTime(post.postedAt)}</span>
+        <div className="flex min-w-0 items-start gap-2">
+          {rank ? (
+            <span
+              className="pb-num inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 px-1 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+              aria-label={'Rank ' + rank}
+            >
+              {'#' + rank}
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">{post.company.name}</p>
+            <div className="mt-0.5 flex items-center gap-2">
+              <PlatformBadge platform={post.platform} />
+              <span className="pb-num text-[11px] text-zinc-400">{formatDateTime(post.postedAt)}</span>
+            </div>
           </div>
         </div>
         {outlier && post.outlierScore !== null ? <OutlierBadge score={post.outlierScore} /> : null}
       </div>
 
-      {previewUrl ? (
-        <div className="relative mt-2.5 flex h-28 items-center justify-center overflow-hidden rounded border border-zinc-200 bg-zinc-100 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-500">
+      <div className="relative mt-2.5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded border border-zinc-800 bg-zinc-950 text-zinc-400">
+        {previewUrl ? (
+          <>
           {previewFailed ? (
             isMotion
               ? <Play className="h-7 w-7 fill-current" aria-hidden />
               : <ImageOff className="h-6 w-6" aria-hidden />
           ) : (
-            // Remote thumbnails come from arbitrary CDNs, so a plain img avoids
-            // needing every social platform in the image optimizer allowlist.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewUrl}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover"
-              onError={() => setPreviewFailed(true)}
-            />
+            <>
+              {/* A soft duplicate fills unused space without cropping the actual creative. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewUrl}
+                alt=""
+                aria-hidden
+                loading="lazy"
+                className="absolute inset-0 h-full w-full scale-110 object-cover opacity-35 blur-xl"
+              />
+              <span className="pointer-events-none absolute inset-0 bg-black/20" aria-hidden />
+              {/* Remote thumbnails come from arbitrary CDNs, so a plain img avoids
+                  needing every social platform in the image optimizer allowlist. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewUrl}
+                alt=""
+                loading="lazy"
+                className="relative z-10 h-full w-full object-contain"
+                onError={() => setPreviewFailed(true)}
+              />
+            </>
           )}
           {!previewFailed && isMotion ? (
-            <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/10">
+            <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/10">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white shadow-lg">
                 <Play className="ml-0.5 h-4 w-4 fill-current" aria-hidden />
               </span>
             </span>
           ) : null}
-        </div>
-      ) : null}
+          </>
+        ) : (
+          <span className="flex flex-col items-center gap-2 px-6 text-center">
+            <FileText className="h-6 w-6 text-zinc-300 dark:text-zinc-600" aria-hidden />
+            <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+              No media preview available
+            </span>
+          </span>
+        )}
+      </div>
 
       <p className="mt-2.5 flex-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
         {post.text ? truncate(post.text, 180) : <span className="italic text-zinc-400">No caption</span>}
@@ -147,8 +181,8 @@ export function PostCard({
         </ul>
       ) : null}
 
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-2.5 dark:border-zinc-800">
-        <div className="flex items-center gap-2.5">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-2.5 dark:border-zinc-800">
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <MetricChip
             icon={Heart}
             value={post.applause}
@@ -166,8 +200,11 @@ export function PostCard({
           />
         </div>
         <div className="flex items-center gap-2">
-          <span className="pb-num text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-            {formatMetric(post.engagementTotal, 'engagementTotal')}
+          <span
+            className="pb-num text-xs font-semibold text-zinc-900 dark:text-zinc-100"
+            title="Total engagement"
+          >
+            {formatMetric(post.engagementTotal, 'engagementTotal') + ' engagement'}
           </span>
           {post.permalink ? (
             <a

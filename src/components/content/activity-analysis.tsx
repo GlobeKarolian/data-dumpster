@@ -236,16 +236,24 @@ function Trend({
         : point.landscapeRate);
   const max = Math.max(
     metric === 'engagementRateByFollower' ? 0.000001 : 1,
-    ...focus,
-    ...(showBenchmark ? market : []),
+    ...focus.map((value) => value ?? 0),
+    ...(showBenchmark ? market.map((value) => value ?? 0) : []),
   );
   const x = (index: number) =>
     padLeft + (points.length <= 1 ? innerWidth / 2 : (index / (points.length - 1)) * innerWidth);
   const y = (value: number) => padTop + innerHeight - (value / max) * innerHeight;
-  const path = (values: number[]) => values
-    .map((value, index) =>
-      `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)} ${y(value).toFixed(1)}`)
-    .join(' ');
+  const path = (values: (number | null)[]) => {
+    let drawing = false;
+    return values.map((value, index) => {
+      if (value === null) {
+        drawing = false;
+        return '';
+      }
+      const command = drawing ? 'L' : 'M';
+      drawing = true;
+      return `${command}${x(index).toFixed(1)} ${y(value).toFixed(1)}`;
+    }).filter(Boolean).join(' ');
+  };
   const labelEvery = Math.max(1, Math.ceil(points.length / 6));
   const title = metric === 'posts'
     ? `${publicationLabel} per day`

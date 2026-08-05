@@ -86,6 +86,13 @@ import {
 } from './types';
 import { asArray, asCount, asDate, asRecord, asString, fetchJson } from './util/request';
 import { classifyPostType, extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
+import { DATASETS } from '@/lib/vendors/brightdata';
+import {
+  clearBrightDataReceipt,
+  pendingBrightDataStage,
+  profileFromBrightDataReceipt,
+  runBrightDataStage,
+} from './brightdata-receipt';
 
 /**
  * Pinned deliberately. The current Graph API version is v25.0, released
@@ -414,11 +421,11 @@ function readFacebookPost(raw: Record<string, unknown>): NormalizedPost | undefi
  * Owned or competitor, same question the Instagram adapter answers and the same
  * order of evidence.
  *
- *  1. `cursor.__isOwned`, injected by the runner from channels.is_owned and
- *     stripped again before the cursor is persisted.
- *  2. Otherwise, if a default Page id is configured, anything that is not it is
- *     a competitor. With nothing configured we assume owned, because that is the
- *     behaviour every existing deployment already has.
+ *  1. `cursor.__isOwned`, forced to false by the pooled runner and stripped
+ *     again before the cursor is persisted. A future org-private owned runner
+ *     may explicitly supply true.
+ *  2. The credential-based fallback exists only for direct/legacy adapter
+ *     callers that omit the flag; pooled collection never reaches it.
  */
 function isOwnedFacebook(ctx: FetchContext): boolean {
   const flag = ctx.cursor.__isOwned;
@@ -547,7 +554,12 @@ async function fetchFacebookPosts(
 
     url = nextPageUrl(body);
     if (!url) break;
-    if (items.length === 0) break;
+    if (items.length === 0) {
+      // An empty page with a next link is not a terminal signal. We do not
+      // persist credential-bearing Graph URLs, so surface the limitation.
+      hasMore = true;
+      break;
+    }
     if (pages >= opts.maxPages) hasMore = true;
   }
 
@@ -558,39 +570,14 @@ export const facebookAdapter: ChannelAdapter = {
   platform: FB,
   displayName: 'Facebook',
   accessNotes:
-    'OWNED PAGES: a long-lived Page access token with pages_read_engagement and pages_show_list on a '
-    + 'Page you administer returns posts, reactions, comments and shares. '
-    + 'COMPETITOR PAGES: obtainable, but only through Page Public Content Access (PPCA), a Meta App '
-    + 'Review feature. PPCA lets a live app read public data for Pages it does not administer: business '
-    + 'metadata, public posts and public comments, plus the Pages Search API. Meta names the allowed '
-    + 'usage as "aggregated, anonymized public content for competitive analysis and benchmarking". '
-    + 'Getting it requires a submitted App Review with a screencast showing the working feature, a '
-    + 'verified Business, and possibly additional signed contracts. Before approval the app can only '
-    + 'read Pages whose admin also has an admin, developer or tester role on the app; once the app is '
-    + 'Live it sees nothing public at all without the feature. Budget weeks, and expect rejections to '
-    + 'be about the demonstration rather than the idea. See docs/META-PPCA-APPLICATION.md. '
-    + 'Once approved, set ppcaApproved and supply ppcaAccessToken (a system user token is what Meta '
-    + 'recommends for PPCA rate limits) and competitor Pages are read from /{page-id}/feed with the '
-    + 'same engagement mapping as owned Pages, so the two are directly comparable. '
-    + 'STILL UNAVAILABLE, with or without PPCA: post impressions and reach for a Page you do not own, '
-    + 'saves, per-reaction-type breakdowns (reactions arrive as one total), Stories, and any history '
-    + 'from before you start collecting. The Meta Content Library holds CrowdTangle-era Facebook data '
-    + 'but is restricted to approved academic and non-profit researchers and cannot back a product '
-    + 'like this. Saves and views are reported as 0, which means "not exposed", not "zero".',
-  credentialFields: [
-    { key: 'brightDataApiKey', label: 'Bright Data API key', secret: true, required: false,
-      help: 'Competitor Pages, when Page Public Content Access has not been approved. Read docs/DATA-ACCESS.md first.' },
-    { key: 'accessToken', label: 'Page access token', secret: true, required: false,
-      help: 'Long-lived Page token from Graph API Explorer or your app\'s token exchange. Needs pages_read_engagement.' },
-    { key: 'pageId', label: 'Default Page id', required: false,
-      help: 'Optional. Only used as a fallback when a channel has no resolved external id.' },
-    { key: 'ppcaApproved', label: 'Page Public Content Access approved', required: false,
-      help: 'Set to "true" only once Meta App Review has actually granted Page Public Content Access to '
-        + 'your app. Until then competitor Pages fail with an explanation instead of returning nothing.' },
-    { key: 'ppcaAccessToken', label: 'PPCA token', secret: true, required: false,
-      help: 'Token used to read Pages you do not administer. Meta recommends a system user access token '
-        + 'here to avoid rate limiting. Falls back to the Page access token above if left blank.' },
-  ],
+    'CURRENT POOLED COLLECTION: existing Facebook profiles use Bright Data only. New Facebook '
+    + 'profile onboarding remains unavailable while verification would purchase the same crawl twice. '
+    + 'Meta / PPCA is not connected to pooled collection, and Meta verification does not activate it '
+    + 'in Settings or change the source route. The Graph implementation remains dormant for isolated '
+    + 'future work after confirmed approval, provenance, and owned-data-isolation release gates pass.',
+  // Pooled sources are deployment-managed. Keeping this empty prevents a
+  // Settings renderer from presenting dormant Meta/PPCA controls as usable.
+  credentialFields: [],
   // Meta publishes formulas, not a flat ceiling, and none of them are specific to
   // PPCA. The binding one for an internal tool is the platform limit for app and
   // user tokens, "200 * Number of Users" per rolling hour, where Number of Users
@@ -638,77 +625,52 @@ export const facebookAdapter: ChannelAdapter = {
     // purchased source is a legitimate answer to the same question and most
     // orgs will have one long before App Review clears.
     const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
-    if (!owned && !isPpcaApproved(ctx.credentials) && vendorKey) {
+    const pendingStage = pendingBrightDataStage(ctx.cursor, FB, 'facebook-page-posts');
+    if (pendingStage && !vendorKey) {
+      throw new AdapterError(
+        'Facebook has a paid Bright Data snapshot waiting to resume, but the Bright Data API key '
+          + 'is unavailable. Restore the key before collecting this Page through another source.',
+        { platform: FB, retryable: false },
+      );
+    }
+    if (!owned && vendorKey && (pendingStage !== undefined || !isPpcaApproved(ctx.credentials))) {
       const { fetchPagePosts } = await import('./facebook-brightdata');
-      const { PendingSnapshotError } = await import('@/lib/vendors/brightdata');
-
-      /*
-       * Resume a snapshot this channel already paid for.
-       *
-       * Bright Data takes minutes on a busy Page, which outlives a serverless
-       * request. Before this, every attempt triggered a fresh collection, was
-       * killed mid-poll, and forfeited the spend; Facebook Pages sat unread for
-       * days while being billed repeatedly. The receipt now survives in the
-       * cursor, so a run either finishes the outstanding job or hands it on.
-       */
-      const prior: Record<string, unknown> =
-        typeof ctx.cursor === 'object' && ctx.cursor !== null && !Array.isArray(ctx.cursor)
-          ? ctx.cursor as Record<string, unknown>
-          : {};
-      const pendingId = typeof prior.pendingSnapshotId === 'string'
-        ? prior.pendingSnapshotId
-        : undefined;
-      // A snapshot Bright Data has not finished within a day is not coming
-      // back, and polling it forever would wedge the channel permanently.
-      const pendingSince = typeof prior.pendingSince === 'string' ? prior.pendingSince : null;
-      const stale = pendingSince
-        ? Date.now() - Date.parse(pendingSince) > 24 * 60 * 60 * 1000
-        : false;
-      const resumeSnapshotId = stale ? undefined : pendingId;
-
-      try {
-        const result = await fetchPagePosts(ctx.handle, vendorKey, {
+      const stage = await runBrightDataStage(ctx, {
+        platform: FB,
+        stage: 'facebook-page-posts',
+        datasetId: DATASETS.facebookPagePosts,
+        legacyStage: 'facebook-page-posts',
+        legacyDatasetId: DATASETS.facebookPagePosts,
+      }, async (resumeSnapshotId) => await fetchPagePosts(ctx.handle, vendorKey, {
           since: ctx.since,
           until: ctx.until,
           limit: ctx.limit,
           onApiCall: ctx.onApiCall,
           signal: ctx.signal,
           resumeSnapshotId,
-        });
-        return {
-          posts: result.posts,
-          audience: result.audience ? [result.audience] : [],
-          profile: result.profile,
-          // Cleared on success so the next window starts fresh.
-          cursor: { source: 'brightdata', lastRunAt: new Date().toISOString() },
-          hasMore: false,
-          exhaustive: result.exhaustive,
-          incompleteReason: result.incompleteReason,
-          warnings: [
-            ...result.warnings,
-            ...(resumeSnapshotId
-              ? ['Completed a snapshot started by an earlier run, at no extra cost.']
-              : []),
-          ],
-        };
-      } catch (err) {
-        if (!(err instanceof PendingSnapshotError)) throw err;
-        // Nothing collected yet, but the job is alive and now recoverable.
-        return {
-          posts: [],
-          audience: [],
-          cursor: {
-            source: 'brightdata',
-            pendingSnapshotId: err.snapshotId,
-            pendingSince: pendingSince ?? new Date().toISOString(),
-            lastRunAt: new Date().toISOString(),
-          },
-          hasMore: true,
-          exhaustive: false,
-          incompleteReason: err.message,
-          warnings: [err.message],
-        };
-      }
+      }));
+      if (stage.kind === 'continuation') return stage.result;
+
+      const result = stage.value;
+      return {
+        posts: result.posts,
+        audience: result.audience ? [result.audience] : [],
+        profile: result.profile,
+        cursor: {
+          source: 'brightdata',
+          ...clearBrightDataReceipt(),
+          lastRunAt: new Date().toISOString(),
+        },
+        ...(result.exhaustive
+          ? { hasMore: false as const, exhaustive: true as const }
+          : {
+              hasMore: false as const,
+              exhaustive: false as const,
+              incompleteReason: result.incompleteReason
+                ?? 'Bright Data did not certify the requested Facebook window and exposed no continuation cursor.',
+            }),
+        warnings: [...result.warnings, ...stage.warnings],
+      };
     }
 
     // Refuse loudly before spending a call. A competitor Page without PPCA and
@@ -762,7 +724,15 @@ export const facebookAdapter: ChannelAdapter = {
         lastRunAt: new Date().toISOString(),
         graphVersion: GRAPH_VERSION,
       },
-      hasMore,
+      ...(hasMore
+        ? {
+            // Graph returned another page, but paging URLs contain credentials
+            // and are intentionally not persisted in the channel cursor.
+            hasMore: false as const,
+            exhaustive: false as const,
+            incompleteReason: 'Facebook reached the per-run post or page limit without a safe persisted Graph cursor. Increase the run limit or add token-free cursor persistence before certifying this window.',
+          }
+        : { hasMore: false as const, exhaustive: true as const }),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   },
@@ -1070,7 +1040,13 @@ async function fetchDiscoveredInstagram(
     }
 
     after = asString(asRecord(asRecord(media?.paging)?.cursors)?.after);
-    if (!after || items.length === 0) break;
+    if (!after) break;
+    if (items.length === 0) {
+      // A cursor after an empty nested page still advertises more source data.
+      // This adapter does not persist that cursor yet.
+      hasMore = true;
+      break;
+    }
     if (oldestOnPage && oldestOnPage < ctx.since && !sawInWindow) break;
     if (pages >= MAX_PAGES) hasMore = true;
   }
@@ -1084,12 +1060,11 @@ async function fetchDiscoveredInstagram(
  * ownership flag by design (it is a property of the channel row, not the fetch).
  *
  * Order of evidence:
- *  1. `cursor.__isOwned`, injected by the runner from channels.is_owned. Keys
- *     prefixed with a double underscore are stripped before the cursor is
- *     persisted, so this never leaks into the database.
- *  2. Otherwise, an account that is not the configured owner account is a
- *     competitor, which is the safe default: a wrong "owned" guess asks for
- *     insights we cannot have and fails the run.
+ *  1. `cursor.__isOwned`, forced to false by the pooled runner. Keys prefixed
+ *     with a double underscore are stripped before persistence. A future
+ *     org-private owned runner may explicitly supply true.
+ *  2. The configured-owner fallback exists only for direct/legacy adapter
+ *     callers that omit the flag; pooled collection never reaches it.
  */
 function isOwnedInstagram(ctx: FetchContext, ownerId: string | undefined): boolean {
   const flag = ctx.cursor.__isOwned;
@@ -1103,7 +1078,10 @@ export const instagramAdapter: ChannelAdapter = {
   platform: IG,
   displayName: 'Instagram',
   accessNotes:
-    'Instagram Business or Creator accounts only, through the Meta Graph API v21.0 with an '
+    'Pooled public collection uses Bright Data exclusively when it is configured. EnsembleData '
+    + 'is used only when Bright Data is not configured; a failed or cancelled paid Bright Data '
+    + 'stage is never retried through EnsembleData. '
+    + 'Instagram Business or Creator accounts can also use the Meta Graph API v21.0 with an '
     + 'instagram_basic, instagram_manage_insights and pages_read_engagement token. '
     + 'OWNED accounts return posts, likes, comments, saves and reach. '
     + 'COMPETITOR data is severely limited. CrowdTangle, which used to serve competitor Instagram and '
@@ -1129,15 +1107,19 @@ export const instagramAdapter: ChannelAdapter = {
   parseHandle: parseInstagramHandle,
 
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
-    // Business Discovery needs an approved Meta app AND an Instagram Business
-    // account we control. Most orgs adding a competitor have neither, so fall
-    // through to the purchased source when one is configured and no Meta token
-    // is. Without this the Sources screen refuses handles the product can
-    // demonstrably read.
-    const vendorKey = credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
+    // Callers supply the public-source allowlist. Do not reach around it to
+    // deployment environment variables or change vendors after a paid failure.
+    const ensembleToken = credentials.ensembleDataToken?.trim() || '';
+    const vendorKey = credentials.brightDataApiKey?.trim() || '';
     if (!credentials.accessToken && vendorKey) {
       const { fetchProfile } = await import('./instagram-brightdata');
       const { profile } = await fetchProfile(handle, vendorKey);
+      return profile;
+    }
+
+    if (!credentials.accessToken && ensembleToken) {
+      const { fetchProfile } = await import('./instagram-ensemble');
+      const { profile } = await fetchProfile(handle, ensembleToken);
       return profile;
     }
 
@@ -1179,61 +1161,146 @@ export const instagramAdapter: ChannelAdapter = {
     // Preferred competitor path. Reels are a separate call because only the
     // reels endpoint carries a play count, which is why every Instagram post
     // collected before this existed has zero views.
-    const ensembleToken = ctx.credentials.ensembleDataToken ?? process.env.ENSEMBLEDATA_TOKEN ?? '';
-    if (!ctx.credentials.accessToken && ensembleToken) {
-      const { fetchProfile: edProfile, fetchAllPosts } = await import('./instagram-ensemble');
-      const { userId, profile, audience } = await edProfile(
-        ctx.handle, ensembleToken, ctx.onApiCall, ctx.signal,
+    const pendingStage = pendingBrightDataStage(ctx.cursor, IG);
+    if (
+      pendingStage !== undefined
+      && pendingStage !== 'instagram-profile'
+      && pendingStage !== 'instagram-posts'
+    ) {
+      throw new AdapterError(
+        'Instagram has a Bright Data receipt for unknown stage "' + pendingStage
+          + '". Reconcile the receipt before starting another paid snapshot.',
+        { platform: IG, retryable: false },
       );
-      const { posts, warnings } = await fetchAllPosts(userId, ctx.handle, ensembleToken, {
-        since: ctx.since,
-        until: ctx.until,
-        limit: ctx.limit,
-        onApiCall: ctx.onApiCall,
-        signal: ctx.signal,
-      });
-      return {
-        posts,
-        audience: audience ? [audience] : [],
-        profile,
-        cursor: { source: 'ensembledata', igUserId: userId, lastRunAt: new Date().toISOString() },
-        hasMore: false,
-        warnings,
-      };
     }
 
-    const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
-    if (!ctx.credentials.accessToken && vendorKey) {
+    const ensembleToken = ctx.credentials.ensembleDataToken?.trim() || '';
+    const vendorKey = ctx.credentials.brightDataApiKey?.trim() || '';
+
+    if (pendingStage !== undefined && !vendorKey) {
+      throw new AdapterError(
+        'Instagram has a paid Bright Data snapshot waiting to resume, but the Bright Data API '
+          + 'key is unavailable. Restore the key before collecting this profile through another source.',
+        { platform: IG, retryable: false },
+      );
+    }
+    if (vendorKey && (pendingStage !== undefined || !ctx.credentials.accessToken)) {
       const { fetchProfile, postsFromProfile, fetchPostsByProfile } =
         await import('./instagram-brightdata');
 
-      const { profile, audience, raw } = await fetchProfile(
-        ctx.handle, vendorKey, ctx.onApiCall, ctx.signal,
-      );
+      let profile: AdapterProfile | undefined = pendingStage === 'instagram-posts'
+        ? profileFromBrightDataReceipt(ctx.cursor)
+        : undefined;
+      let audience: NormalizedAudience | undefined;
+      let raw: Record<string, unknown> | undefined;
+      const warnings: string[] = [];
+
+      if (pendingStage === 'instagram-posts' && !profile) {
+        throw new AdapterError(
+          'Instagram post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+            + ' has no bound profile identity. Refusing to apply paid rows to a pooled profile; '
+            + 'operator reconciliation is required.',
+          { platform: IG, retryable: false },
+        );
+      }
+
+      if (pendingStage !== 'instagram-posts') {
+        const profileStage = await runBrightDataStage(ctx, {
+          platform: IG,
+          stage: 'instagram-profile',
+          datasetId: DATASETS.instagramProfile,
+        }, async (resumeSnapshotId) => await fetchProfile(
+          ctx.handle,
+          vendorKey,
+          ctx.onApiCall,
+          ctx.signal,
+          resumeSnapshotId,
+        ));
+        if (profileStage.kind === 'continuation') return profileStage.result;
+        ({ profile, audience, raw } = profileStage.value);
+        warnings.push(...profileStage.warnings);
+      } else if (!ctx.externalId?.trim()) {
+        throw new AdapterError(
+          'Instagram post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+            + ' cannot resume because the pooled channel has no verified stable platform id. '
+            + 'Reconcile the profile identity before retrying; no observations were written.',
+          { platform: IG, retryable: false },
+        );
+      }
 
       // The profile payload carries twelve recent posts. That is enough for a
       // daily poll and nowhere near enough for a 28-day window, so ask the
       // discovery endpoint for real history and fall back to the twelve if it
       // fails. Losing depth is much better than losing the channel.
-      let posts = postsFromProfile(raw, ctx.handle, ctx.since, ctx.until);
-      const warnings: string[] = [];
+      let posts = raw
+        ? postsFromProfile(raw, ctx.handle, ctx.since, ctx.until)
+        : {
+            posts: [],
+            warnings: [] as string[],
+            exhaustive: false,
+            incompleteReason: 'The Instagram profile stage was already completed; post history '
+              + 'must come from the resumed date-ranged snapshot.',
+          };
 
       const windowDays = (ctx.until.getTime() - ctx.since.getTime()) / 864e5;
+      if (pendingStage === 'instagram-posts' && windowDays <= 3) {
+        throw new AdapterError(
+          'Instagram has a date-ranged post receipt for a window that no longer requires the '
+            + 'post stage. Refusing to discard or replace the paid snapshot.',
+          { platform: IG, retryable: false },
+        );
+      }
       if (windowDays > 3) {
         try {
-          const deep = await fetchPostsByProfile(ctx.handle, vendorKey, {
+          const deepContext = pendingStage === 'instagram-profile'
+            ? { ...ctx, cursor: { ...ctx.cursor, ...clearBrightDataReceipt() } }
+            : ctx;
+          const deepStage = await runBrightDataStage(deepContext, {
+            platform: IG,
+            stage: 'instagram-posts',
+            datasetId: DATASETS.instagramPost,
+          }, async (resumeSnapshotId) => await fetchPostsByProfile(ctx.handle, vendorKey, {
             since: ctx.since,
             until: ctx.until,
             limit: ctx.limit,
             onApiCall: ctx.onApiCall,
             signal: ctx.signal,
-          });
-          if (deep.posts.length > posts.posts.length) {
-            posts = { posts: deep.posts, warnings: deep.warnings };
+            resumeSnapshotId,
+          }), profile, audience ? [audience] : []);
+          if (deepStage.kind === 'continuation') return deepStage.result;
+          const deep = deepStage.value;
+          warnings.push(...deepStage.warnings);
+          if (profile && deep.profileExternalId) {
+            const profileEndpointId = profile.externalId;
+            profile = {
+              ...profile,
+              externalId: deep.profileExternalId,
+              meta: {
+                ...profile.meta,
+                // The profile dataset exposes Meta's graph id; the post
+                // dataset exposes Instagram's private user id, which matches
+                // EnsembleData and is therefore our cross-vendor canonical id.
+                profileEndpointId,
+              },
+            };
+          }
+          if (!raw || deep.posts.length > posts.posts.length) {
+            posts = deep;
           } else {
             warnings.push(...deep.warnings);
+            // The date-ranged dataset, not the twelve-post profile sample, is
+            // the authority on whether this window was exhausted.
+            posts = {
+              ...posts,
+              exhaustive: deep.exhaustive,
+              incompleteReason: deep.incompleteReason,
+            };
           }
         } catch (err) {
+          if (ctx.signal?.aborted) throw err;
+          // Once a paid post receipt exists, falling back to the profile sample
+          // would clear that receipt and forfeit resumable work.
+          if (pendingStage === 'instagram-posts') throw err;
           warnings.push(
             'Instagram deep history for @' + ctx.handle + ' failed, using the twelve posts from the '
             + 'profile call instead: ' + (err instanceof Error ? err.message : String(err)),
@@ -1244,10 +1311,51 @@ export const instagramAdapter: ChannelAdapter = {
       return {
         posts: posts.posts,
         audience: audience ? [audience] : [],
-        profile,
-        cursor: { source: 'brightdata', mode: 'vendor', lastRunAt: new Date().toISOString() },
-        hasMore: false,
+        ...(profile ? { profile } : {}),
+        cursor: {
+          source: 'brightdata',
+          mode: 'vendor',
+          ...clearBrightDataReceipt(),
+          lastRunAt: new Date().toISOString(),
+        },
+        ...(posts.exhaustive
+          ? { hasMore: false as const, exhaustive: true as const }
+          : {
+              hasMore: false as const,
+              exhaustive: false as const,
+              incompleteReason: posts.incompleteReason
+                ?? 'Bright Data did not certify the requested Instagram window and exposed no continuation cursor.',
+            }),
         warnings: [...posts.warnings, ...warnings],
+      };
+    }
+
+    if (!ctx.credentials.accessToken && ensembleToken) {
+      const { fetchProfile: edProfile, fetchAllPosts } = await import('./instagram-ensemble');
+      const { userId, profile, audience } = await edProfile(
+        ctx.handle, ensembleToken, ctx.onApiCall, ctx.signal,
+      );
+      const result = await fetchAllPosts(userId, ctx.handle, ensembleToken, {
+        since: ctx.since,
+        until: ctx.until,
+        limit: ctx.limit,
+        onApiCall: ctx.onApiCall,
+        signal: ctx.signal,
+      });
+      return {
+        posts: result.posts,
+        audience: audience ? [audience] : [],
+        profile,
+        cursor: { source: 'ensembledata', igUserId: userId, lastRunAt: new Date().toISOString() },
+        ...(result.exhaustive
+          ? { hasMore: false as const, exhaustive: true as const }
+          : {
+              hasMore: false as const,
+              exhaustive: false as const,
+              incompleteReason: result.incompleteReason
+                ?? 'EnsembleData did not certify the requested Instagram window and exposed no continuation cursor.',
+            }),
+        warnings: result.warnings,
       };
     }
 
@@ -1269,7 +1377,13 @@ export const instagramAdapter: ChannelAdapter = {
         audience: [audience],
         profile,
         cursor: { igUserId: profile.externalId, mode: 'owned', lastRunAt: new Date().toISOString() },
-        hasMore: media.hasMore,
+        ...(media.hasMore
+          ? {
+              hasMore: false as const,
+              exhaustive: false as const,
+              incompleteReason: 'Instagram Graph reached the per-run post or page limit without a safely persisted paging cursor. Increase the run limit or add cursor persistence before certifying this window.',
+            }
+          : { hasMore: false as const, exhaustive: true as const }),
         warnings: warnings.length > 0 ? warnings : undefined,
       };
     }
@@ -1293,7 +1407,13 @@ export const instagramAdapter: ChannelAdapter = {
       audience: [discovered.audience],
       profile: discovered.profile,
       cursor: { mode: 'discovery', queriedVia: ownerId, lastRunAt: new Date().toISOString() },
-      hasMore: discovered.hasMore,
+      ...(discovered.hasMore
+        ? {
+            hasMore: false as const,
+            exhaustive: false as const,
+            incompleteReason: 'Instagram Business Discovery reached the per-run post or page limit without a persisted nested-media cursor. Narrow the window or add cursor persistence before certifying it.',
+          }
+        : { hasMore: false as const, exhaustive: true as const }),
       warnings,
     };
   },

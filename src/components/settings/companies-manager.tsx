@@ -2,17 +2,18 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, FileUp, Loader2, Plus, Target, Trash2, X } from 'lucide-react';
-import type { Platform } from '@/lib/types';
+import { Building2, Check, FileUp, Loader2, Plus, Target, Trash2, X } from 'lucide-react';
+import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { Badge, PlatformBadge } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PlatformIcon } from '@/components/ui/platform-icon';
 import { AddChannelForm } from '@/components/settings/sources-manager';
 import { LandscapeImportDialog } from '@/components/settings/landscape-import-dialog';
 
@@ -30,7 +31,7 @@ export interface CompanyRecord {
   website: string | null;
   segment: string | null;
   color: string | null;
-  /** Whether this workspace created the pooled row and may offer destructive controls for it. */
+  /** Whether this workspace created the pooled row and may edit its descriptive metadata. */
   attributedToOrg: boolean;
   channelCount: number;
   channels: CompanyProfileRecord[];
@@ -46,6 +47,17 @@ export interface LandscapeRecordFull {
   memberIds: string[];
   memberCount: number;
 }
+
+const COMPANY_PLATFORM_ORDER: Platform[] = [
+  'facebook',
+  'instagram',
+  'threads',
+  'twitter',
+  'youtube',
+  'tiktok',
+  'bluesky',
+  'reddit',
+];
 
 async function send(url: string, method: string, body?: unknown): Promise<void> {
   const res = await fetch(url, {
@@ -94,7 +106,6 @@ export function CompaniesManager({
       <CompaniesCard
         companies={inLandscape}
         canEdit={canEdit}
-        canDeleteCompanies={canDeleteCompanies}
         title={landscapeName ? 'Companies in ' + landscapeName : 'Companies'}
         emptyHint={landscapeName
           ? 'This landscape has no companies yet. Add one below, or create a new one.'
@@ -104,7 +115,6 @@ export function CompaniesManager({
         <CompaniesCard
           companies={others}
           canEdit={canEdit}
-          canDeleteCompanies={canDeleteCompanies}
           title={'Other companies in your workspace (' + others.length + ')'}
           subtitle={landscapeName
             ? 'Tracked elsewhere, or not yet in any landscape. Add them to '
@@ -126,7 +136,6 @@ export function CompaniesManager({
 function CompaniesCard({
   companies,
   canEdit,
-  canDeleteCompanies,
   title = 'Companies',
   subtitle,
   emptyHint,
@@ -134,7 +143,6 @@ function CompaniesCard({
 }: {
   companies: CompanyRecord[];
   canEdit: boolean;
-  canDeleteCompanies: boolean;
   title?: string;
   subtitle?: string;
   emptyHint?: string;
@@ -148,7 +156,6 @@ function CompaniesCard({
   const [segment, setSegment] = React.useState('');
   const [color, setColor] = React.useState('#2563EB');
   const [busy, setBusy] = React.useState(false);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const profileCompany = companies.find((company) => company.id === addingFor) ?? null;
 
@@ -173,19 +180,6 @@ function CompaniesCard({
       setError(err instanceof Error ? err.message : 'Could not create the company.');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const remove = async (id: string) => {
-    setBusyId(id);
-    setError(null);
-    try {
-      await send('/api/companies/' + id, 'DELETE');
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the company.');
-    } finally {
-      setBusyId(null);
     }
   };
 
@@ -268,84 +262,89 @@ function CompaniesCard({
               ?? 'Start with your own brand, then add the outlets you actually compete with for attention.'}
           />
         ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-            {companies.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <span
-                  aria-hidden
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: c.color ?? '#71717a' }}
-                />
-                <span className="min-w-40 flex-1">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
-                      {c.name}
-                    </span>
-                    {!c.attributedToOrg ? <Badge tone="outline">Shared</Badge> : null}
-                  </span>
-                  <span className="block truncate text-[11px] text-zinc-500">
-                    {[c.segment, c.website].filter(Boolean).join(' · ') || 'No segment or website set'}
-                  </span>
-                </span>
-
-                <span className="flex min-w-0 basis-full items-center gap-3 pl-5 sm:basis-auto sm:pl-0">
-                  {c.channels.length === 0 ? (
-                    <span className="text-[11px] text-zinc-400">No social profiles</span>
-                  ) : (
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-                      {c.channels.slice(0, 4).map((channel) => (
+          <div className="overflow-x-auto [scrollbar-width:thin]">
+            <table className="w-full min-w-[52rem] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-900/40">
+                  <th scope="col" className="sticky left-0 z-10 min-w-56 bg-zinc-50 px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:bg-zinc-900">
+                    Company
+                  </th>
+                  {COMPANY_PLATFORM_ORDER.map((platform) => (
+                    <th key={platform} scope="col" className="w-16 px-2 py-2 text-center">
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+                        <PlatformIcon platform={platform} label className="h-5 w-5" />
+                      </span>
+                    </th>
+                  ))}
+                  {canEdit ? <th scope="col" className="w-28 px-4 py-2"><span className="sr-only">Actions</span></th> : null}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                {companies.map((company) => (
+                  <tr key={company.id} className="group hover:bg-zinc-50/70 dark:hover:bg-zinc-900/30">
+                    <th scope="row" className="sticky left-0 z-10 bg-white px-4 py-3 group-hover:bg-zinc-50 dark:bg-zinc-950 dark:group-hover:bg-zinc-900">
+                      <span className="flex min-w-0 items-center gap-3">
                         <span
-                          key={channel.id}
-                          className={cn(!channel.active && 'opacity-50')}
-                          title={'@' + channel.handle}
+                          aria-hidden
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm"
+                          style={{ backgroundColor: company.color ?? '#71717a' }}
                         >
-                          <PlatformBadge platform={channel.platform} />
+                          {company.name.slice(0, 2).toUpperCase()}
                         </span>
-                      ))}
-                      {c.channels.length > 4 ? (
-                        <span className="text-[11px] text-zinc-400">
-                          {'+' + (c.channels.length - 4)}
+                        <span className="min-w-0">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                              {company.name}
+                            </span>
+                            {!company.attributedToOrg ? <Badge tone="outline">Shared</Badge> : null}
+                          </span>
+                          <span className="block max-w-44 truncate text-[10px] font-normal text-zinc-500">
+                            {[company.segment, company.website].filter(Boolean).join(' · ')
+                              || company.channelCount + (company.channelCount === 1 ? ' profile' : ' profiles')}
+                          </span>
                         </span>
-                      ) : null}
-                    </span>
-                  )}
-                  <span className="pb-num shrink-0 text-[11px] text-zinc-400">
-                    {c.channelCount + (c.channelCount === 1 ? ' profile' : ' profiles')}
-                  </span>
-                </span>
-
-                {canEdit && c.attributedToOrg ? (
-                  <Button size="sm" onClick={() => setAddingFor(c.id)}>
-                    <Plus className="h-3 w-3" aria-hidden />
-                    Add profile
-                  </Button>
-                ) : null}
-                {canDeleteCompanies && c.attributedToOrg ? (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={'Delete ' + c.name}
-                    disabled={busyId === c.id}
-                    onClick={() => {
-                      if (!window.confirm(
-                        'Delete ' + c.name + '? This removes its social profiles and all collected history. '
-                        + 'This cannot be undone.',
-                      )) return;
-                      void remove(c.id);
-                    }}
-                  >
-                    {busyId === c.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    ) : (
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    )}
-                  </Button>
-                ) : (
-                  <span className="w-8" aria-hidden />
-                )}
-              </li>
-            ))}
-          </ul>
+                      </span>
+                    </th>
+                    {COMPANY_PLATFORM_ORDER.map((platform) => {
+                      const channel = company.channels.find((candidate) => candidate.platform === platform);
+                      const connected = Boolean(channel?.active);
+                      return (
+                        <td key={platform} className="px-2 py-3 text-center">
+                          <span
+                            role="img"
+                            aria-label={channel
+                              ? PLATFORM_LABELS[platform] + (connected ? ' connected' : ' paused') + ': ' + channel.handle
+                              : PLATFORM_LABELS[platform] + ' not connected'}
+                            title={channel ? channel.handle + (connected ? '' : ' (paused)') : 'Not connected'}
+                            className={cn(
+                              'inline-flex h-8 w-8 items-center justify-center rounded-full',
+                              connected
+                                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-900'
+                                : channel
+                                  ? 'bg-amber-50 text-amber-600 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:ring-amber-900'
+                                  : 'bg-zinc-100 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-700',
+                            )}
+                          >
+                            {channel ? <Check className="h-4 w-4" aria-hidden /> : null}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    {canEdit ? (
+                      <td className="px-4 py-3 text-right">
+                        {company.attributedToOrg ? (
+                          <Button size="sm" onClick={() => setAddingFor(company.id)}>
+                            <Plus className="h-3 w-3" aria-hidden />
+                            Profile
+                          </Button>
+                        ) : null}
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 

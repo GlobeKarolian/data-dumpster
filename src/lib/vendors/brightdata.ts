@@ -14,10 +14,12 @@
  * developer made.
  *
  * TRANSPORT
- * The synchronous endpoint accepts up to 20 URLs and returns parsed JSON within
- * a one minute budget, which fits ChannelAdapter.fetch without any async rework.
- * If a job exceeds that budget the API degrades to returning a snapshot id
- * instead of rows, so we poll for it rather than failing the run.
+ * Bright Data is always started through its asynchronous trigger endpoint.
+ * The trigger returns the paid snapshot receipt immediately; ChannelAdapter
+ * then polls that receipt until this invocation's budget expires and persists
+ * it for the next worker when necessary. Never use the synchronous scrape
+ * endpoint here: it can hold the connection open past our deadline without
+ * returning the receipt, which strands paid work and purchases it again.
  */
 import { AdapterError } from '@/lib/adapters/types';
 import type { Platform } from '@/lib/types';
@@ -37,11 +39,14 @@ export const DATASETS = {
   instagramPost: 'gd_lk5ns7kz21pck8jpis',
   instagramReel: 'gd_lyclm20il4r5helnj',
   threadsProfile: 'gd_mde7jg3ld2h3hnnf2',
+  threadsPosts: 'gd_md75myxy14rihbjksa',
   facebookPagePosts: 'gd_lkaxegm826bjpoo9m5',
   twitterPosts: 'gd_lwxkxvnf1cynvib9co',
+  linkedinCompany: 'gd_l1vikfnt1wgvvqz95w',
+  linkedinCompanyPosts: 'gd_lyy3tktm25m4avu764',
 } as const;
 
-/** Sync requests accept at most 20 URLs per call. */
+/** Bright Data accepts at most 20 inputs per trigger for these datasets. */
 export const MAX_SYNC_URLS = 20;
 
 export interface BrightDataOptions {
@@ -74,51 +79,95 @@ function fail(platform: Platform, message: string, status?: number): never {
  * before a slow profile finishes, and the failure surfaces as a bare
  * "fetch failed" with no status. That accounted for every unexplained channel
  * failure in the first production runs, so retry network faults specifically,
- * with a longer per-attempt budget than any single scrape should need.
+ * while keeping every attempt inside one bounded operation deadline.
  */
 const NETWORK_ATTEMPTS = 3;
+
+/**
+ * Leave a full minute of the 300-second ingest invocation for the runner to
+ * persist the receipt/outcome and release its leases. Callers may request a
+ * shorter operation budget, but cannot let one vendor call consume the whole
+ * serverless invocation.
+ */
+const MAX_OPERATION_TIMEOUT_MS = 240_000;
+
+class OperationDeadlineExceeded extends Error {
+  constructor() {
+    super('Bright Data operation deadline exceeded');
+    this.name = 'OperationDeadlineExceeded';
+  }
+}
+
+function remainingMs(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
+}
+
+function operationTimeoutMs(opts: BrightDataOptions & { discoverBy?: string }): number {
+  const fallback = opts.discoverBy ? 75_000 : 60_000;
+  const requested = opts.timeoutMs ?? fallback;
+  if (!Number.isFinite(requested)) return fallback;
+  return Math.min(Math.max(0, requested), MAX_OPERATION_TIMEOUT_MS);
+}
 
 async function request(
   url: string,
   init: RequestInit,
   opts: BrightDataOptions,
+  deadline: number,
 ): Promise<unknown> {
-  let res: Response | null = null;
+  let response: { res: Response; text: string } | null = null;
   let lastError = '';
 
   for (let attempt = 1; attempt <= NETWORK_ATTEMPTS; attempt += 1) {
+    const requestBudget = remainingMs(deadline);
+    if (requestBudget <= 0) throw new OperationDeadlineExceeded();
+
     opts.onApiCall?.();
 
-    // Own timeout, so a hung socket fails predictably instead of at whatever
-    // undici's default happens to be on this runtime.
+    // This timer uses the operation's remaining budget, not a fresh budget per
+    // retry. It covers both response headers and body consumption; otherwise a
+    // hanging body or three slow attempts can outlive the serverless worker.
     const timer = new AbortController();
-    const cancel = setTimeout(() => timer.abort(), opts.timeoutMs ?? 180_000);
+    const cancel = setTimeout(() => timer.abort(), requestBudget);
     const signals: AbortSignal[] = [timer.signal];
     if (opts.signal) signals.push(opts.signal);
 
     try {
-      res = await fetch(url, {
+      const res = await fetch(url, {
         ...init,
         signal: signals.length > 1 ? AbortSignal.any(signals) : timer.signal,
       });
+      const text = await res.text();
+      response = { res, text };
       break;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       if (opts.signal?.aborted) fail(opts.platform, 'request cancelled by caller');
+      if (timer.signal.aborted || remainingMs(deadline) <= 0) {
+        throw new OperationDeadlineExceeded();
+      }
       if (attempt === NETWORK_ATTEMPTS) {
         fail(opts.platform, 'network failure after ' + NETWORK_ATTEMPTS + ' attempts: ' + lastError);
       }
       // Linear backoff. The vendor is not rate limiting us here, the socket
       // died, so there is nothing to be gained by backing off aggressively.
-      await new Promise((r) => setTimeout(r, attempt * 2000));
+      // The wait is clipped to the same whole-operation deadline.
+      const wait = Math.min(attempt * 2000, remainingMs(deadline));
+      if (wait <= 0) throw new OperationDeadlineExceeded();
+      try {
+        await sleep(wait, opts.signal);
+      } catch {
+        if (opts.signal?.aborted) fail(opts.platform, 'request cancelled by caller');
+        throw new OperationDeadlineExceeded();
+      }
     } finally {
       clearTimeout(cancel);
     }
   }
 
-  if (!res) return fail(opts.platform, 'network failure: ' + lastError);
+  if (!response) return fail(opts.platform, 'network failure: ' + lastError);
 
-  const text = await res.text();
+  const { res, text } = response;
   let parsed: unknown = undefined;
   try {
     parsed = text ? JSON.parse(text) : undefined;
@@ -144,8 +193,20 @@ async function request(
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('aborted')); }, { once: true });
+    if (signal?.aborted) {
+      reject(new Error('aborted'));
+      return;
+    }
+    const finish = () => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    };
+    const abort = () => {
+      clearTimeout(t);
+      reject(new Error('aborted'));
+    };
+    const t = setTimeout(finish, ms);
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }
 
@@ -161,26 +222,33 @@ async function awaitSnapshot(
   const headers = { Authorization: 'Bearer ' + opts.apiKey };
   let delay = 2000;
 
-  while (Date.now() < deadline) {
-    await sleep(delay, opts.signal);
-    delay = Math.min(delay * 1.5, 10000);
+  try {
+    while (Date.now() < deadline) {
+      await sleep(Math.min(delay, remainingMs(deadline)), opts.signal);
+      delay = Math.min(delay * 1.5, 10000);
+      if (remainingMs(deadline) <= 0) break;
 
-    const progress = await request(
-      BASE + '/progress/' + encodeURIComponent(snapshotId),
-      { headers, signal: opts.signal },
-      opts,
-    );
-    const status = isRecord(progress) && typeof progress.status === 'string' ? progress.status : '';
+      const progress = await request(
+        BASE + '/progress/' + encodeURIComponent(snapshotId),
+        { headers, signal: opts.signal },
+        opts,
+        deadline,
+      );
+      const status = isRecord(progress) && typeof progress.status === 'string' ? progress.status : '';
 
-    if (status === 'failed') fail(opts.platform, 'snapshot ' + snapshotId + ' failed');
-    if (status !== 'ready') continue;
+      if (status === 'failed') fail(opts.platform, 'snapshot ' + snapshotId + ' failed');
+      if (status !== 'ready') continue;
 
-    const rows = await request(
-      BASE + '/snapshot/' + encodeURIComponent(snapshotId) + '?format=json',
-      { headers, signal: opts.signal },
-      opts,
-    );
-    return Array.isArray(rows) ? rows : [];
+      const rows = await request(
+        BASE + '/snapshot/' + encodeURIComponent(snapshotId) + '?format=json',
+        { headers, signal: opts.signal },
+        opts,
+        deadline,
+      );
+      return Array.isArray(rows) ? rows : [];
+    }
+  } catch (err) {
+    if (!(err instanceof OperationDeadlineExceeded)) throw err;
   }
 
   // Out of time, but the job is still running on Bright Data's side and will
@@ -233,6 +301,8 @@ export async function scrapeSync<T = Record<string, unknown>>(
     discoverBy?:
       | 'url'
       | 'profile_url'
+      | 'profile'
+      | 'company_url'
       | 'user_name'
       | 'keyword';
     /**
@@ -257,29 +327,44 @@ export async function scrapeSync<T = Record<string, unknown>>(
    * nothing but a few minutes of latency, and keeps one slow Page from
    * starving the queue.
    */
-  const timeout = opts.timeoutMs ?? (opts.discoverBy ? 75_000 : 60_000);
+  const timeout = operationTimeoutMs(opts);
   const deadline = Date.now() + timeout;
 
   if (opts.resumeSnapshotId) {
     return await awaitSnapshot(opts.resumeSnapshotId, opts, deadline) as T[];
   }
-  const url = BASE + '/scrape?dataset_id=' + encodeURIComponent(datasetId)
+  // Always buy work through /trigger, even for a single exact URL. /scrape can
+  // keep the socket open until the collection finishes; if our operation budget
+  // expires first there is no snapshot id to resume. /trigger returns that
+  // durable receipt before collection begins, so an invocation timeout only
+  // adds latency and never loses or duplicates paid work.
+  const url = BASE + '/trigger?dataset_id=' + encodeURIComponent(datasetId)
     + '&format=json&include_errors=true'
     + (opts.discoverBy ? '&type=discover_new&discover_by=' + opts.discoverBy : '');
 
-  const body = await request(url, {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + opts.apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-    signal: opts.signal,
-  }, opts);
+  let body: unknown;
+  try {
+    body = await request(url, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + opts.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+      signal: opts.signal,
+    }, opts, deadline);
+  } catch (err) {
+    if (!(err instanceof OperationDeadlineExceeded)) throw err;
+    fail(
+      opts.platform,
+      'operation exceeded its ' + timeout + 'ms budget before a resumable snapshot receipt was returned',
+    );
+  }
 
+  // The trigger endpoint returns a job handle. Retain array support only for a
+  // defensive vendor-compatibility path and for old recorded fixtures.
   if (Array.isArray(body)) return body as T[];
 
-  // Over budget: the API returned a job handle instead of rows.
   if (isRecord(body) && typeof body.snapshot_id === 'string') {
     return await awaitSnapshot(body.snapshot_id, opts, deadline) as T[];
   }

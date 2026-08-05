@@ -26,7 +26,11 @@ import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, HttpError } 
 import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { db } from '@/db';
 import { briefs } from '@/db/schema';
-import { generateBrief, type GeneratedBrief } from '@/lib/ai/brief';
+import {
+  BriefVerificationError,
+  generateBrief,
+  type GeneratedBrief,
+} from '@/lib/ai/brief';
 import { summarizeVerification } from '@/lib/ai/verify';
 import { ModelError } from '@/lib/ai/types';
 import { parseRangeParams } from '@/lib/dates';
@@ -89,6 +93,9 @@ export const POST = apiHandler(async (req: NextRequest) => {
      */
     if (err instanceof ModelError) {
       throw new HttpError(502, err.message, 'model_error');
+    }
+    if (err instanceof BriefVerificationError) {
+      throw new HttpError(422, err.message, 'unverified_ai_brief');
     }
     throw err;
   }

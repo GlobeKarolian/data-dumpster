@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import {
-  Bar, BarChart, Cell, LabelList, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
   type TooltipContentProps,
 } from 'recharts';
 import {
@@ -11,6 +11,7 @@ import {
 import { compactNumber, formatChange } from '@/lib/utils';
 import { measuredCompetitorAverage } from '@/lib/metrics/availability';
 import { formatMetric } from '@/components/ui/format';
+import { PlatformIcon } from '@/components/ui/platform-icon';
 import { ChartFrame, ChartTooltipCard } from './chart-frame';
 import { ACCENT, companyColor, platformColor } from './theme';
 
@@ -36,6 +37,7 @@ interface Datum {
   previousValue: number | null;
   changePct: number | null;
   available: boolean;
+  complete: boolean;
   valueLabel: string;
   breakdown: Partial<Record<Platform, number>>;
   isFocus: boolean;
@@ -98,6 +100,7 @@ export function BarLeaderboard({
           name: r.company.name,
           value: Number.isFinite(r.value) ? r.value : 0,
           available: r.available,
+          complete: r.complete !== false,
           previousValue: r.previousValue ?? null,
           changePct: r.changePct ?? null,
           valueLabel: r.available
@@ -139,11 +142,24 @@ export function BarLeaderboard({
   const isEmpty = rows.length === 0 || !hasMeasuredValue || !hasSignal;
   const height = isEmpty
     ? 120
-    : Math.max(120, data.length * 26 + (useStackedBreakdown ? 52 : 28));
+    : Math.max(120, data.length * 26 + 28);
   const hasMore = measuredRows.length > maxRows;
 
   return (
     <div>
+      {useStackedBreakdown ? (
+        <div
+          aria-label="Platform breakdown"
+          className="mb-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-1 text-[10px] leading-none text-zinc-600 dark:text-zinc-400"
+        >
+          {breakdownPlatforms.map((platform) => (
+            <span key={platform} className="inline-flex items-center gap-1 whitespace-nowrap">
+              <PlatformIcon platform={platform} className="h-2.5 w-2.5" />
+              <span>{PLATFORM_LABELS[platform]}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <ChartFrame
         height={height}
         isEmpty={isEmpty}
@@ -170,7 +186,7 @@ export function BarLeaderboard({
             data={data}
             layout="vertical"
             stackOffset="sign"
-            margin={{ top: useStackedBreakdown ? 8 : 0, right: 104, bottom: 0, left: 0 }}
+            margin={{ top: average !== null ? 18 : 2, right: 104, bottom: 0, left: 0 }}
           >
           <XAxis
             type="number"
@@ -201,6 +217,11 @@ export function BarLeaderboard({
                   color: d.fill,
                 },
               ];
+              rowsOut.push({
+                label: 'Coverage',
+                value: d.complete ? 'Complete window' : 'Partial window',
+                color: d.complete ? '#15803D' : '#B45309',
+              });
               if (d.previousValue !== null) {
                 rowsOut.push({
                   label: 'Previous window',
@@ -253,13 +274,6 @@ export function BarLeaderboard({
           ) : null}
           {useStackedBreakdown ? (
             <>
-              <Legend
-                verticalAlign="top"
-                align="right"
-                iconType="square"
-                iconSize={7}
-                wrapperStyle={{ color: 'var(--pb-label)', fontSize: 10 }}
-              />
               {breakdownPlatforms.map((platform, platformIndex) => (
                 <Bar
                   key={platform}

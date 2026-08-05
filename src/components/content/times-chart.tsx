@@ -60,7 +60,7 @@ export function TimesChart({
     ? point.landscapePosts / activityPeriods / safeCompanies
     : metric === 'engagementPerPost'
       ? point.landscapeEngagementPerPost
-      : (point.landscapeRate ?? 0));
+      : point.landscapeRate);
   const max = Math.max(
     metric === 'rate' ? 0.000001 : 1,
     ...focus.map((v) => v ?? 0),
@@ -71,10 +71,18 @@ export function TimesChart({
     padLeft + (data.length <= 1 ? innerWidth / 2 : index * step);
   const y = (value: number) =>
     padTop + innerHeight - (value / max) * innerHeight;
-  const path = (values: number[]) => values
-    .map((value, index) =>
-      `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)} ${y(value).toFixed(1)}`)
-    .join(' ');
+  const path = (values: (number | null)[]) => {
+    let drawing = false;
+    return values.map((value, index) => {
+      if (value === null) {
+        drawing = false;
+        return '';
+      }
+      const command = drawing ? 'L' : 'M';
+      drawing = true;
+      return `${command}${x(index).toFixed(1)} ${y(value).toFixed(1)}`;
+    }).filter(Boolean).join(' ');
+  };
   const labelEvery = kind === 'hour' ? 4 : 1;
   const axisValue = metric === 'rate' ? pct : number;
   const title = metric === 'activity'
@@ -157,14 +165,14 @@ export function TimesChart({
 
         {showBenchmark ? (
           <path
-            d={path(landscape.map((v) => v ?? 0))}
+            d={path(landscape)}
             fill="none"
             strokeWidth={1.25}
             strokeDasharray="4 3"
             className="stroke-zinc-400 dark:stroke-zinc-500"
           />
         ) : null}
-        <path d={path(focus.map((v) => v ?? 0))} fill="none" strokeWidth={1.75} stroke="#C8102E" />
+        <path d={path(focus)} fill="none" strokeWidth={1.75} stroke="#C8102E" />
 
         {data.map((point, index) => (
           index % labelEvery === 0 || index === data.length - 1 ? (

@@ -37,6 +37,7 @@ export default async function ReportsPage({
 }) {
   const ctx = await resolveContext(await searchParams);
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
+  const landscapeId = ctx.landscape.id;
 
   const reports = await query<ReportRow>(({ sql }) => sql`
     SELECT r.id, r.title, r.period_start, r.period_end, r.status, r.data_note, r.updated_at,
@@ -51,6 +52,7 @@ export default async function ReportsPage({
       FROM weekly_reports r
       LEFT JOIN landscapes l ON l.id = r.landscape_id
      WHERE r.org_id = ${ctx.orgId}::uuid
+       AND r.landscape_id = ${landscapeId}::uuid
      ORDER BY r.period_end DESC, r.created_at DESC
      LIMIT 60
   `);
@@ -79,6 +81,7 @@ export default async function ReportsPage({
       <ScheduleManager
         landscapeId={ctx.landscape.id}
         canEdit={ctx.role === 'admin' || ctx.role === 'owner'}
+        automationEnabled={process.env.AUTOMATION_DISPATCHER_ENABLED === 'true'}
       />
 
       {reports.error ? (
@@ -112,7 +115,7 @@ export default async function ReportsPage({
                   className="flex items-start transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
                 >
                   <Link
-                    href={'/reports/' + r.id}
+                    href={'/reports/' + r.id + '?landscape=' + landscapeId}
                     className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">

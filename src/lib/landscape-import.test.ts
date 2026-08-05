@@ -207,16 +207,17 @@ test('deduplicates identical accounts for one company without dropping the warni
   assert.ok(hasCode(preview.warnings, 'duplicate_account'));
 });
 
-test('rejects uncollectible LinkedIn competitors and Reddit communities', () => {
+test('accepts LinkedIn company pages and rejects Reddit communities', () => {
   const preview = parseLandscapeImportCsv([
     'company,platform,account',
     'The Boston Globe,linkedin,https://www.linkedin.com/company/boston-globe-media/',
     'The Boston Globe,reddit,r/boston',
   ].join('\n'));
 
-  assert.ok(hasCode(preview.errors, 'owned_account_required'));
   assert.ok(hasCode(preview.errors, 'reddit_user_required'));
-  assert.equal(preview.accounts.length, 0);
+  assert.equal(preview.accounts.length, 1);
+  assert.equal(preview.accounts[0]?.platform, 'linkedin');
+  assert.equal(preview.accounts[0]?.handle, 'boston-globe-media');
 });
 
 test('enforces the company and account limits', () => {

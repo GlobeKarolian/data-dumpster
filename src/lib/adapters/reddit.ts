@@ -73,6 +73,19 @@ function hasOwn(row: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(row, key);
 }
 
+/** Reddit's source-native fullname prefixes distinguish account namespaces. */
+function stableRedditIdentity(
+  value: unknown,
+  entityType: RedditEntityType,
+): string | undefined {
+  const candidate = str(value);
+  if (!candidate) return undefined;
+  const pattern = entityType === 'user' ? /^t2_[a-z0-9]+$/i : /^t5_[a-z0-9]+$/i;
+  return pattern.test(candidate)
+    ? candidate
+    : undefined;
+}
+
 function decodeRedditUrl(value: string | undefined): string | undefined {
   return value
     ?.replace(/&amp;/gi, '&')
@@ -328,10 +341,12 @@ function toPost(
 function profileFromRow(
   row: Record<string, unknown>,
   handle: string,
-): AdapterProfile {
+): AdapterProfile | undefined {
+  const externalId = stableRedditIdentity(row.subreddit_id, 'subreddit');
+  if (!externalId) return undefined;
   const subscribersPresent = hasOwn(row, 'subreddit_subscribers');
   return {
-    externalId: str(row.subreddit_id) ?? handle,
+    externalId,
     handle,
     displayName: str(row.subreddit_name_prefixed) ?? 'r/' + handle,
     avatarUrl: null,
@@ -350,9 +365,11 @@ function profileFromRow(
 function profileFromUserRow(
   row: Record<string, unknown>,
   username: string,
-): AdapterProfile {
+): AdapterProfile | undefined {
+  const externalId = stableRedditIdentity(row.author_fullname, 'user');
+  if (!externalId) return undefined;
   return {
-    externalId: str(row.author_fullname) ?? 'u/' + username,
+    externalId,
     handle: 'u/' + username,
     displayName: 'u/' + (str(row.author) ?? username),
     avatarUrl: null,
@@ -366,6 +383,23 @@ function profileFromUserRow(
       premium: row.author_premium === true,
     },
   };
+}
+
+function mergeRedditProfile(
+  current: AdapterProfile | undefined,
+  candidate: AdapterProfile | undefined,
+  target: string,
+): AdapterProfile | undefined {
+  if (!candidate) return current;
+  if (current && current.externalId !== candidate.externalId) {
+    throw new AdapterError(
+      'EnsembleData returned conflicting source-native ids for ' + target + ': `'
+        + current.externalId + '` and `' + candidate.externalId
+        + '`. No observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+  return current ?? candidate;
 }
 
 /**
@@ -402,7 +436,11 @@ export function parseRedditPage(
     const postedAt = toDate(row.created_utc);
     if (postedAt && (!oldest || postedAt < oldest)) oldest = postedAt;
 
-    if (!profile) profile = profileFromRow(row, canonicalHandle);
+    profile = mergeRedditProfile(
+      profile,
+      profileFromRow(row, canonicalHandle),
+      'r/' + canonicalHandle,
+    );
     if (!audience && hasOwn(row, 'subreddit_subscribers')) {
       audience = {
         day: toDayString(observedAt),
@@ -418,6 +456,14 @@ export function parseRedditPage(
   }
 
   posts.sort((a, b) => b.postedAt.getTime() - a.postedAt.getTime());
+  if (matchedCount > 0 && !profile) {
+    throw new AdapterError(
+      'EnsembleData returned posts for r/' + canonicalHandle
+        + ' without a source-native subreddit id (`t5_...`). The mutable subreddit name cannot '
+        + 'replace it; no observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
   const limit = opts.limit === undefined
     ? posts.length
     : Math.max(0, Math.trunc(opts.limit));
@@ -465,7 +511,11 @@ export function parseRedditUserPage(
 
     const postedAt = toDate(row.created_utc);
     if (postedAt && (!oldest || postedAt < oldest)) oldest = postedAt;
-    profile ??= profileFromUserRow(row, username);
+    profile = mergeRedditProfile(
+      profile,
+      profileFromUserRow(row, username),
+      'u/' + username,
+    );
 
     const subreddit = str(row.subreddit)?.toLowerCase() ?? username;
     const post = toPost(row, subreddit, opts.since, opts.until);
@@ -491,6 +541,14 @@ export function parseRedditUserPage(
   }
 
   posts.sort((a, b) => b.postedAt.getTime() - a.postedAt.getTime());
+  if (matchedCount > 0 && !profile) {
+    throw new AdapterError(
+      'EnsembleData returned posts for u/' + username
+        + ' without a source-native author id (`t2_...`). The mutable username cannot replace it; '
+        + 'no observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
   const limit = opts.limit === undefined
     ? posts.length
     : Math.max(0, Math.trunc(opts.limit));
@@ -620,7 +678,7 @@ async function fetchUserAccount(ctx: FetchContext, username: string): Promise<Fe
     malformed += parsed.malformedCount;
     if (parsed.oldest && (!oldest || parsed.oldest < oldest)) oldest = parsed.oldest;
     if (parsed.oldest && parsed.oldest < ctx.since) reachedWindowStart = true;
-    profile ??= parsed.profile;
+    profile = mergeRedditProfile(profile, parsed.profile, 'u/' + username);
 
     for (const post of parsed.posts) {
       if (posts.has(post.externalId)) continue;
@@ -647,24 +705,33 @@ async function fetchUserAccount(ctx: FetchContext, username: string): Promise<Fe
       { platform: PLATFORM, retryable: false },
     );
   }
+  if (totalRows === 0 && !stableRedditIdentity(ctx.externalId, 'user')) {
+    throw new AdapterError(
+      'EnsembleData returned an empty Reddit feed for u/' + username
+        + ' and offers no dedicated user-profile endpoint, so its stable `t2_...` identity could '
+        + 'not be resolved. No observations were accepted; retry after the account has a public '
+        + 'submission or the source exposes profile identity.',
+      { platform: PLATFORM, retryable: true },
+    );
+  }
   if (malformed > 0) {
     warnings.push(
       'Reddit for u/' + username + ': ignored ' + String(malformed)
       + ' malformed post ' + (malformed === 1 ? 'row.' : 'rows.'),
     );
   }
-  if (hasMore) {
-    warnings.push(
-      'Reddit for u/' + username + ': stopped after ' + String(pages)
+  const incompleteReason = totalRows === 0
+    ? 'EnsembleData returned an empty Reddit user feed without a terminal completeness marker. '
+      + 'The requested window is unmeasured rather than certified empty.'
+    : hasMore
+    ? 'Reddit for u/' + username + ': stopped after ' + String(pages)
       + ' page' + (pages === 1 ? '' : 's')
-      + ' before the requested window was fully covered. Older posts are unobserved, not absent.',
-    );
-  } else if (oldest && oldest > ctx.since && totalRows > 0 && !nextCursor) {
-    warnings.push(
-      'Reddit for u/' + username + ': the vendor feed only reached back to '
-      + toDayString(oldest) + ', short of the requested window. Older posts are unobserved, not absent.',
-    );
-  }
+      + ' before the requested window was fully covered. Resume the saved vendor cursor; older posts are unobserved, not absent.'
+    : oldest && oldest > ctx.since && totalRows > 0 && !nextCursor
+      ? 'Reddit for u/' + username + ': the vendor feed only reached back to '
+        + toDayString(oldest) + ', short of the requested window and exposed no continuation cursor. Older posts are unobserved, not absent.'
+      : undefined;
+  if (incompleteReason) warnings.push(incompleteReason);
 
   return {
     posts: Array.from(posts.values())
@@ -680,7 +747,11 @@ async function fetchUserAccount(ctx: FetchContext, username: string): Promise<Fe
       nextCursor: hasMore ? nextCursor ?? null : null,
       lastRunAt: observedAt.toISOString(),
     },
-    hasMore,
+    ...(hasMore
+      ? { hasMore: true as const, exhaustive: false as const, incompleteReason: incompleteReason as string }
+      : incompleteReason
+        ? { hasMore: false as const, exhaustive: false as const, incompleteReason }
+        : { hasMore: false as const, exhaustive: true as const }),
     warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
@@ -735,9 +806,11 @@ export const redditAdapter: ChannelAdapter = {
       });
       if (parsed.profile) return parsed.profile;
       throw new AdapterError(
-        'EnsembleData returned no posts for u/' + target.name + '. The account may not exist, '
-        + 'may have no public submissions, or may be unavailable.',
-        { platform: PLATFORM, retryable: false },
+        'EnsembleData returned an empty feed for u/' + target.name
+        + ' and has no dedicated user-profile endpoint, so it cannot resolve the source-native '
+        + '`t2_...` account id yet. The account may be legitimate but have no public submissions; '
+        + 'retry later rather than binding its mutable username as identity.',
+        { platform: PLATFORM, retryable: true },
       );
     }
 
@@ -751,9 +824,10 @@ export const redditAdapter: ChannelAdapter = {
     });
     if (!parsed.profile) {
       throw new AdapterError(
-        'EnsembleData returned no posts for r/' + canonical + '. The subreddit may be empty, '
-        + 'private, quarantined, or unavailable; the post feed cannot resolve it safely.',
-        { platform: PLATFORM, retryable: false },
+        'EnsembleData returned an empty feed for r/' + canonical
+        + ' and has no dedicated subreddit-profile endpoint, so it cannot resolve the '
+        + 'source-native `t5_...` id yet. Retry later rather than binding the mutable name as identity.',
+        { platform: PLATFORM, retryable: true },
       );
     }
     return parsed.profile;
@@ -799,7 +873,7 @@ export const redditAdapter: ChannelAdapter = {
       malformed += parsed.malformedCount;
       if (parsed.oldest && (!oldest || parsed.oldest < oldest)) oldest = parsed.oldest;
       if (parsed.oldest && parsed.oldest < ctx.since) reachedWindowStart = true;
-      profile ??= parsed.profile;
+      profile = mergeRedditProfile(profile, parsed.profile, 'r/' + handle);
       audience ??= parsed.audience;
 
       for (const post of parsed.posts) {
@@ -827,24 +901,33 @@ export const redditAdapter: ChannelAdapter = {
         { platform: PLATFORM, retryable: false },
       );
     }
+    if (totalRows === 0 && !stableRedditIdentity(ctx.externalId, 'subreddit')) {
+      throw new AdapterError(
+        'EnsembleData returned an empty Reddit feed for r/' + handle
+          + ' and offers no dedicated subreddit-profile endpoint, so its stable `t5_...` identity '
+          + 'could not be resolved. No observations were accepted; retry after the source exposes '
+          + 'a public row with native identity.',
+        { platform: PLATFORM, retryable: true },
+      );
+    }
     if (malformed > 0) {
       warnings.push(
         'Reddit for r/' + handle + ': ignored ' + String(malformed)
         + ' malformed post ' + (malformed === 1 ? 'row.' : 'rows.'),
       );
     }
-    if (hasMore) {
-      warnings.push(
-        'Reddit for r/' + handle + ': stopped after ' + String(pages)
+    const incompleteReason = totalRows === 0
+      ? 'EnsembleData returned an empty Reddit subreddit feed without a terminal completeness '
+        + 'marker. The requested window is unmeasured rather than certified empty.'
+      : hasMore
+      ? 'Reddit for r/' + handle + ': stopped after ' + String(pages)
         + ' page' + (pages === 1 ? '' : 's')
-        + ' before the requested window was fully covered. Older posts are unobserved, not absent.',
-      );
-    } else if (oldest && oldest > ctx.since && totalRows > 0 && !nextCursor) {
-      warnings.push(
-        'Reddit for r/' + handle + ': the vendor feed only reached back to '
-        + toDayString(oldest) + ', short of the requested window. Older posts are unobserved, not absent.',
-      );
-    }
+        + ' before the requested window was fully covered. Resume the saved vendor cursor; older posts are unobserved, not absent.'
+      : oldest && oldest > ctx.since && totalRows > 0 && !nextCursor
+        ? 'Reddit for r/' + handle + ': the vendor feed only reached back to '
+          + toDayString(oldest) + ', short of the requested window and exposed no continuation cursor. Older posts are unobserved, not absent.'
+        : undefined;
+    if (incompleteReason) warnings.push(incompleteReason);
 
     return {
       posts: Array.from(posts.values())
@@ -860,7 +943,11 @@ export const redditAdapter: ChannelAdapter = {
         nextCursor: hasMore ? nextCursor ?? null : null,
         lastRunAt: observedAt.toISOString(),
       },
-      hasMore,
+      ...(hasMore
+        ? { hasMore: true as const, exhaustive: false as const, incompleteReason: incompleteReason as string }
+        : incompleteReason
+          ? { hasMore: false as const, exhaustive: false as const, incompleteReason }
+          : { hasMore: false as const, exhaustive: true as const }),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   },

@@ -7,6 +7,7 @@ import { TagManager, type TagRecord } from '@/components/tags/tag-manager';
 import { analyticsQuery, resolveContext } from '../_lib/context';
 import { loadTagPerformance, query, type SearchParamsInput } from '../_lib/data';
 import { CrossChannelTabs } from '@/components/content/cross-channel-tabs';
+import { roleAtLeast } from '@/lib/roles';
 
 export const metadata: Metadata = { title: 'Post Tags' };
 
@@ -25,15 +26,18 @@ export default async function PostTagsPage({
 }) {
   const ctx = await resolveContext(await searchParams);
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
+  const canManageTags = roleAtLeast(ctx.role, 'editor');
 
   const [performance, tags] = await Promise.all([
     loadTagPerformance(analyticsQuery(ctx)),
-    query<TagRow>(({ sql }) => sql`
-      SELECT id, name, color, rule, ai_prompt
-        FROM post_tags
-       WHERE org_id = ${ctx.orgId}::uuid
-       ORDER BY name ASC
-    `),
+    canManageTags
+      ? query<TagRow>(({ sql }) => sql`
+          SELECT id, name, color, rule, ai_prompt
+            FROM post_tags
+           WHERE org_id = ${ctx.orgId}::uuid
+           ORDER BY name ASC
+        `)
+      : Promise.resolve({ data: [] as TagRow[], error: null }),
   ]);
 
   return (
@@ -48,26 +52,28 @@ export default async function PostTagsPage({
         </Panel>
       </PageSection>
 
-      <PageSection
-        title="Manage tags"
-        description="A tag is either a deterministic keyword rule or a prompt run against your own model. Rules are free and auditable; prompts catch the cases a keyword list never will."
-      >
-        {tags.error ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
-            {'Tag definitions could not be read: ' + tags.error}
-          </p>
-        ) : (
-          <TagManager
-            tags={tags.data.map((t) => ({
-              id: t.id,
-              name: t.name,
-              color: t.color,
-              rule: t.rule,
-              aiPrompt: t.ai_prompt,
-            }))}
-          />
-        )}
-      </PageSection>
+      {canManageTags ? (
+        <PageSection
+          title="Manage tags"
+          description="A tag is either a deterministic keyword rule or a prompt run against your own model. Rules are free and auditable; prompts catch the cases a keyword list never will."
+        >
+          {tags.error ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
+              {'Tag definitions could not be read: ' + tags.error}
+            </p>
+          ) : (
+            <TagManager
+              tags={tags.data.map((t) => ({
+                id: t.id,
+                name: t.name,
+                color: t.color,
+                rule: t.rule,
+                aiPrompt: t.ai_prompt,
+              }))}
+            />
+          )}
+        </PageSection>
+      ) : null}
     </div>
   );
 }

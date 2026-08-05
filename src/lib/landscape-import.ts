@@ -417,21 +417,6 @@ function addAccount(
     return;
   }
 
-  // A CSV landscape describes public competitor accounts. LinkedIn exposes
-  // only pages administered by the credential owner, and CSV rows cannot
-  // prove ownership or attach that OAuth grant. Accepting one here creates a
-  // profile that can never collect and makes a newly imported landscape look
-  // complete when it is not.
-  if (platform === 'linkedin') {
-    errors.push(issue(
-      row,
-      column,
-      'owned_account_required',
-      'LinkedIn competitor pages cannot be collected. Add an owned LinkedIn page separately after connecting its administrator credentials.',
-    ));
-    return;
-  }
-
   // Data Dumpster tracks Reddit publisher accounts, not communities. The
   // adapter retains legacy subreddit support for existing pooled records, but
   // new landscapes must identify the publisher as u/<username> or /user/… .

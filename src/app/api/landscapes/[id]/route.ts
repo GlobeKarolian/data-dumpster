@@ -14,6 +14,7 @@ import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, AuthError, H
 import { db } from '@/db';
 import { companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { slugify } from '@/lib/utils';
+import { replaceLandscapeMembership } from '@/lib/landscape-membership';
 import { readJson } from '../../_lib/query';
 import { assertCompaniesVisibleToOrg } from '../../_lib/org-scope';
 
@@ -94,13 +95,21 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
       updated.focusCompanyId ? [updated.focusCompanyId, ...body.companyIds] : body.companyIds,
       orgId,
     );
-    // Replace rather than diff: membership is small, and a delete-then-insert is
-    // one obvious statement pair instead of three fiddly ones.
-    await db.delete(landscapeCompanies).where(eq(landscapeCompanies.landscapeId, id));
-    if (memberIds.length > 0) {
-      await db.insert(landscapeCompanies).values(
-        memberIds.map((companyId, i) => ({ landscapeId: id, companyId, sortOrder: i })),
-      );
+    await replaceLandscapeMembership(id, memberIds);
+
+    try {
+      const until = new Date();
+      const { enqueueLandscapeCollection } = await import('@/lib/adapters/collection-queue');
+      await enqueueLandscapeCollection({
+        orgId,
+        landscapeId: id,
+        since: new Date(until.getTime() - 90 * 86_400_000),
+        until,
+      });
+    } catch (error) {
+      // Membership is already committed. Demand writes are idempotent, so a
+      // later refresh can finish without rolling back the user's edit.
+      console.error('[data-dumpster:landscape] membership collection enqueue failed', error);
     }
   }
 

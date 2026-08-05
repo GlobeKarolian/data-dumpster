@@ -4,12 +4,15 @@ import * as React from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTriggerSurface } from './popover';
+import type { Platform } from '@/lib/types';
+import { PlatformIcon } from './platform-icon';
 
 export interface MultiSelectOption {
   value: string;
   label: string;
   /** Optional swatch, used for platforms and companies. */
   color?: string;
+  platform?: Platform;
   count?: number;
 }
 
@@ -110,7 +113,9 @@ export function MultiSelect({
                     >
                       {on ? <Check className="h-2.5 w-2.5" strokeWidth={3} aria-hidden /> : null}
                     </span>
-                    {o.color ? (
+                    {o.platform ? (
+                      <PlatformIcon platform={o.platform} />
+                    ) : o.color ? (
                       <span
                         aria-hidden
                         className="h-2 w-2 shrink-0 rounded-full"

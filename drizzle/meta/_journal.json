@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785733461060,
+      "tag": "0000_collection_outcome",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785735812863,
+      "tag": "0001_pooled_channel_demands",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785737163811,
+      "tag": "0002_pooled_identity_invariant",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785741486677,
+      "tag": "0003_mean_zaran",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785853442285,
+      "tag": "0004_lucky_dagger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785857940993,
+      "tag": "0005_dazzling_mordo",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785858203534,
+      "tag": "0006_silent_kang",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785890852318,
+      "tag": "0007_public_channel_source_state",
+      "breakpoints": true
+    }
+  ]
+}

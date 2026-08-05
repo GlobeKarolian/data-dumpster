@@ -591,15 +591,17 @@ function addBrandSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: number)
   const computed = doc.computed;
   if (!computed) return startPage;
 
+  const fixedColumnWidth = 0.42 + 2.18 + 1.02 + 0.7 + 0.7;
+  const platformColumnWidth = (CONTENT_W - fixedColumnWidth) / REPORT_PLATFORMS.length;
   const columns: TableColumn[] = [
     { label: '#', width: 0.42, align: 'center' },
-    { label: 'Brand', width: 2.33 },
-    { label: 'Followers', width: 1.2, align: 'right' },
-    { label: 'Net', width: 0.88, align: 'right' },
-    { label: 'Change', width: 0.84, align: 'right' },
+    { label: 'Brand', width: 2.18 },
+    { label: 'Followers', width: 1.02, align: 'right' },
+    { label: 'Net', width: 0.7, align: 'right' },
+    { label: 'Change', width: 0.7, align: 'right' },
     ...REPORT_PLATFORMS.map((platform) => ({
       label: REPORT_PLATFORM_LABELS[platform],
-      width: 1.25,
+      width: platformColumnWidth,
       align: 'right' as const,
     })),
   ];
@@ -646,7 +648,7 @@ function addBrandSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: number)
       ]);
       const focusRows = new Set<number>();
       brands.forEach((brand, index) => {
-        if (brand.name === computed.focus.companyName) focusRows.add(index);
+        if (brand.isBgmOwned) focusRows.add(index);
       });
       addSimpleTable(slide, columns, rows, {
         x: MARGIN_X,
@@ -675,93 +677,102 @@ function addTopPostSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: numbe
   if (!computed) return startPage;
   const PAGE_SIZE = 8;
   let page = startPage;
-  const chunks = computed.topPosts.length > 0
-    ? Array.from(
-      { length: Math.ceil(computed.topPosts.length / PAGE_SIZE) },
-      (_, index) => computed.topPosts.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE),
-    )
-    : [[]];
+  const groups = [
+    { title: 'Top engaged posts — market', posts: computed.topPosts },
+    ...(computed.bgmTopPosts === undefined
+      ? []
+      : [{ title: 'Top engaged posts — BGM', posts: computed.bgmTopPosts }]),
+  ];
 
-  chunks.forEach((posts, chunkIndex) => {
-    const slide = pptx.addSlide();
-    addSlideFrame(
-      slide,
-      'Content performance',
-      chunkIndex === 0 ? 'Top engaged posts' : 'Top engaged posts, continued',
-      computed.landscape.name,
-      page,
-    );
-    if (posts.length === 0) {
-      addText(slide, 'No posts are available for this report window.', {
-        x: MARGIN_X,
-        y: 2.6,
-        w: CONTENT_W,
-        h: 0.4,
-        fontSize: 18,
-        color: COLORS.muted,
-        align: 'center',
+  groups.forEach((group) => {
+    const chunks = group.posts.length > 0
+      ? Array.from(
+        { length: Math.ceil(group.posts.length / PAGE_SIZE) },
+        (_, index) => group.posts.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE),
+      )
+      : [[]];
+
+    chunks.forEach((posts, chunkIndex) => {
+      const slide = pptx.addSlide();
+      addSlideFrame(
+        slide,
+        'Content performance',
+        chunkIndex === 0 ? group.title : group.title + ', continued',
+        computed.landscape.name,
+        page,
+      );
+      if (posts.length === 0) {
+        addText(slide, 'No posts are available for this report window.', {
+          x: MARGIN_X,
+          y: 2.6,
+          w: CONTENT_W,
+          h: 0.4,
+          fontSize: 18,
+          color: COLORS.muted,
+          align: 'center',
+        });
+      }
+      posts.forEach((post, index) => {
+        const column = index % 2;
+        const row = Math.floor(index / 2);
+        const cardW = 5.96;
+        const x = MARGIN_X + column * 6.17;
+        const y = 1.39 + row * 1.36;
+        addRect(slide, x, y, cardW, 1.17, COLORS.white, COLORS.line);
+        addRect(slide, x, y, 0.64, 1.17, post.isBgmOwned ? COLORS.red : COLORS.ink, undefined, false);
+        addText(slide, String(post.rank), {
+          x: x + 0.08,
+          y: y + 0.36,
+          w: 0.48,
+          h: 0.34,
+          fontFace: HEAD_FONT,
+          fontSize: 19,
+          bold: true,
+          color: COLORS.white,
+          align: 'center',
+        });
+        addText(slide, post.companyName + '  ·  ' + platformLabel(post.platform), {
+          x: x + 0.82,
+          y: y + 0.14,
+          w: 3.55,
+          h: 0.18,
+          fontSize: 9.5,
+          bold: true,
+          color: post.isBgmOwned ? COLORS.redDark : COLORS.ink,
+          fit: 'shrink',
+        });
+        addText(slide, formatCount(post.engagementTotal), {
+          x: x + 4.42,
+          y: y + 0.12,
+          w: 1.23,
+          h: 0.2,
+          fontSize: 10,
+          bold: true,
+          color: COLORS.redDark,
+          align: 'right',
+          fit: 'shrink',
+        });
+        addText(slide, truncate(post.text || post.permalink || 'Untitled post', 170), {
+          x: x + 0.82,
+          y: y + 0.45,
+          w: 4.83,
+          h: 0.44,
+          fontSize: 9.5,
+          color: COLORS.inkSoft,
+          valign: 'top',
+          fit: 'shrink',
+        });
+        addText(slide, post.postedAt.slice(0, 10), {
+          x: x + 0.82,
+          y: y + 0.94,
+          w: 1.6,
+          h: 0.12,
+          fontSize: 7.5,
+          color: COLORS.muted,
+        });
       });
-    }
-    posts.forEach((post, index) => {
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const cardW = 5.96;
-      const x = MARGIN_X + column * 6.17;
-      const y = 1.39 + row * 1.36;
-      addRect(slide, x, y, cardW, 1.17, COLORS.white, COLORS.line);
-      addRect(slide, x, y, 0.64, 1.17, index % 2 === 0 ? COLORS.red : COLORS.ink, undefined, false);
-      addText(slide, String(post.rank), {
-        x: x + 0.08,
-        y: y + 0.36,
-        w: 0.48,
-        h: 0.34,
-        fontFace: HEAD_FONT,
-        fontSize: 19,
-        bold: true,
-        color: COLORS.white,
-        align: 'center',
-      });
-      addText(slide, post.companyName + '  ·  ' + platformLabel(post.platform), {
-        x: x + 0.82,
-        y: y + 0.14,
-        w: 3.55,
-        h: 0.18,
-        fontSize: 9.5,
-        bold: true,
-        color: COLORS.ink,
-        fit: 'shrink',
-      });
-      addText(slide, formatCount(post.engagementTotal), {
-        x: x + 4.42,
-        y: y + 0.12,
-        w: 1.23,
-        h: 0.2,
-        fontSize: 10,
-        bold: true,
-        color: COLORS.redDark,
-        align: 'right',
-        fit: 'shrink',
-      });
-      addText(slide, truncate(post.text || post.permalink || 'Untitled post', 170), {
-        x: x + 0.82,
-        y: y + 0.45,
-        w: 4.83,
-        h: 0.44,
-        fontSize: 9.5,
-        color: COLORS.inkSoft,
-        valign: 'top',
-        fit: 'shrink',
-      });
-      addText(slide, post.postedAt.slice(0, 10), {
-        x: x + 0.82,
-        y: y + 0.94,
-        w: 1.6,
-        h: 0.12,
-        fontSize: 7.5,
-        color: COLORS.muted,
-      });
+      page += 1;
     });
-    page += 1;
   });
   return page;
 }
@@ -849,7 +860,7 @@ function addCohortSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: number
     ]);
     const focusRows = new Set<number>();
     companies.forEach((company, index) => {
-      if (company.isFocus) focusRows.add(index);
+      if (company.isBgmOwned) focusRows.add(index);
     });
     addSimpleTable(slide, columns, rows, {
       x: MARGIN_X,

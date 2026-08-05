@@ -1,183 +1,220 @@
 # Handoff
 
-Written for another AI assistant, or a human, picking this up cold. Read this
-first, then `CONTRACTS.md`, then the docs listed at the bottom.
+Read this first, then `CONTRACTS.md` and `docs/ARCHITECTURE.md`.
 
 ## What this is
 
-Data Dumpster: a competitive social intelligence platform for newsrooms, built
-as an internal replacement for Rival IQ at Boston Globe Media. Live in
-production, real data, real vendors, real money.
+Data Dumpster is a competitive social-intelligence platform for newsrooms and
+Boston Globe Media's internal replacement for Rival IQ. It is live, uses real
+vendor spend, and must be treated as a production data product.
 
     Live      https://pressbox-kappa.vercel.app
     Repo      https://github.com/GlobeKarolian/data-dumpster
-    Login     matt@karolian.com  (owner)
     Local     ~/Developer/pressbox
 
-Note the naming split: the Vercel project and local directory are still
-`pressbox`, the original name. The product was renamed to Data Dumpster later
-and only user-facing strings changed. Do not "fix" this without asking; the
-deployment URL is shared with people.
+The Vercel project, deployment URL and local directory still use the original
+name `pressbox`. The product is Data Dumpster. Only user-facing strings use the
+product name; do not rename deployment infrastructure casually.
 
-## Environment facts that will waste your time if you miss them
+## Local facts that save time
 
-- **The shell exports `NODE_ENV=production`.** Every npm command must be
-  `unset NODE_ENV; npm run ...` or dev dependencies silently vanish.
-- **`npx tsc` does not work.** Use `./node_modules/.bin/tsc --noEmit`.
-- **Shell calls time out around 60 seconds.** Long builds, deploys and ingests
-  must be backgrounded to a log file and polled.
-- Secrets live in `.env.local` (gitignored) and in Vercel env vars for all three
-  environments. Nothing sensitive is in git; history was scanned.
-- Vercel CLI is authenticated as `matt-8982`, team `mkarolians-projects`.
-  `vercel deploy --prod --yes` works directly.
+- The shell may export `NODE_ENV=production`. Use `unset NODE_ENV` or
+  `npm ci --include=dev` before commands that need development dependencies.
+- Typecheck with `./node_modules/.bin/tsc --noEmit`; `npx tsc` does not resolve
+  correctly in this repository.
+- Secrets stay in the ignored `.env.local` and in Vercel. Never commit them and
+  never overwrite an existing `.env.local` during a deploy.
+- Next.js 16 in this checkout has breaking changes. Read the relevant guide in
+  `node_modules/next/dist/docs/` before changing framework APIs.
 
-## Current state, verified 29 July 2026
+## Production and takeover state, 3 August 2026
 
-    Platform    Posts  Source
-    bluesky     1,685  public AT Protocol, no key
-    facebook      945  Bright Data (vendor)
-    instagram     677  EnsembleData, feed + reels separately
-    youtube       623  official YouTube Data API v3
-    tiktok        488  EnsembleData
-    threads        45  EnsembleData
-    TOTAL       4,855  65.6M views, 7.6M engagements
+- The application is live and recurring collection is active. `vercel.json`
+  opens pooled collection windows exactly twice daily, at 00:00 and 12:00 UTC.
+  Offset ten-minute recovery ticks drain only continuations, paid receipts and
+  retries already in the durable queue; they cannot make fresh profiles due.
+  A separate ten-minute wake preserves progress for existing coordinator jobs.
+  Alerts, weekly briefs and report delivery still have authenticated routes but
+  no recurring schedules.
+- Recent closed-day audience gaps exist and cannot be reconstructed. This is an
+  honest data limitation, not a reason to fill cells with zero. Read the current
+  state from `/api/health`; do not copy a point-in-time channel or post count into
+  documentation.
+- EnsembleData's X endpoint returns a Twitter-selected Highlights feed, not a
+  chronological timeline. It is useful for public profile and engagement facts
+  but can never certify a requested post window. The collection-outcome
+  migration clears legacy false coverage and records this as a terminal source
+  limitation without repeatedly buying the same feed.
+- Facebook vendor reads can end at a cursorless post cap. Those runs are useful
+  but incomplete and must not be retried as if a network error occurred.
+- The checkout contains the takeover foundation: explicit adapter completeness,
+  durable queue outcomes, fail-closed Ask and Brief verification, canonical
+  follower-rate arithmetic, active cron documentation, CI, and a reviewed
+  migration sequence. Apply every committed migration immediately before
+  deploying the matching code.
+- Boston Globe Media's Tech Provider Access Verification was verified on
+  3 August 2026. That verification is independent of App Review and does not
+  evidence Page Public Content Access production approval. The available
+  records do not establish PPCA's production status; confirm it in Meta's
+  dashboard. The Meta app remains unpublished, and the pooled runner still
+  excludes PPCA credentials. Use
+  `docs/META-PPCA-APPLICATION.md` for the application and production gates.
+- Two product decisions remain: GBH News has collected posts but belongs to no
+  landscape, and the requested Post Library rebuild is separate from Content
+  Analysis.
 
-Two landscapes, built from Matt's Rival IQ CSV exports: **BGM** (14 owned
-brands) and **Boston News Market** (22 companies). Focus company is The Boston
-Globe in both. RSS was deliberately removed; see the note in
-`src/lib/adapters/registry.ts`.
+## Non-negotiable correctness rules
 
-## The three rules this codebase is built on
+1. **Audience is a stock, not a flow.** Every audience read uses the latest
+   snapshot inside the window through the helpers in `src/lib/metrics/`. Never
+   sum daily follower snapshots.
+2. **`changePct` returns `null` on a zero baseline.** Never print Infinity or a
+   spectacular percentage manufactured by a tiny denominator.
+3. **Missing is not zero.** Availability travels with every aggregate. A post
+   without a valid `followersAtPost` is excluded from follower-rate arithmetic;
+   if no post is measurable, the result is `null`.
+4. **AI may narrate only an exact, code-computed fact sheet.** Ask pins the
+   displayed filter state with a fingerprint. Ask and Brief each get at most one
+   repair pass and reject the output if deterministic verification still fails.
+   Unverified prose is neither saved nor rendered.
 
-Violating these is worse than shipping nothing, because the entire pitch rests
-on them.
+## Release gate: isolate owned data
 
-1. **Never invent a number.** A percent change against a zero baseline returns
-   `null`, not Infinity and not a four-figure percentage. Missing data is a
-   visible blank with a caveat, never a zero.
-2. **Every metric carries its definition** from
-   `src/lib/metrics/definitions.ts` into a UI tooltip.
-3. **AI narrates a pre-computed fact sheet and nothing else.** It cannot query.
-   `src/lib/ai/verify.ts` re-checks every number in generated prose against the
-   fact sheet. Do not loosen this.
+Public company, channel and post observations are pooled across organizations.
+That is correct only for public, comparable fields. The current schema also has
+global ownership flags, cursors, collection state and post payloads, while
+credentials are organization-scoped.
+
+Phase 0 containment is implemented in this checkout. Pooled collection and
+profile resolution now use an explicit allowlist of deployment-wide public
+sources, force the adapter's public path, reject owned-mode onboarding, and
+exclude Meta owner/PPCA, TikTok owner, LinkedIn admin, X owner and Bluesky app
+credentials.
+That stops new owner-derived values from entering pooled rows through the normal
+runner. Legacy rows may already contain private fields or payloads and still
+need inventory, quarantine and public re-collection.
+
+The pooled acquisition control plane is also implemented. One normalized
+platform account maps to one global channel row, while each landscape records
+its own required window in `landscape_channel_demands`. Those demands reconcile
+to one global job and one lease, so adding an already tracked brand reuses its
+history and fresh coverage instead of buying a second crawl. After a fetch, the
+runner must claim the normalized platform id before writing audience, posts or
+payloads. A blank, changed or already-claimed id is a permanent operator-review
+failure: no observations land and histories are never merged automatically.
+
+Company and channel deletion is disabled in the product API because it would
+destroy pooled history. Stop tracking by removing landscape membership. The
+only global pause is an explicit admin quarantine, limited to a company that is
+not shared with another organization.
+
+Do not present the product as safely multi-tenant and do not expand owned-native
+collection until the split in `docs/OWNED-DATA-ISOLATION.md` is implemented and
+its cross-tenant acceptance suite passes. The required boundary is:
+
+- pooled, source-scoped public collection for competitive analytics;
+- globally unique channel identity plus organization-private
+  `landscape_channel_demands` carrying each landscape's requested window;
+- verified organization-channel credential bindings;
+- separate organization-private observations, payloads, cursors and jobs; and
+- an explicit `public_comparable` or `owned_native` basis on every metric.
 
 ## Architecture in one paragraph
 
-Next.js 16 App Router, TypeScript strict, Tailwind v4, Drizzle ORM against Neon
-Postgres. Pages are Server Components importing query functions from
-`src/lib/metrics/queries.ts` directly with no HTTP hop; API routes in
-`src/app/api/*` are thin wrappers over the same functions for client
-interactivity. Ingestion is one `ChannelAdapter` per platform behind a uniform
-contract in `src/lib/adapters/types.ts`, with vendor-specific modules beside
-them (`tiktok-ensemble.ts`, `instagram-brightdata.ts`, and so on). AI providers
-sit behind `ModelProvider` in `src/lib/ai/types.ts` so the org supplies its own
-inference.
+Next.js 16 App Router and React 19 run on Vercel, with strict TypeScript,
+Tailwind v4, Drizzle ORM and Neon Postgres. Server Components call the metric
+layer directly; client interactions and external consumers use thin validated
+route handlers. Platform adapters return normalized posts, audience readings
+and an explicit completeness contract. A Postgres-backed queue leases work with
+`SKIP LOCKED`, runs up to ten network-bound channel workers, and records a
+durable scheduling outcome separately from the presentation status. Model
+providers sit behind `ModelProvider`, and deterministic verification is the
+only path from generated prose to a user.
 
-## Data vendors, and the lesson that cost the most time
+Measurement SQL lives in four modules, not one:
 
-Three sources, chosen on measured evidence rather than preference:
+- `src/lib/metrics/queries.ts`: primary summaries, leaderboards, posts, URLs,
+  fact sheets and report inputs;
+- `src/lib/metrics/content-analysis.ts`: Content Analysis;
+- `src/lib/metrics/ingestion-coverage.ts`: exact-window collection coverage;
+- `src/lib/metrics/daily-coverage.ts`: audience-day monitoring and recovery.
 
-| Source | Used for | Cost | Measured |
-|---|---|---|---|
-| EnsembleData | TikTok, Instagram, Threads, competitor X | $400/mo Silver, 11k units/day | 100% success, 2s median |
-| Bright Data | Facebook and fallback public scrapers | ~$25/mo pay-as-you-go | 42 to 81% success, 44 to 127s |
-| YouTube Data API | YouTube | free, 10k units/day | 100%, 25 channels in 15s |
+## Current source policy
 
-EnsembleData is the primary public-data vendor. Bright Data remains the
-Facebook source and a fallback where a public scraper is needed. The
-measurements are in `docs/ENSEMBLEDATA.md`.
+The implemented source order and approval matrix is in `README.md`.
+`docs/DATA-ACCESS.md` records the official-platform access background; verify its
+vendor inventory against code before treating it as current. The operative
+policy is:
 
-**The lesson, stated plainly because it caused three separate bugs:** an
-endpoint inventory tells you what exists; only a response body tells you what a
-field contains. Every one of these came from trusting documentation over a
-`curl`:
+- Bluesky and YouTube use sanctioned public interfaces.
+- Existing pooled Facebook profiles use Bright Data only. Meta owner and PPCA
+  credentials are excluded until public grants and owned insights have explicit
+  bindings and storage. New Facebook profile onboarding is temporarily disabled
+  because identity currently requires purchasing the posts crawl twice.
+- Instagram, TikTok, X and Threads use Bright Data first whenever its deployment
+  key is configured. A live Bright Data receipt is always resumed and a failed
+  paid stage never falls through to another vendor. EnsembleData is used for
+  those platforms only when Bright Data is absent; X still uses its synchronous
+  profile lookup during onboarding. Coverage is certified only when a source
+  provides real evidence of exhaustion.
+- LinkedIn competitor company pages use Bright Data's company and company-post
+  datasets. Likes, comments and follower stock are measured; shares, saves,
+  views, reach and impressions are unavailable, and the cursorless history is
+  always source-limited. Reddit publisher-user collection remains on
+  EnsembleData until a like-for-like Bright Data account feed is verified and
+  remains gated on confirmation that commercial use is covered.
+- Purchased or scraped collection is a Legal and procurement decision, not a
+  developer default. RSS is retired and must not be reintroduced.
 
-- Instagram capped at 12 posts because the profile endpoint was used instead of
-  the discovery endpoint. `limit_per_input` does not lift it.
-- Every Instagram post stored zero views and nothing was typed as a reel,
-  because only `/instagram/user/reels` returns `play_count` and
-  `product_type: clips`. Feed and reels are two calls, deliberately.
-- A claim that YouTube needed no API key, written from the endpoint list. The
-  channel listing returns relative dates ("1 day ago") and no engagement, so
-  the official API is strictly better.
+Before writing any mapper, call the real vendor endpoint and inspect the actual
+response. Vendor documentation has already been wrong about Instagram reel
+views, TikTok cover images and endpoint depth.
 
-**Before writing any adapter mapping, curl the endpoint and read the payload.**
+## What is built
 
-## What is done
+Cross-Channel and per-platform views, leaderboards, Social Posts, tags and AI
+tagging, Posted URLs, Story Cloud, Content Analysis, alerts, custom dashboards,
+verified weekly briefs, exact-scope Ask, user and source administration,
+bring-your-own-model configuration, Weekly Reports, PowerPoint and sectioned CSV
+exports, email and tenant-bound Slack delivery, run-now, schedules and a delivery
+audit. Report delivery is implemented; only its dispatcher schedule is inactive.
 
-Cross-channel and per-platform screens, leaderboards, social posts explorer,
-post tags with rules and AI tagging, posted URLs, Story Cloud (event-level
-clustering with who-broke-it), Weekly Report builder modelled on Matt's actual
-Platforms Dashboard and Digest, AI briefs with claim verification, Ask, alerts,
-custom dashboards, user management with invite links, BYO model settings,
-Content Analysis (topics, hashtags, formats, channels, post times), full-screen
-raccoon refresh overlay, raccoon cursor.
+## Priority order
 
-Rival IQ parity work now also includes PowerPoint and sectioned CSV report
-exports, weekly email/Slack schedules with run-now and an audit trail, ten
-dashboard widget types with edit/reorder controls, full landscape leaderboards
-with deltas and platform composition, company-correct Content Analysis, and
-metric guardrail tests. The duplicated adapter HTTP policy has also been folded
-into one implementation. The PPTX renderer passed LibreOffice rendering and
-overflow checks. Apply the schema change and configure the delivery variables
-in `.env.example` before using scheduled delivery.
+1. Complete the remaining phases of `docs/OWNED-DATA-ISOLATION.md`. This is a
+   release gate, not a later hardening task.
+2. Validate the full foundation, run the pooled-identity audit, apply
+   every committed migration from `drizzle/0000_collection_outcome.sql` through
+   `drizzle/0006_silent_kang.sql` via `npm run db:migrate`, deploy
+   the matching application, then inspect health and collection outcomes in
+   production. Never reverse that migration-before-code order.
+3. Choose a chronological X source or accept an explicitly limited X product.
+   Never relabel Highlights as a timeline.
+4. Obtain and record Legal/procurement decisions for every purchased source,
+   including Reddit commercial use and TikTok/Threads competitor collection.
+5. Tune alerts with real newsroom use, activate only approved brief/report
+   schedules, and finish the Post Library and remaining export/UX parity work.
+6. Resolve GBH News landscape membership as a product decision.
 
-Reddit sources are account-first in the add-profile flow. A real
-`/reddit/user/posts` response for `u/bostonglobe` was verified and the adapter
-filters exact authors, paginates the live cursor, and leaves user audience and
-follower-rate metrics blank. Explicit `r/name` communities remain supported.
+## Working method
 
-## What is not done, in the order I would do it
+- Be direct. If a claim is uncertain, check it against code, a live response or
+  an authoritative source before writing it down.
+- Preserve unrelated work in a dirty tree. Do not reset or overwrite it.
+- Verify adapter mappers against a sanitized real response.
+- Run `./node_modules/.bin/tsc --noEmit`, lint, tests, build and
+  `drizzle-kit check` before a production handoff.
+- Never apply a schema change after deploying code that already reads its new
+  columns.
 
-1. **Crons are off.** `vercel.json` has an empty `crons` array because Matt
-   chose manual runs while sources were changing. Turning them back on is a
-   decision about vendor spend, not a technical task. Ask first.
-2. **Twitter still needs its first ingest.** The live EnsembleData response was
-   inspected and the adapter is implemented. Its `/twitter/user/tweets` result
-   is a Twitter-selected highlights set, not a chronological timeline, so runs
-   carry an explicit coverage warning. The 22 active channels have not been
-   written because that consumes vendor units and needs the same spend decision.
-3. **Audience history is one day deep.** Every net-change and week-over-week
-   figure reads blank until a few more days accumulate. Real data, honest blank,
-   but it looks empty.
-4. **GBH News has 380 posts and belongs to no landscape.** Not in either CSV.
-   Needs Matt's call, not a guess.
-5. **Dashboard and widget exports.** Saved dashboards can be edited, reordered
-   and shared, but they do not yet download as a deck/image or export one
-   widget's data. This is the remaining dashboard parity gap.
-6. **Post library rebuild.** Matt asked for it and it was not started. The
-   Content Analysis screen is adjacent but not the same thing.
+## Read next
 
-## Known cosmetic and small issues
-
-- Company slugs are globally unique now (pooling), so `companies.orgId` is
-  attribution only. Do not reintroduce it as a tenancy filter.
-- Three Instagram channels time out on the reels call and degrade to feed only.
-  A re-run picks them up.
-- `docs/PITCH.md` section 6 is Matt's negotiating position for a CTO role. Move
-  it out of the repo before sharing the repo with anyone at the Globe.
-- `docs/PITCH.md` and `docs/DATA-VENDORS.md` contradict each other on whether to
-  buy scraped data. Unresolved on purpose; it is Matt's risk call.
-
-## Working style Matt asked for
-
-- **Do not spawn subagents for small work.** They cost minutes of startup for
-  work that takes seconds directly. He said stop, explicitly.
-- Be direct. No preamble. Own mistakes plainly.
-- No em dashes. No "it's not x, it's y" constructions.
-- He pushes back when something sounds wrong, and he has been right every time:
-  on Facebook PPCA existing, on Bright Data having a Threads scraper, on the
-  Instagram post cap being an endpoint choice rather than a product limit.
-  **When he pushes back, go and check rather than defending.**
-
-## Docs worth reading, in order
-
-    CONTRACTS.md               the build contract and metric vocabulary
-    docs/ENSEMBLEDATA.md       vendor inventory, prices, the three findings
-    docs/DATA-ACCESS.md        what each platform will and will not sell
-    docs/RIVALIQ-TEARDOWN.md   the incumbent, catalogued, with a gap analysis
-    docs/DATA-POOLING.md       why shared collection is how you beat them on cost
-    docs/PRD.md                product requirements
-    docs/ARCHITECTURE.md       system design
-    docs/DEPLOY.md             runbook
-    docs/feedback/*.md         simulated stakeholder objections, from Matt's notes
+    CONTRACTS.md                       correctness and build contract
+    docs/ARCHITECTURE.md               system design and failure behavior
+    docs/OWNED-DATA-ISOLATION.md       required public/private split
+    docs/DATA-POOLING.md               why public observations are shared
+    docs/DATA-ACCESS.md                official access and legal background
+    docs/ENSEMBLEDATA.md               observed vendor contracts
+    docs/RIVALIQ-TEARDOWN.md           incumbent and parity gaps
+    docs/PRD.md                        product requirements and priorities
+    docs/DEPLOY.md                     migration and production runbook

@@ -81,11 +81,12 @@ export async function fetchProfile(
   apiKey: string,
   onApiCall?: () => void,
   signal?: AbortSignal,
+  resumeSnapshotId?: string,
 ): Promise<{ profile: AdapterProfile; audience?: NormalizedAudience; raw: Record<string, unknown> }> {
   const rows = await scrapeSync(
     DATASETS.instagramProfile,
     [{ url: profileUrl(handle) }],
-    { apiKey, platform: PLATFORM, onApiCall, signal },
+    { apiKey, platform: PLATFORM, onApiCall, signal, resumeSnapshotId },
   );
 
   const row = rows.find((r) => isRecord(r) && !isErrorRow(r));
@@ -99,9 +100,17 @@ export async function fetchProfile(
 
   const followers = num(pick(row, ['followers', 'followers_count']));
   const resolved = str(pick(row, ['account', 'user_name', 'profile_name'])) ?? handle;
+  const externalId = str(pick(row, ['id', 'fbid', 'pk']));
+  if (!externalId) {
+    throw new AdapterError(
+      'Bright Data returned an Instagram profile for @' + handle
+        + ' without a stable platform id. No observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
 
   const profile: AdapterProfile = {
-    externalId: str(pick(row, ['id', 'fbid'])) ?? handle,
+    externalId,
     handle: resolved.replace(/^@/, ''),
     displayName: str(pick(row, ['full_name', 'profile_name'])),
     avatarUrl: str(pick(row, ['profile_image_link', 'profile_pic_url'])) ?? null,
@@ -141,10 +150,22 @@ export function postsFromProfile(
   handle: string,
   since: Date,
   until: Date,
-): { posts: NormalizedPost[]; warnings: string[] } {
+): {
+  posts: NormalizedPost[];
+  warnings: string[];
+  exhaustive: boolean;
+  incompleteReason?: string;
+} {
   const warnings: string[] = [];
   const list = Array.isArray(raw.posts) ? raw.posts : [];
-  if (list.length === 0) return { posts: [], warnings };
+  if (list.length === 0) {
+    return {
+      posts: [],
+      warnings,
+      exhaustive: false,
+      incompleteReason: 'The Instagram profile payload exposed no post history and cannot certify the requested window; use the date-ranged post dataset.',
+    };
+  }
 
   const posts: NormalizedPost[] = [];
   let oldest: Date | null = null;
@@ -187,15 +208,16 @@ export function postsFromProfile(
     });
   }
 
-  if (oldest && oldest > since) {
-    warnings.push(
-      'Instagram for @' + handle + ': the vendor returned ' + list.length + ' recent posts reaching back to '
-      + toDayString(oldest) + ', which does not cover the requested window. Older posts are missing, '
-      + 'not absent. Poll more often for complete coverage.',
-    );
-  }
+  const incompleteReason = !oldest
+    ? 'The Instagram profile payload contained no dated posts, so it cannot certify the requested window; use the date-ranged post dataset.'
+    : oldest > since
+      ? 'Instagram for @' + handle + ': the vendor returned ' + list.length + ' recent posts reaching back to '
+        + toDayString(oldest) + ', which does not cover the requested window. Older posts are missing, '
+        + 'not absent. Poll more often for complete coverage.'
+      : undefined;
+  if (incompleteReason) warnings.push(incompleteReason);
 
-  return { posts, warnings };
+  return { posts, warnings, exhaustive: incompleteReason === undefined, incompleteReason };
 }
 
 /**
@@ -214,33 +236,59 @@ export function postsFromProfile(
 export async function fetchPostsByProfile(
   handle: string,
   apiKey: string,
-  opts: { since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal },
-): Promise<{ posts: NormalizedPost[]; followers: number | null; warnings: string[] }> {
+  opts: {
+    since: Date;
+    until: Date;
+    limit: number;
+    onApiCall?: () => void;
+    signal?: AbortSignal;
+    resumeSnapshotId?: string;
+  },
+): Promise<{
+  posts: NormalizedPost[];
+  followers: number | null;
+  /** Instagram private user id observed on the date-ranged post rows. */
+  profileExternalId: string | null;
+  warnings: string[];
+  exhaustive: boolean;
+  incompleteReason?: string;
+}> {
   const fmt = (d: Date) => {
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(d.getUTCDate()).padStart(2, '0');
     return mm + '-' + dd + '-' + d.getUTCFullYear();
   };
 
+  const requestedPosts = Math.min(opts.limit, 200);
   const rows = await scrapeSync(
     DATASETS.instagramPost,
     [{
       url: profileUrl(handle),
-      num_of_posts: Math.min(opts.limit, 200),
+      num_of_posts: requestedPosts,
       start_date: fmt(opts.since),
       end_date: fmt(opts.until),
       post_type: '',
     }],
-    { apiKey, platform: PLATFORM, discoverBy: 'url', onApiCall: opts.onApiCall, signal: opts.signal },
+    {
+      apiKey,
+      platform: PLATFORM,
+      discoverBy: 'url',
+      onApiCall: opts.onApiCall,
+      signal: opts.signal,
+      resumeSnapshotId: opts.resumeSnapshotId,
+    },
   );
 
   const warnings: string[] = [];
   const posts: NormalizedPost[] = [];
   let followers: number | null = null;
+  let profileExternalId: string | null = null;
+  let sawErrorRow = false;
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
     if (isErrorRow(row)) {
+      sawErrorRow = true;
       const why = rowError(row);
       if (why) warnings.push('Instagram row error for @' + handle + ': ' + why);
       continue;
@@ -250,6 +298,22 @@ export async function fetchPostsByProfile(
     // free rather than costing a second call.
     const f = num(pick(row, ['followers']));
     if (f > 0) followers = f;
+
+    const rowProfileExternalId = str(pick(row, ['user_posted_id', 'owner_id']));
+    const rowProfileHandle = str(pick(row, ['user_posted', 'account', 'user_name']))
+      ?.replace(/^@/, '')
+      .toLowerCase();
+    const isRequestedProfile = rowProfileHandle === handle.replace(/^@/, '').toLowerCase();
+    if (rowProfileExternalId && isRequestedProfile) {
+      if (profileExternalId && profileExternalId !== rowProfileExternalId) {
+        throw new AdapterError(
+          'Bright Data returned multiple Instagram account ids for the requested profile @'
+            + handle + '. No observations were accepted.',
+          { platform: PLATFORM, retryable: false },
+        );
+      }
+      profileExternalId = rowProfileExternalId;
+    }
 
     const postedAt = toDate(pick(row, ['date_posted', 'datetime', 'timestamp']));
     const externalId = str(pick(row, ['post_id', 'content_id', 'pk', 'shortcode']));
@@ -292,5 +356,19 @@ export async function fetchPostsByProfile(
     warnings.push('Instagram for @' + handle + ': rows returned but none fell inside the requested window.');
   }
 
-  return { posts, followers, warnings };
+  const incompleteReason = sawErrorRow
+    ? 'Bright Data returned an error row for this Instagram collection; retry the date-ranged post dataset before certifying the window.'
+    : rows.length >= requestedPosts
+      ? 'Bright Data filled its ' + requestedPosts + '-post Instagram request without exposing a continuation cursor; narrow the window or raise the supported cap.'
+      : 'Bright Data completed the Instagram snapshot but exposed no terminal cursor or completeness marker, so the requested historical window cannot be certified.';
+  if (incompleteReason && !warnings.includes(incompleteReason)) warnings.push(incompleteReason);
+
+  return {
+    posts,
+    followers,
+    profileExternalId,
+    warnings,
+    exhaustive: false,
+    incompleteReason,
+  };
 }

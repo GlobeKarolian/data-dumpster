@@ -9,28 +9,34 @@ import type { NextConfig } from 'next';
  * holds API keys, was framable by any origin.
  *
  * The CSP is deliberately conservative rather than aspirational. 'unsafe-inline'
- * on style-src is required by the inlined critical CSS Next emits, and
- * 'unsafe-eval' is omitted because nothing here needs it. script-src stays
- * 'self' plus the inline-script nonce Next manages; if a future dependency
- * needs a CDN it should be added here explicitly rather than by widening this
- * to a wildcard.
+ * on style-src is required by the inlined critical CSS Next emits. React's
+ * development diagnostics require 'unsafe-eval', so it is allowed only in the
+ * local development configuration and remains absent from production. If a
+ * future dependency needs a CDN, add that origin explicitly rather than
+ * widening the policy to a wildcard.
  */
-const CSP = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-  // Avatars and post thumbnails come from every platform's CDN, so images are
-  // the one directive that has to be broad. https: only, never http:.
-  "img-src 'self' https: data: blob:",
-  "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline'",
-  // The browser talks only to this origin; every vendor call is server-side.
-  "connect-src 'self'",
-  'upgrade-insecure-requests',
-].join('; ');
+const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+
+export function buildContentSecurityPolicy(isDevelopment: boolean): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    // Avatars and post thumbnails come from every platform's CDN, so images are
+    // the one directive that has to be broad. https: only, never http:.
+    "img-src 'self' https: data: blob:",
+    "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline'",
+    `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ''}`,
+    // The browser talks only to this origin; every vendor call is server-side.
+    "connect-src 'self'",
+    'upgrade-insecure-requests',
+  ].join('; ');
+}
+
+const CSP = buildContentSecurityPolicy(IS_DEVELOPMENT);
 
 const SECURITY_HEADERS = [
   { key: 'Content-Security-Policy', value: CSP },
@@ -45,6 +51,17 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'media.giphy.com',
+        port: '',
+        pathname: '/media/xLsaBMK6Mg8DK/**',
+        search: '',
+      },
+    ],
+  },
   async headers() {
     return [{ source: '/:path*', headers: SECURITY_HEADERS }];
   },

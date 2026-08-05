@@ -46,7 +46,9 @@ export function NewReportButton({ landscapeId }: { landscapeId: string }) {
       const id = typeof payload === 'object' && payload !== null && 'id' in payload
         ? String((payload as { id: unknown }).id)
         : null;
-      if (id) router.push('/reports/' + id);
+      if (id) router.push(
+        '/reports/' + id + '?landscape=' + encodeURIComponent(landscapeId),
+      );
       else router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The report could not be created.');

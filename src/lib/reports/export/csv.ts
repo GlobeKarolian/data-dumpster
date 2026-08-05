@@ -11,6 +11,7 @@ import {
   NARRATIVE_SECTIONS,
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
+  type ComputedBlock,
 } from '@/lib/reports/types';
 import { executiveLines, type ReportDocument } from '@/lib/reports/render';
 
@@ -189,6 +190,7 @@ export function renderReportCsv(doc: ReportDocument): string {
       'rank',
       'company_id',
       'brand',
+      'is_bgm_owned',
       'total_followers',
       'previous_total_followers',
       'net_change',
@@ -200,6 +202,7 @@ export function renderReportCsv(doc: ReportDocument): string {
       brand.rank,
       brand.companyId,
       brand.name,
+      brand.isBgmOwned ?? false,
       brand.totalFollowers,
       brand.previousTotalFollowers,
       brand.netChange,
@@ -207,25 +210,30 @@ export function renderReportCsv(doc: ReportDocument): string {
       ...REPORT_PLATFORMS.map((platform) => brand.byPlatform[platform]),
     ]));
 
-    csv.section('Top posts', [
+    const topPostColumns = [
       'rank',
       'post_id',
       'company',
+      'is_bgm_owned',
       'platform',
       'posted_at',
       'engagement_total',
       'text',
       'permalink',
-    ], computed.topPosts.map((post) => [
+    ];
+    const topPostRows = (posts: ComputedBlock['topPosts']) => posts.map((post) => [
       post.rank,
       post.id,
       post.companyName,
+      post.isBgmOwned ?? false,
       post.platform,
       post.postedAt,
       post.engagementTotal,
       post.text,
       post.permalink,
-    ]));
+    ]);
+    csv.section('Top posts — market', topPostColumns, topPostRows(computed.topPosts));
+    csv.section('Top posts — BGM', topPostColumns, topPostRows(computed.bgmTopPosts ?? []));
 
     csv.section('Cohort summary', ['field', 'value'], [
       ['landscape', computed.cohort.landscapeName],
@@ -247,6 +255,7 @@ export function renderReportCsv(doc: ReportDocument): string {
       'engagement_total',
       'change_pct_fraction',
       'is_focus',
+      'is_bgm_owned',
     ], computed.cohort.rows.map((company) => [
       company.rank,
       company.companyId,
@@ -254,6 +263,7 @@ export function renderReportCsv(doc: ReportDocument): string {
       company.engagementTotal,
       company.changePct,
       company.isFocus,
+      company.isBgmOwned ?? false,
     ]));
 
     csv.section(

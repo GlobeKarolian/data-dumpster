@@ -267,6 +267,32 @@ describe('Reddit response parsing', () => {
     assert.equal(parsed.profile?.meta?.audienceAvailable, false);
     assert.equal(parsed.posts[0].permalink, 'https://www.reddit.com/r/CambridgeMA/comments/inside/a_boston_story/');
   });
+
+  it('never substitutes mutable Reddit names for missing native ids', () => {
+    const created = Date.parse('2026-07-20T12:00:00Z') / 1000;
+
+    assert.throws(
+      () => parseRedditPage(response([
+        listingPost('community-no-id', created, { subreddit_id: null }),
+      ]), {
+        handle: 'boston',
+        since: new Date('2026-07-01T00:00:00Z'),
+        until: new Date('2026-07-31T23:59:59Z'),
+      }),
+      /without a source-native subreddit id.*mutable subreddit name.*no observations were accepted/i,
+    );
+
+    assert.throws(
+      () => parseRedditUserPage(response([
+        userPost('user-no-id', created, { author_fullname: null }),
+      ]), {
+        handle: 'bostonglobe',
+        since: new Date('2026-07-01T00:00:00Z'),
+        until: new Date('2026-07-31T23:59:59Z'),
+      }),
+      /without a source-native author id.*mutable username.*no observations were accepted/i,
+    );
+  });
 });
 
 describe('Reddit adapter I/O', { concurrency: false }, () => {
@@ -308,6 +334,8 @@ describe('Reddit adapter I/O', { concurrency: false }, () => {
       const result = await redditAdapter.fetch(context({ limit: 2 }));
       assert.deepEqual(result.posts.map((post) => post.externalId), ['one', 'two']);
       assert.equal(result.hasMore, true);
+      assert.equal(result.exhaustive, false);
+      assert.match(result.incompleteReason ?? '', /resume the saved vendor cursor/i);
       assert.equal(result.cursor?.nextCursor, 'page-3');
       assert.match(result.warnings?.[0] ?? '', /unobserved, not absent/i);
     });
@@ -321,6 +349,19 @@ describe('Reddit adapter I/O', { concurrency: false }, () => {
     assert.equal(calls[1].searchParams.get('cursor'), 'page-2');
   });
 
+  it('does not certify a cursorless vendor feed that stops short of the window', async () => {
+    const created = Date.parse('2026-07-20T12:00:00Z') / 1000;
+    await withMockFetch(
+      async () => json(response([listingPost('one', created)], null)),
+      async () => {
+        const result = await redditAdapter.fetch(context());
+        assert.equal(result.hasMore, false);
+        assert.equal(result.exhaustive, false);
+        assert.match(result.incompleteReason ?? '', /no continuation cursor/i);
+      },
+    );
+  });
+
   it('resumes a cursor only for the same subreddit and requested window', async () => {
     const seenCursors: Array<string | null> = [];
     await withMockFetch(async (input) => {
@@ -330,6 +371,7 @@ describe('Reddit adapter I/O', { concurrency: false }, () => {
     }, async () => {
       const base = context();
       await redditAdapter.fetch(context({
+        externalId: 't5_2qh3r',
         cursor: {
           subreddit: 'boston',
           windowSince: base.since.toISOString(),
@@ -338,6 +380,7 @@ describe('Reddit adapter I/O', { concurrency: false }, () => {
         },
       }));
       await redditAdapter.fetch(context({
+        externalId: 't5_2qh3r',
         until: new Date('2026-08-01T00:00:00Z'),
         cursor: {
           subreddit: 'boston',
@@ -349,6 +392,55 @@ describe('Reddit adapter I/O', { concurrency: false }, () => {
     });
 
     assert.deepEqual(seenCursors, ['same-window', null]);
+  });
+
+  it('keeps an empty feed source-limited when a native identity is already verified', async () => {
+    await withMockFetch(async () => json(response([], null)), async () => {
+      const result = await redditAdapter.fetch(context({
+        handle: 'u/bostonglobe',
+        externalId: 't2_k4udmbr',
+      }));
+
+      assert.deepEqual(result.posts, []);
+      assert.equal(result.profile, undefined);
+      assert.equal(result.hasMore, false);
+      assert.equal(result.exhaustive, false);
+      assert.match(result.incompleteReason ?? '', /unmeasured rather than certified empty/i);
+    });
+  });
+
+  it('makes an empty identity-unresolved feed retryable instead of binding a username', async () => {
+    await withMockFetch(async () => json(response([], null)), async () => {
+      await assert.rejects(
+        redditAdapter.fetch(context({
+          handle: 'u/bostonglobe',
+          externalId: null,
+        })),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, /no dedicated user-profile endpoint/i);
+          assert.match(error.message, /retry/i);
+          assert.equal((error as { opts?: { retryable?: boolean } }).opts?.retryable, true);
+          return true;
+        },
+      );
+    });
+  });
+
+  it('keeps empty profile resolution retryable because the feed is not proof of absence', async () => {
+    await withMockFetch(async () => json(response([], null)), async () => {
+      await assert.rejects(
+        redditAdapter.resolveProfile('u/bostonglobe', {
+          ensembleDataToken: 'test-token',
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, /no dedicated user-profile endpoint/i);
+          assert.equal((error as { opts?: { retryable?: boolean } }).opts?.retryable, true);
+          return true;
+        },
+      );
+    });
   });
 
   it('resolves a profile from an exact subreddit row', async () => {
@@ -402,6 +494,8 @@ describe('Reddit adapter I/O', { concurrency: false }, () => {
       assert.equal(result.cursor?.redditEntityType, 'user');
       assert.equal(result.cursor?.nextCursor, 't3_page_3');
       assert.equal(result.hasMore, true);
+      assert.equal(result.exhaustive, false);
+      assert.match(result.incompleteReason ?? '', /resume the saved vendor cursor/i);
     });
 
     assert.equal(calls[0].pathname, '/apis/reddit/user/posts');

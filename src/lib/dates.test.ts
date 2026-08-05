@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe, it } from 'node:test';
 import { endOfDay, startOfDay } from 'date-fns';
-import { formatFullDate } from '@/components/ui/format';
+import { formatDate, formatFullDate } from '@/components/ui/format';
 import {
   dayStrings, daysIn, parseLocalDay, parseRangeParams, presetRange, previousRange, toDayString,
 } from './dates';
@@ -54,6 +54,7 @@ describe('windows are computed in the report zone, not the server zone', () => {
     const r = presetRange(7, now);
     assert.equal(asUtc(r.start), '2026-07-09T04:00:00.000Z');
     assert.equal(asUtc(r.end), '2026-07-16T03:59:59.999Z');
+    assert.equal(formatDate(r.end), 'Jul 15');
     assert.equal(daysIn(r), 7);
   });
 

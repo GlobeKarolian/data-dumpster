@@ -8,6 +8,8 @@ import {
   twitterAdapter,
   twitterSourceOrder,
 } from './twitter';
+import { fetchProfilePosts as fetchTwitterBrightDataPosts } from './twitter-brightdata';
+import { DATASETS } from '@/lib/vendors/brightdata';
 import type { FetchContext } from './types';
 
 function timelineRow(
@@ -214,23 +216,45 @@ describe('X source routing and failover', { concurrency: false }, () => {
       hasBearer: true,
       hasEnsemble: true,
       hasBrightData: true,
-    }), ['x-api-v2', 'ensembledata', 'brightdata']);
+    }), ['x-api-v2', 'brightdata']);
 
     assert.deepEqual(twitterSourceOrder({
       owned: false,
       hasBearer: true,
       hasEnsemble: true,
       hasBrightData: true,
-    }), ['ensembledata', 'brightdata', 'x-api-v2']);
+    }), ['brightdata']);
+
+    assert.deepEqual(twitterSourceOrder({
+      owned: false,
+      hasBearer: false,
+      hasEnsemble: true,
+      hasBrightData: false,
+    }), ['ensembledata']);
+
+    assert.deepEqual(twitterSourceOrder({
+      owned: false,
+      hasBearer: true,
+      hasEnsemble: false,
+      hasBrightData: false,
+    }), []);
   });
 
-  it('uses EnsembleData before a configured Bearer token for competitors', async () => {
+  it('ignores Bearer and EnsembleData and uses Bright Data for public collection', async () => {
     const calls: string[] = [];
     await withMockFetch(async (input) => {
       const url = urlOf(input);
       calls.push(url);
-      if (url.includes('/twitter/user/info')) return json(ensembleProfile());
-      if (url.includes('/twitter/user/tweets')) return json({ data: [] });
+      if (url.startsWith('https://api.brightdata.com/')) {
+        return json([{
+          user_id: '95431448',
+          user_posted: 'BostonGlobe',
+          followers: 769_679,
+          id: 'bright-post-1',
+          date_posted: '2026-07-28T12:00:00Z',
+          description: 'A story',
+        }]);
+      }
       throw new Error('Unexpected source: ' + url);
     }, async () => {
       const result = await twitterAdapter.fetch(context({
@@ -241,7 +265,31 @@ describe('X source routing and failover', { concurrency: false }, () => {
           brightDataApiKey: 'bright',
         },
       }));
+      assert.equal(result.cursor?.source, 'brightdata');
+      assert.equal(result.hasMore, false);
+      assert.equal(result.exhaustive, false);
+    });
+
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].startsWith('https://api.brightdata.com/'));
+    assert.ok(calls.every((url) => url.startsWith('https://api.brightdata.com/')));
+  });
+
+  it('uses EnsembleData for public collection when Bright Data is absent', async () => {
+    const calls: string[] = [];
+    await withMockFetch(async (input) => {
+      const url = urlOf(input);
+      calls.push(url);
+      if (url.includes('/twitter/user/info')) return json(ensembleProfile());
+      if (url.includes('/twitter/user/tweets')) return json({ data: [] });
+      throw new Error('Unexpected source: ' + url);
+    }, async () => {
+      const result = await twitterAdapter.fetch(context({
+        cursor: { __isOwned: false },
+        credentials: { ensembleDataToken: 'ensemble' },
+      }));
       assert.equal(result.cursor?.source, 'ensembledata');
+      assert.equal(result.exhaustive, false);
     });
 
     assert.equal(calls.length, 2);
@@ -267,94 +315,198 @@ describe('X source routing and failover', { concurrency: false }, () => {
         },
       }));
       assert.equal(result.cursor?.source, 'x-api-v2');
+      assert.equal(result.hasMore, false);
+      assert.equal(result.exhaustive, true);
     });
 
     assert.equal(calls.length, 2);
     assert.ok(calls.every((url) => url.startsWith('https://api.x.com/')));
   });
 
-  it('falls back from EnsembleData to Bright Data and names the failed source', async () => {
+  it('does not advertise a continuation when the X pagination token is not persisted', async () => {
+    await withMockFetch(async (input) => {
+      const url = urlOf(input);
+      if (url.includes('/users/by/username/BostonGlobe')) return json(xProfile());
+      if (url.includes('/users/95431448/tweets')) {
+        return json({
+          data: Array.from({ length: 5 }, (_, index) => ({
+            id: String(10_000 - index),
+            created_at: `2026-07-2${8 - index}T12:00:00Z`,
+            text: 'A story',
+            public_metrics: {},
+          })),
+          meta: { next_token: 'not-persisted' },
+        });
+      }
+      throw new Error('Unexpected source: ' + url);
+    }, async () => {
+      const result = await twitterAdapter.fetch(context({
+        cursor: { __isOwned: true },
+        credentials: { bearerToken: 'bearer', selfUserId: '95431448' },
+        limit: 5,
+      }));
+      assert.equal(result.posts.length, 5);
+      assert.equal(result.hasMore, false);
+      assert.equal(result.exhaustive, false);
+      assert.match(result.incompleteReason ?? '', /without a persisted pagination token/i);
+      assert.equal(result.cursor?.newestTweetId, null);
+    });
+  });
+
+  it('does not fall back to EnsembleData after a Bright Data stage fails', async () => {
     const calls: string[] = [];
     await withMockFetch(async (input) => {
       const url = urlOf(input);
       calls.push(url);
       if (url.includes('/twitter/user/info')) {
-        return json({ detail: 'bad token' }, 401);
+        throw new Error('EnsembleData must not be called after a Bright Data failure.');
       }
       if (url.startsWith('https://api.brightdata.com/')) {
+        return json({ error: 'snapshot failed' }, 401);
+      }
+      throw new Error('Unexpected source: ' + url);
+    }, async () => {
+      await assert.rejects(
+        twitterAdapter.fetch(context({
+          cursor: { __isOwned: false },
+          credentials: {
+            bearerToken: 'bearer',
+            ensembleDataToken: 'ensemble',
+            brightDataApiKey: 'bright',
+          },
+        })),
+        /Every configured X source failed.*Bright Data/i,
+      );
+    });
+
+    assert.ok(calls.length > 0);
+    assert.ok(calls.every((url) => url.startsWith('https://api.brightdata.com/')));
+  });
+
+  it('resumes a saved Bright Data receipt before trying EnsembleData again', async () => {
+    const calls: string[] = [];
+    const base = context();
+    await withMockFetch(async (input) => {
+      const url = urlOf(input);
+      calls.push(url);
+      if (url.includes('/progress/sd_saved_x')) return json({ status: 'ready' });
+      if (url.includes('/snapshot/sd_saved_x')) {
         return json([{
           user_id: '95431448',
           user_posted: 'BostonGlobe',
-          name: 'The Boston Globe',
           followers: 769_679,
-          id: 'bright-post-1',
+          id: 'bright-post-resumed',
           date_posted: '2026-07-28T12:00:00Z',
-          description: 'A story',
-          likes: 10,
-          replies: 2,
-          reposts: 3,
-          quotes: 1,
-          bookmarks: 4,
-          views: 500,
+          description: 'A resumed story',
         }]);
       }
       throw new Error('Unexpected source: ' + url);
     }, async () => {
       const result = await twitterAdapter.fetch(context({
-        cursor: { __isOwned: false },
+        externalId: '95431448',
+        cursor: {
+          __isOwned: false,
+          source: 'brightdata',
+          brightDataStage: 'twitter-posts',
+          brightDataDatasetId: DATASETS.twitterPosts,
+          pendingSnapshotId: 'sd_saved_x',
+          pendingSince: new Date().toISOString(),
+          nextCursor: 'sd_saved_x',
+          windowSince: base.since.toISOString(),
+          windowUntil: base.until.toISOString(),
+        },
         credentials: {
-          bearerToken: 'bearer',
           ensembleDataToken: 'ensemble',
           brightDataApiKey: 'bright',
         },
       }));
       assert.equal(result.cursor?.source, 'brightdata');
+      assert.equal(result.cursor?.pendingSnapshotId, null);
       assert.equal(result.posts.length, 1);
-      assert.match(result.warnings?.[0] ?? '', /EnsembleData failed; Bright Data was used instead/i);
-      assert.match(result.warnings?.[0] ?? '', /rejected the token/i);
     });
 
-    assert.ok(calls.some((url) => url.startsWith('https://ensembledata.com/')));
-    assert.ok(calls.some((url) => url.startsWith('https://api.brightdata.com/')));
-    assert.ok(calls.every((url) => !url.startsWith('https://api.x.com/')));
+    assert.ok(calls.some((url) => url.includes('/progress/sd_saved_x')));
+    assert.ok(calls.some((url) => url.includes('/snapshot/sd_saved_x')));
+    assert.ok(calls.every((url) => url.startsWith('https://api.brightdata.com/')));
+    assert.ok(calls.every((url) => !url.includes('/scrape?')));
   });
 
-  it('uses Bearer last for a competitor when both public sources fail', async () => {
+  it('treats a verified X profile with no vendor posts as limited, not broken', async () => {
+    await withMockFetch(async (input) => {
+      const url = urlOf(input);
+      if (url.includes('/twitter/user/info')) {
+        return json({ detail: 'daily quota exhausted' }, 495);
+      }
+      if (url.startsWith('https://api.brightdata.com/')) {
+        return json([{
+          error: 'No public posts were found in the profile for the specified period.',
+          error_code: 'dead_page',
+        }]);
+      }
+      throw new Error('Unexpected source: ' + url);
+    }, async () => {
+      const result = await twitterAdapter.fetch(context({
+        externalId: '95431448',
+        cursor: { __isOwned: false },
+        credentials: {
+          ensembleDataToken: 'ensemble',
+          brightDataApiKey: 'bright',
+        },
+      }));
+
+      assert.equal(result.profile?.externalId, '95431448');
+      assert.equal(result.posts.length, 0);
+      assert.equal(result.exhaustive, false);
+      assert.match(result.incompleteReason ?? '', /cannot certify.*inactive/i);
+    });
+  });
+
+  it('never falls back to EnsembleData or Bearer when Bright Data fails', async () => {
     const calls: string[] = [];
     await withMockFetch(async (input) => {
       const url = urlOf(input);
       calls.push(url);
       if (url.includes('/twitter/user/info')) {
-        return json({ detail: 'bad token' }, 401);
+        throw new Error('EnsembleData must not be called after a Bright Data failure.');
       }
       if (url.startsWith('https://api.brightdata.com/')) {
         return json([{ error: 'profile unavailable' }]);
       }
-      if (url.includes('/users/by/username/BostonGlobe')) return json(xProfile());
-      if (url.includes('/users/95431448/tweets')) return json({ data: [], meta: {} });
       throw new Error('Unexpected source: ' + url);
     }, async () => {
-      const result = await twitterAdapter.fetch(context({
-        cursor: { __isOwned: false },
-        credentials: {
-          bearerToken: 'bearer',
-          selfUserId: '95431448',
-          ensembleDataToken: 'ensemble',
-          brightDataApiKey: 'bright',
-        },
-      }));
-      assert.equal(result.cursor?.source, 'x-api-v2');
-      assert.match(result.warnings?.[0] ?? '', /EnsembleData failed; X API v2 was used instead/i);
-      assert.match(result.warnings?.[1] ?? '', /Bright Data failed; X API v2 was used instead/i);
+      await assert.rejects(
+        twitterAdapter.fetch(context({
+          cursor: { __isOwned: false },
+          credentials: {
+            bearerToken: 'bearer',
+            selfUserId: '95431448',
+            ensembleDataToken: 'ensemble',
+            brightDataApiKey: 'bright',
+          },
+        })),
+        /every configured X source failed/i,
+      );
     });
 
     const hosts = calls.map((url) => new URL(url).hostname);
-    assert.deepEqual(hosts, [
-      'ensembledata.com',
-      'api.brightdata.com',
-      'api.x.com',
-      'api.x.com',
-    ]);
+    assert.deepEqual(hosts, ['api.brightdata.com']);
+  });
+
+  it('rejects Bearer-only public collection without making an X API call', async () => {
+    let calls = 0;
+    await withMockFetch(async () => {
+      calls += 1;
+      throw new Error('No source request was expected.');
+    }, async () => {
+      await assert.rejects(
+        twitterAdapter.fetch(context({
+          cursor: { __isOwned: false },
+          credentials: { bearerToken: 'bearer', selfUserId: '95431448' },
+        })),
+        /public X collection requires an EnsembleData token or a Bright Data API key/i,
+      );
+    });
+    assert.equal(calls, 0);
   });
 
   it('does not try another paid source after caller cancellation', async () => {
@@ -381,6 +533,7 @@ describe('X source routing and failover', { concurrency: false }, () => {
     });
 
     assert.equal(calls.length, 1);
+    assert.ok(calls[0].startsWith('https://api.brightdata.com/'));
   });
 
   it('prefers EnsembleData for profile resolution when Bearer is also configured', async () => {
@@ -400,5 +553,40 @@ describe('X source routing and failover', { concurrency: false }, () => {
 
     assert.equal(calls.length, 1);
     assert.ok(calls[0].startsWith('https://ensembledata.com/'));
+  });
+
+  it('makes Bright-Data-only onboarding explicitly unavailable without buying a posts crawl', async () => {
+    let calls = 0;
+    await withMockFetch(async () => {
+      calls += 1;
+      throw new Error('No source request was expected.');
+    }, async () => {
+      await assert.rejects(
+        twitterAdapter.resolveProfile('BostonGlobe', {
+          ensembleDataToken: '',
+          brightDataApiKey: 'bright',
+        }),
+        /no separate receipt-preserving profile lookup.*Configure EnsembleData.*existing verified channel/i,
+      );
+    });
+    assert.equal(calls, 0);
+  });
+
+  it('does not fabricate an X platform id from the handle', async () => {
+    await withMockFetch(async () => json([{
+      user_posted: 'BostonGlobe',
+      id: 'post-without-author-id',
+      date_posted: '2026-07-28T12:00:00Z',
+      description: 'A story',
+    }]), async () => {
+      await assert.rejects(
+        fetchTwitterBrightDataPosts('BostonGlobe', 'bright', {
+          since: new Date('2026-07-01T00:00:00Z'),
+          until: new Date('2026-07-29T23:59:59Z'),
+          limit: 10,
+        }),
+        /without a stable platform id.*No observations were accepted/i,
+      );
+    });
   });
 });

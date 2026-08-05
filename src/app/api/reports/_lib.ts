@@ -34,6 +34,7 @@ export const manualSchema = z.object({
       raw: z.string().max(400_000),
       rows: z.array(z.array(z.string().max(4_000))).max(2_000),
       updatedAt: z.string().nullable(),
+      breakdown: z.record(z.string(), z.array(z.string().max(4_000))).optional(),
     }),
   ).default({}),
   figures: z.record(z.string(), z.string().max(200)).default({}),

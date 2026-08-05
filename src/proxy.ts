@@ -1,21 +1,17 @@
 /**
- * Edge gate. Decides, before any rendering happens, whether a request is even
+ * Request gate. Decides, before any rendering happens, whether a request is
  * allowed to reach the app.
  *
  * What this is and is not:
  *   - It IS a cheap, uniform "are you signed in" check, so an unauthenticated
- *     browser gets a redirect instead of a rendered shell that then 401s, and an
- *     unauthenticated fetch gets JSON instead of an HTML login page.
+ *     browser gets a redirect instead of a rendered shell that then 401s, and
+ *     an unauthenticated fetch gets JSON instead of an HTML login page.
  *   - It is NOT the authorization boundary. Tenant and role checks need the
  *     database and belong in lib/session.ts, which every handler calls. If this
  *     file were deleted the app would still be secure, only ruder.
  *
- * It verifies the JWT signature rather than merely looking for a cookie, because
- * a check that any client can satisfy by setting a cookie is theatre.
- *
- * Note on naming: Next 16 renames this convention to "proxy.ts" and deprecates
- * "middleware.ts". Migrating is a two-token change -- rename the file and rename
- * the exported function to "proxy" -- and nothing else here has to move.
+ * It verifies the JWT signature rather than merely looking for a cookie,
+ * because a check that any client can satisfy by setting a cookie is theatre.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
@@ -24,8 +20,9 @@ import { getToken } from 'next-auth/jwt';
  * Paths that must work without a session.
  *
  *  /login          the way in
- *  /about          public product, privacy and data-deletion information
+ *  /about/*        public product, privacy, terms and data-deletion information
  *                  used by customers and platform reviewers
+ *  /my-globe/*     public, read-only product concept with no customer data
  *  /invite/*       accepting an invitation, authorized by the token in the path.
  *                  The person holding it has no account yet, so there is nothing
  *                  to authenticate; gating it would make every invitation
@@ -35,18 +32,21 @@ import { getToken } from 'next-auth/jwt';
  *                  named here.
  *  /api/auth/*     Auth.js itself; gating it would deadlock sign-in
  *  /api/cron/*     called by Vercel Cron with a bearer secret, never a cookie
+ *  /api/ingest/worker
+ *                  called by the internal refresh dispatcher with the same
+ *                  bearer secret; the route performs its own cron check
  *  /api/health     uptime probes have no credentials by design
  *  /share/*        published dashboards, authorized by an unguessable token
  */
-const PUBLIC_PREFIXES = ['/login', '/about', '/invite', '/api/auth', '/api/cron', '/share'] as const;
-const PUBLIC_EXACT = ['/api/health'] as const;
+const PUBLIC_PREFIXES = ['/login', '/about', '/my-globe', '/invite', '/api/auth', '/api/cron', '/share'] as const;
+const PUBLIC_EXACT = ['/api/health', '/api/ingest/worker'] as const;
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_EXACT.includes(pathname as (typeof PUBLIC_EXACT)[number])) return true;
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'));
 }
 
-export async function middleware(req: NextRequest): Promise<NextResponse> {
+export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname, search } = req.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
 

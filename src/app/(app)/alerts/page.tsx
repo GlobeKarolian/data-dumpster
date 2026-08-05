@@ -47,6 +47,7 @@ export default async function AlertsPage({
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
 
   const orgId = ctx.orgId;
+  const automationEnabled = process.env.AUTOMATION_DISPATCHER_ENABLED === 'true';
   const [rules, events] = await Promise.all([
     query<RuleRow>(({ sql }) => sql`
       SELECT r.id, r.name, r.kind, r.enabled, r.last_fired_at, r.config, r.destinations,
@@ -73,6 +74,7 @@ export default async function AlertsPage({
       <div>
         <AlertRules
           landscapeId={ctx.landscape.id}
+          automationEnabled={automationEnabled}
           rules={rules.data.map((r) => ({
             id: r.id,
             name: r.name,
@@ -112,7 +114,9 @@ export default async function AlertsPage({
             compact
             icon={Activity}
             title="Nothing has fired yet"
-            description="Rules are evaluated on a schedule. An empty feed means either the rules are new or the landscape has been quiet, and the difference matters — check the last fired time on each rule."
+            description={automationEnabled
+              ? 'Rules are evaluated on a schedule. An empty feed means either the rules are new or the landscape has been quiet.'
+              : 'Automatic evaluation is currently paused. Saved rules will not fire until the dispatcher is enabled.'}
           />
         ) : (
           <ul className="max-h-[36rem] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800/60">

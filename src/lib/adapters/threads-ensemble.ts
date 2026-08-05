@@ -86,7 +86,12 @@ export async function fetchPosts(
   handle: string,
   token: string,
   opts: { since: Date; until: Date; onApiCall?: () => void; signal?: AbortSignal },
-): Promise<{ posts: NormalizedPost[]; warnings: string[] }> {
+): Promise<{
+  posts: NormalizedPost[];
+  warnings: string[];
+  exhaustive: boolean;
+  incompleteReason?: string;
+}> {
   const body = await ensembleGet('/threads/user/posts', { id }, {
     token, platform: PLATFORM, onApiCall: opts.onApiCall, signal: opts.signal,
   });
@@ -100,9 +105,9 @@ export async function fetchPosts(
     const post = unwrapPost(row);
     if (!post) continue;
 
-    const externalId = str(pick(post, ['pk', 'id']));
+    const nativeId = str(pick(post, ['pk', 'id']));
     const postedAt = toDate(pick(post, ['taken_at', 'taken_at_timestamp', 'device_timestamp']));
-    if (!externalId || !postedAt) continue;
+    if (!nativeId || !postedAt) continue;
     if (!oldest || postedAt < oldest) oldest = postedAt;
     if (postedAt < opts.since || postedAt > opts.until) continue;
 
@@ -115,6 +120,10 @@ export async function fetchPosts(
     const amplification = num(pick(appInfo, ['repost_count'])) + num(pick(appInfo, ['quote_count']));
 
     const code = str(pick(post, ['code']));
+    // Bright Data's dedicated Threads post dataset keys the same post by its
+    // public shortcode. Prefer that cross-vendor identity so switching sources
+    // enriches one pooled row instead of creating a duplicate.
+    const externalId = code ?? nativeId;
 
     posts.push({
       externalId,
@@ -139,12 +148,15 @@ export async function fetchPosts(
     });
   }
 
-  if (oldest && oldest > opts.since && rows.length > 0) {
-    warnings.push(
-      'Threads for @' + handle + ': the vendor returned ' + rows.length + ' posts reaching back to '
-      + toDayString(oldest) + ', which does not cover the requested window.',
-    );
-  }
+  const incompleteReason = oldest && oldest > opts.since && rows.length > 0
+    ? 'Threads for @' + handle + ': the vendor returned ' + rows.length + ' posts reaching back to '
+      + toDayString(oldest) + ', which does not cover the requested window and exposes no continuation cursor. Collect more frequently.'
+    : rows.length > 0 && !oldest
+      ? 'The Threads response contained no parseable dated posts, so the requested window cannot be certified; inspect the vendor response shape.'
+      : rows.length === 0
+        ? 'EnsembleData returned an empty recent Threads feed without a terminal pagination marker, so the requested window is unmeasured rather than certified empty.'
+      : undefined;
+  if (incompleteReason) warnings.push(incompleteReason);
 
-  return { posts, warnings };
+  return { posts, warnings, exhaustive: incompleteReason === undefined, incompleteReason };
 }

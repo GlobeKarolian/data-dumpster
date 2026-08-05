@@ -32,6 +32,7 @@ export function Button({ className, variant = 'secondary', size = 'md', ...props
       {...props}
       className={cn(
         'inline-flex shrink-0 items-center rounded-md font-medium transition-colors',
+        'max-sm:min-h-11 max-sm:min-w-11 max-sm:justify-center',
         'disabled:cursor-not-allowed disabled:opacity-60',
         VARIANTS[variant],
         SIZES[size],

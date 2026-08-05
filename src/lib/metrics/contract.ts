@@ -16,8 +16,11 @@ export interface HeadlineStat {
   value: number;
   /** False when the source observations needed by this metric are absent. */
   available: boolean;
+  /** Useful observations exist and certify the full selected window. */
+  complete?: boolean;
   previousValue: number | null;
   previousAvailable: boolean;
+  previousComplete?: boolean;
   changePct: number | null;
   /** Sparkline for the current window. */
   spark: { date: string; value: number | null }[];
@@ -200,6 +203,12 @@ export interface PostsQuery extends AnalyticsQuery {
   pageSize?: number;
 }
 
+/** A compact, channel-balanced post set for overview surfaces. */
+export interface TopPostsQuery extends AnalyticsQuery {
+  /** Maximum winners returned for each included platform. */
+  perPlatform?: number;
+}
+
 /* -------------------------------------------------- function signatures */
 
 export interface MetricsApi {
@@ -207,6 +216,7 @@ export interface MetricsApi {
   getLeaderboard(q: AnalyticsQuery & { metric: MetricKey }): Promise<MetricRow[]>;
   getTimeSeries(q: AnalyticsQuery & { metric: MetricKey }): Promise<TimeSeriesResult>;
   getPosts(q: PostsQuery): Promise<Paged<PostDto>>;
+  getTopPostsByPlatform(q: TopPostsQuery): Promise<PostDto[]>;
   getPostedUrls(q: AnalyticsQuery & { groupBy?: 'domain' | 'url' }): Promise<UrlRow[]>;
   getTagPerformance(q: AnalyticsQuery): Promise<TagRow[]>;
   getPostTypePerformance(q: AnalyticsQuery): Promise<PostTypeRow[]>;

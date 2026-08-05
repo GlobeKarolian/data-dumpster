@@ -47,6 +47,20 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
+/** TikTok media fields may be strings or `{url_list: [...]}` objects. */
+function firstUrl(v: unknown): string | undefined {
+  const direct = str(v);
+  if (direct) return direct;
+  if (!isRecord(v)) return undefined;
+  if (Array.isArray(v.url_list)) {
+    for (const candidate of v.url_list) {
+      const url = str(candidate);
+      if (url) return url;
+    }
+  }
+  return str(v.url) ?? str(v.src);
+}
+
 function date(v: unknown): Date | undefined {
   if (typeof v === 'number') {
     // Unix seconds if it looks like seconds, milliseconds otherwise.
@@ -71,11 +85,12 @@ export async function fetchProfile(
   apiKey: string,
   onApiCall?: () => void,
   signal?: AbortSignal,
+  resumeSnapshotId?: string,
 ): Promise<{ profile: AdapterProfile; audience: NormalizedAudience | undefined }> {
   const rows = await scrapeSync(
     DATASETS.tiktokProfile,
     [{ url: profileUrl(handle) }],
-    { apiKey, platform: PLATFORM, onApiCall, signal },
+    { apiKey, platform: PLATFORM, onApiCall, signal, resumeSnapshotId },
   );
 
   const row = rows.find((r) => isRecord(r) && !isErrorRow(r));
@@ -88,10 +103,22 @@ export async function fetchProfile(
   }
 
   const followers = num(pick(row, ['followers', 'follower_count', 'followers_count']));
-  const resolved = str(pick(row, ['account_id', 'username', 'nickname'])) ?? handle;
+  const resolved = str(pick(row, ['account_id', 'username'])) ?? handle;
+  // Keep the same account-id namespace as EnsembleData. `account_id` is the
+  // observed username and `sec_uid` is a different opaque namespace; neither
+  // may silently become channels.external_id when the primary source fails.
+  const externalId = str(pick(row, ['id', 'user_id', 'uid']));
+  if (!externalId) {
+    throw new AdapterError(
+      'Bright Data returned a TikTok profile for @' + handle
+        + ' without the canonical stable account id (`id`/`user_id`/`uid`). '
+        + 'A username, account_id, or sec_uid cannot replace it; no observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
 
   const profile: AdapterProfile = {
-    externalId: str(pick(row, ['id', 'account_id'])) ?? handle,
+    externalId,
     handle: resolved.replace(/^@/, ''),
     displayName: str(pick(row, ['nickname', 'name'])),
     avatarUrl: str(pick(row, ['profile_pic_url', 'avatar_url', 'profile_image'])) ?? null,
@@ -127,31 +154,52 @@ export async function fetchProfile(
 export async function fetchPosts(
   handle: string,
   apiKey: string,
-  opts: { since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal },
-): Promise<{ posts: NormalizedPost[]; warnings: string[] }> {
+  opts: {
+    since: Date;
+    until: Date;
+    limit: number;
+    onApiCall?: () => void;
+    signal?: AbortSignal;
+    resumeSnapshotId?: string;
+  },
+): Promise<{
+  posts: NormalizedPost[];
+  warnings: string[];
+  exhaustive: boolean;
+  incompleteReason?: string;
+}> {
   const fmt = (d: Date) => {
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(d.getUTCDate()).padStart(2, '0');
     return mm + '-' + dd + '-' + d.getUTCFullYear();
   };
 
+  const requestedPosts = Math.min(opts.limit, 500);
   const rows = await scrapeSync(
     DATASETS.tiktokPostsByProfile,
     [{
       url: profileUrl(handle),
-      num_of_posts: Math.min(opts.limit, 500),
+      num_of_posts: requestedPosts,
       start_date: fmt(opts.since),
       end_date: fmt(opts.until),
     }],
-    { apiKey, platform: PLATFORM, onApiCall: opts.onApiCall, signal: opts.signal },
+    {
+      apiKey,
+      platform: PLATFORM,
+      onApiCall: opts.onApiCall,
+      signal: opts.signal,
+      resumeSnapshotId: opts.resumeSnapshotId,
+    },
   );
 
   const warnings: string[] = [];
   const posts: NormalizedPost[] = [];
+  let sawErrorRow = false;
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
     if (isErrorRow(row)) {
+      sawErrorRow = true;
       const why = rowError(row);
       if (why) warnings.push('Bright Data row error for @' + handle + ': ' + why);
       continue;
@@ -172,6 +220,7 @@ export async function fetchPosts(
       : extractHashtags(text);
 
     const durationSec = num(pick(row, ['video_duration', 'duration']));
+    const video = isRecord(row.video) ? row.video : {};
 
     posts.push({
       externalId,
@@ -181,8 +230,12 @@ export async function fetchPosts(
       type: 'video',
       text,
       permalink: url ?? profileUrl(handle),
-      mediaUrl: str(pick(row, ['video_url', 'media_url'])) ?? null,
-      thumbnailUrl: str(pick(row, ['preview_image', 'thumbnail', 'cover'])) ?? null,
+      mediaUrl: firstUrl(pick(row, ['video_url', 'media_url', 'play_addr', 'download_addr']))
+        ?? firstUrl(pick(video, ['play_addr', 'download_addr']))
+        ?? null,
+      thumbnailUrl: firstUrl(pick(row, ['preview_image', 'thumbnail', 'cover', 'origin_cover']))
+        ?? firstUrl(pick(video, ['cover', 'origin_cover', 'dynamic_cover']))
+        ?? null,
       durationSec: durationSec > 0 ? durationSec : null,
       language: null,
       hashtags,
@@ -201,5 +254,12 @@ export async function fetchPosts(
     warnings.push('Bright Data returned rows for @' + handle + ' but none fell inside the requested window.');
   }
 
-  return { posts, warnings };
+  const incompleteReason = sawErrorRow
+    ? 'Bright Data returned an error row for this TikTok collection; retry the date-ranged post dataset before certifying the window.'
+    : rows.length >= requestedPosts
+      ? 'Bright Data filled its ' + requestedPosts + '-post TikTok request without exposing a continuation cursor; narrow the window or raise the supported cap.'
+      : 'Bright Data completed the TikTok snapshot but exposed no terminal cursor or completeness marker, so the requested historical window cannot be certified.';
+  if (incompleteReason && !warnings.includes(incompleteReason)) warnings.push(incompleteReason);
+
+  return { posts, warnings, exhaustive: false, incompleteReason };
 }

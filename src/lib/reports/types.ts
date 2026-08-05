@@ -15,28 +15,28 @@
  * Every block below is a `type` rather than an `interface` so it stays
  * assignable to the jsonb columns, which are typed as Record<string, unknown>.
  */
-import type { Platform } from '@/lib/types';
+import type { Platform, PostType } from '@/lib/types';
 
 /**
  * The platforms the owned-brand table reports on, in artefact order.
  *
- * Threads and Bluesky were missing from the original five and should not have
- * been: across the Boston News landscape they carry 200 and 396 posts a week
- * against TikTok's 98, so leaving them out understated the estate and hid the
- * two fastest-moving channels the newsroom runs.
+ * Threads, Bluesky and LinkedIn were missing from the original five and should
+ * not have been. A supported platform must not disappear from the executive
+ * table merely because it was added after that table was first designed.
  *
  * Reddit is here on one channel with no posts yet. An empty column is the
  * correct thing to show: it says the channel is tracked and not collecting,
  * which is a fault worth seeing rather than an absence worth hiding.
  */
 export const REPORT_PLATFORMS = [
-  'facebook', 'instagram', 'youtube', 'twitter', 'tiktok', 'threads', 'bluesky', 'reddit',
+  'facebook', 'instagram', 'linkedin', 'youtube', 'twitter', 'tiktok', 'threads', 'bluesky', 'reddit',
 ] as const;
 export type ReportPlatform = (typeof REPORT_PLATFORMS)[number];
 
 export const REPORT_PLATFORM_LABELS: Record<ReportPlatform, string> = {
   facebook: 'Facebook',
   instagram: 'Instagram',
+  linkedin: 'LinkedIn',
   youtube: 'YouTube',
   twitter: 'X',
   tiktok: 'TikTok',
@@ -59,6 +59,8 @@ export type Movement = {
 export type BrandRow = {
   companyId: string;
   name: string;
+  /** Membership in the organization-private BGM portfolio landscape. */
+  isBgmOwned?: boolean;
   rank: number | null;
   totalFollowers: number | null;
   previousTotalFollowers: number | null;
@@ -73,10 +75,13 @@ export type TopPost = {
   rank: number;
   companyName: string;
   platform: Platform;
+  type?: PostType;
   postedAt: string;
   text: string | null;
   permalink: string | null;
+  thumbnailUrl?: string | null;
   engagementTotal: number;
+  isBgmOwned?: boolean;
 };
 
 export type CohortRow = {
@@ -86,6 +91,8 @@ export type CohortRow = {
   engagementTotal: number;
   changePct: number | null;
   isFocus: boolean;
+  /** True for every company in the BGM landscape, not only the focus company. */
+  isBgmOwned?: boolean;
 };
 
 export type CohortSummary = {
@@ -130,6 +137,8 @@ export type ComputedBlock = {
   };
   brands: BrandRow[];
   topPosts: TopPost[];
+  /** Highest-engagement posts restricted to BGM portfolio companies. */
+  bgmTopPosts?: TopPost[];
   cohort: CohortSummary;
   /** Measurement caveats from the metrics layer. Surfaced, never swallowed. */
   caveats: string[];
@@ -197,15 +206,16 @@ export type ManualTable = {
 export type ManualBlock = Record<string, ManualTable>;
 
 /**
- * The sections that live outside this app. Search Console, the referral report,
- * the paid dashboard and Apple News are four separate logins; pretending to
- * integrate them would be a worse lie than a paste box.
+ * External report sections. Search Console can be synchronized through its
+ * official API; the referral report, paid dashboard and Apple News remain
+ * explicit human inputs. Every section retains a paste fallback so an upstream
+ * outage never forces someone to rebuild a report elsewhere.
  */
 export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'globeSearch',
     title: 'Globe.com Top Web Searches Sorted By URL Clicks',
-    hint: 'Search Console, Performance, Queries tab. Copy the rows and paste here.',
+    hint: 'Pulled from the same Globe.com Search Console property shown in the linked dashboard. Paste remains available as a fallback.',
     columns: [
       { key: 'query', label: 'Search Query' },
       { key: 'clicks', label: 'URL Clicks', numeric: true },
@@ -217,7 +227,7 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'bostonSearch',
     title: 'Boston.com Top Web Searches Sorted By URL Clicks',
-    hint: 'Search Console for the Boston.com property, same export.',
+    hint: 'Pulled from the same Boston.com Search Console property shown in the linked dashboard. Paste remains available as a fallback.',
     columns: [
       { key: 'query', label: 'Search Query' },
       { key: 'clicks', label: 'URL Clicks', numeric: true },

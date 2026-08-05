@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   indexMaterialNumbers,
   verifyBrief,
+  verifyFactSheetAnswer,
   verifyNumbersAgainstMaterial,
   indexFactNumbers,
 } from './verify';
@@ -18,6 +19,37 @@ function headline(key: MetricKey, value: number): HeadlineStat {
     previousAvailable: false,
     changePct: null,
     spark: [],
+  };
+}
+
+function factsWithPostsRow(
+  value: number,
+  previousValue: number | null = null,
+  changePct: number | null = null,
+): FactSheet {
+  return {
+    landscape: { id: 'landscape-1', name: 'Example', focusCompany: 'Alpha' },
+    range: { start: '2026-07-20', end: '2026-07-26', days: 7 },
+    previousRange: { start: '2026-07-13', end: '2026-07-19' },
+    companies: [{ id: 'alpha', name: 'Alpha', slug: 'alpha' }],
+    leaderboards: {
+      posts: [{
+        company: { id: 'alpha', name: 'Alpha', slug: 'alpha' },
+        value,
+        available: true,
+        previousValue,
+        previousAvailable: previousValue !== null,
+        changePct,
+        rank: 1,
+      }],
+    },
+    focusSummary: null,
+    topPostsOverall: [],
+    tagPerformance: [],
+    postTypePerformance: [],
+    notableUrls: [],
+    anomalies: [],
+    caveats: [],
   };
 }
 
@@ -84,10 +116,15 @@ describe('verifyNumbersAgainstMaterial', () => {
       'The rate increased 1,200%.',
       'Manual rate: 1,200%.',
     );
+    const lowerBoundary = verifyNumbersAgainstMaterial(
+      'The rate changed -95%.',
+      'Manual rate: -95%.',
+    );
 
     assert.equal(result.ok, false);
     assert.equal(result.stats.grounded, 1);
     assert.match(result.violations[0] ?? '', /near-zero baseline/);
+    assert.equal(lowerBoundary.ok, true);
   });
 
   it('does not ground invented percent or currency units with a plain number', () => {
@@ -162,7 +199,7 @@ describe('verifyNumbersAgainstMaterial', () => {
 });
 
 describe('verifyBrief', () => {
-  it('keeps citation and caveat enforcement while sharing numeric grounding', () => {
+  it('keeps citation and qualitative caveat enforcement while sharing numeric grounding', () => {
     const facts: FactSheet = {
       landscape: { id: 'landscape-1', name: 'Example', focusCompany: null },
       range: { start: '2026-07-20', end: '2026-07-26', days: 7 },
@@ -178,13 +215,28 @@ describe('verifyBrief', () => {
       caveats: ['Coverage includes only 3 complete days.'],
     };
     const result = verifyBrief(
-      'The window covers 7 days [facts.range.days]. Coverage includes only 3 complete days.',
+      'The window covers 7 days [facts.range.days]. Coverage includes too few complete days.',
       facts,
     );
 
     assert.equal(result.ok, true);
-    assert.deepEqual(result.stats, { total: 2, grounded: 2, cited: 1 });
+    assert.deepEqual(result.stats, { total: 1, grounded: 1, cited: 1 });
     assert.deepEqual(result.missingCaveats, []);
+  });
+
+  it('does not let a number inside a caveat ground an unrelated uncited claim', () => {
+    const facts = factsWithPostsRow(7);
+    facts.caveats = ['Coverage includes only 3 complete days.'];
+
+    const result = verifyBrief(
+      'Alpha published 3 posts. Coverage includes only 3 complete days.',
+      facts,
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.stats.total, 2);
+    assert.equal(result.stats.grounded, 0);
+    assert.equal(result.unverified.length, 2);
   });
 
   it('still accepts percentage prose backed by a fractional fact-sheet value', () => {
@@ -249,6 +301,104 @@ describe('verifyBrief', () => {
     assert.equal(result.ok, false);
     assert.equal(result.claims[0]?.found, false);
   });
+
+  it('parses and verifies complete citation paths containing array indexes', () => {
+    const facts = factsWithPostsRow(12);
+
+    const result = verifyBrief(
+      'Alpha published 12 posts [facts.leaderboards.posts[0].value].',
+      facts,
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.claims[0]?.citedPath, 'facts.leaderboards.posts[0].value');
+    assert.equal(result.claims[0]?.matchedPath, 'facts.leaderboards.posts[0].value');
+  });
+
+  it('rejects an equal-valued citation for a different kind of fact', () => {
+    const facts = factsWithPostsRow(7);
+
+    const wrongPath = verifyBrief(
+      'The company published 7 posts [facts.range.days].',
+      facts,
+    );
+    const rightPath = verifyBrief(
+      'The company published 7 posts [facts.leaderboards.posts[0].value].',
+      facts,
+    );
+
+    assert.equal(wrongPath.ok, false);
+    assert.equal(wrongPath.claims[0]?.found, true);
+    assert.match(wrongPath.miscited[0] ?? '', /describes days.*claim describes posts/);
+    assert.equal(rightPath.ok, true);
+  });
+
+  it('binds multiple citations to claims in the same order as the prompt', () => {
+    const facts = factsWithPostsRow(7);
+
+    const result = verifyBrief(
+      'The window covered 7 days and Alpha published 7 posts '
+        + '[facts.leaderboards.posts[0].value] [facts.range.days].',
+      facts,
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.miscited.length, 2);
+  });
+
+  it('enforces both percentage guardrails from the generation prompt', () => {
+    const facts = factsWithPostsRow(1, 100, -0.99);
+
+    const result = verifyBrief(
+      'Publishing changed -99% [facts.leaderboards.posts[0].changePct].',
+      facts,
+    );
+
+    assert.equal(result.claims[0]?.found, true);
+    assert.equal(result.miscited.length, 0);
+    assert.equal(result.ok, false);
+    assert.match(result.violations[0] ?? '', /near-zero baseline/);
+  });
+});
+
+describe('verifyFactSheetAnswer', () => {
+  it('fails closed on an uncited or semantically miscited answer', () => {
+    const facts = factsWithPostsRow(7);
+
+    assert.equal(verifyFactSheetAnswer('Alpha published 7 posts.', facts).ok, false);
+    assert.equal(verifyFactSheetAnswer(
+      'Alpha published 7 posts [facts.range.days].',
+      facts,
+    ).ok, false);
+    assert.equal(verifyFactSheetAnswer(
+      'Alpha published 7 posts [facts.leaderboards.posts[0].value].',
+      facts,
+    ).ok, true);
+  });
+
+  it('does not require an unrelated caveat in a short answer', () => {
+    const facts = factsWithPostsRow(7);
+    facts.caveats = ['Instagram audience history is incomplete.'];
+
+    const result = verifyFactSheetAnswer(
+      'Alpha published 7 posts [facts.leaderboards.posts[0].value].',
+      facts,
+    );
+
+    assert.equal(result.ok, true);
+  });
+
+  it('rejects spelled-out quantities that would bypass digit extraction', () => {
+    const facts = factsWithPostsRow(7);
+    const result = verifyFactSheetAnswer(
+      'Alpha published seven posts [facts.leaderboards.posts[0].value].',
+      facts,
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.stats.total, 0);
+    assert.match(result.violations[0] ?? '', /Spelled-out quantity/);
+  });
 });
 
 describe('unmeasured rows are not grounds for a claim', () => {
@@ -286,5 +436,25 @@ describe('unmeasured rows are not grounds for a claim', () => {
     const index = indexFactNumbers(facts);
     assert.ok(index.some((e) => e.value === 500));
     assert.ok(!index.some((e) => e.path.includes('previousValue')));
+  });
+
+  it('does not index a platform breakdown the prompt hid', () => {
+    const facts = {
+      leaderboards: {
+        posts: [{
+          company: { id: 'a', name: 'Alpha' },
+          value: 12,
+          available: true,
+          rank: 1,
+          breakdown: { instagram: 12, youtube: 999 },
+          breakdownAvailability: { instagram: true, youtube: false },
+        }],
+      },
+    } as unknown as Parameters<typeof indexFactNumbers>[0];
+
+    const index = indexFactNumbers(facts);
+
+    assert.ok(index.some((entry) => entry.path.endsWith('breakdown.instagram')));
+    assert.ok(!index.some((entry) => entry.path.endsWith('breakdown.youtube')));
   });
 });

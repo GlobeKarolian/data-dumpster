@@ -220,7 +220,8 @@ export function OverviewBenchmarkPanel({
   } else {
     insights.push(
       focusName + ' ranks ' + ordinal(focus.rank) + ' of ' + availableRows.length
-      + ' measured companies for ' + metricLabel.toLowerCase() + '.',
+      + ' measured companies for ' + metricLabel.toLowerCase()
+      + (focus.complete === false ? ' on partial coverage; treat this rank as provisional.' : '.'),
     );
   }
 

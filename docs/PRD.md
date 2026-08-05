@@ -1,9 +1,9 @@
 # Data Dumpster: product requirements
 
 **Owner:** Matt Karolian
-**Status:** v1 built and deployable. This document describes what exists, what
-comes next, and what will not be built.
-**Last updated:** July 2026
+**Status:** takeover foundation implemented; owned-data isolation remains a
+release gate before multi-organization or expanded owned-insight use.
+**Last updated:** 3 August 2026
 
 ---
 
@@ -137,19 +137,23 @@ different audience sizes. Total engagement, engagement per post, applause and
 views all scale with how many followers a brand already has. Put a 4,000,000
 follower national outlet and a 40,000 follower metro daily in the same table and
 the national outlet wins every one of those columns regardless of whether its
-content is better. Dividing engagement by followers and by posts divides that
-advantage back out and leaves something close to a content-quality signal.
+content is better. Taking each post's engagement divided by its follower count
+at publication, then averaging those per-post rates, divides that advantage back
+out without letting a large account's denominator swamp a smaller one. The
+result is something close to a content-quality signal.
 
 It is not perfect and the tooltip says so. Two honest limits ship in the product:
 it is undefined for any channel with no follower reading, and it flatters very
-small accounts whose handful of loyal followers all engage.
+small accounts whose handful of loyal followers all engage. A post without a
+positive follower reading is excluded from both the sum and count. If no post
+is measurable, the result is blank rather than 0.000 percent.
 
-The alternative would be engagement rate by view, which is a truer read because
-it measures against people who actually saw the content rather than people who
-could have. It is unusable here. No public API exposes impressions for content
-you do not own, on any platform, so the metric is undefined for essentially every
-competitor. Data Dumpster stores it as NULL rather than 0 in that case, so the metrics
-layer can distinguish "not exposed" from "nobody engaged".
+Engagement rate by view is a truer read when a source exposes a real view
+denominator because it measures against people who saw the content rather than
+people who could have. Availability is uneven across platforms and sources. The
+derived rate is unavailable when there is no positive measured view denominator.
+Some adapters use a storage-level 0 for an unexposed counter; that raw field
+alone is not a measurement.
 
 ### Rules that are enforced in code, not in a style guide
 
@@ -163,6 +167,9 @@ layer can distinguish "not exposed" from "nobody engaged".
   "src/lib/ai/verify.ts" treats printing one as a rule violation.
 - Share of voice and share of engagement move when the landscape membership
   changes, without anyone changing behaviour. The caveat ships with the number.
+- A source-level zero is not automatically a measured zero. Some adapters use
+  zero for native fields the platform did not expose; product reads must consult
+  coverage and availability before rendering or averaging that field.
 
 ---
 
@@ -171,18 +178,28 @@ layer can distinguish "not exposed" from "nobody engaged".
 ### Now (built and in the repository)
 
 **Landscapes.** A named competitive set: one focus company plus N competitors.
-Multi-tenant from the first migration, so Globe, Boston.com and STAT can be
-separate orgs or separate landscapes inside one org without a fork.
+Landscapes and their product artifacts are organization-scoped. Shared public
+companies and observations can serve several landscapes without duplicate
+collection; owned-native separation is still the release gate.
 
 **Companies and channels.** A company has zero or more channels, one per
 platform handle. Channels carry an isOwned flag, which changes which read path
-the adapter takes on Instagram, TikTok and LinkedIn.
+the adapter takes on several platforms. That global flag is a legacy routing
+hint, not ownership proof. It must be replaced by the verified organization and
+credential bindings in `docs/OWNED-DATA-ISOLATION.md`.
 
-**Ingestion.** Eight adapters behind one interface: Facebook, Instagram, X,
-YouTube, TikTok, LinkedIn, Bluesky, RSS. A registry that makes adding a platform
-one file plus one line. A runner that is idempotent, chunks writes under the
-Postgres bind-parameter limit, isolates per-channel failures, and records every
-run in an ingestion_runs table with API call counts.
+**Ingestion.** Platform adapters behind one interface: Facebook, Instagram, X,
+YouTube, TikTok, LinkedIn, Threads, Reddit and Bluesky. There is no RSS
+ingestion. Each adapter must explicitly certify the attempted window, provide a
+durable continuation, or state why the source is terminally incomplete. A
+Postgres-backed queue requests 90 days initially, uses a two-day refresh overlap,
+leases rows with `SKIP LOCKED`, runs up to ten network workers behind platform
+rate gates, distinguishes attempt freshness from certified coverage, and stops
+source caps from becoming paid retry loops. The runner uses ordered idempotent
+writes, chunks statements under the bind-parameter limit, isolates per-channel
+failures, and audits source outcome and API calls. Pooled collection is forced
+through an allowlist of deployment public sources; workspace owner credentials
+cannot influence shared rows.
 
 **Cross-Channel overview.** Four headline stats with prior-period deltas and
 sparklines, platform mix against the landscape average, best post per platform.
@@ -209,15 +226,27 @@ URL, with post counts, engagement and which companies posted it.
 published at an unguessable share token for read-only external viewing.
 
 **Alerts.** Seven kinds: competitor outlier, audience swing, volume drop, new
-channel, keyword hit, share-of-voice shift, custom. Evaluated hourly, deduplicated
-on a stable key, delivered to Slack or email.
+channel, keyword hit, share-of-voice shift, custom. The implemented evaluator
+deduplicates events and makes best-effort Slack notifications. Its cron schedule
+is inactive, and alert delivery does not yet have the destination-level audit
+used by reports.
 
 **Weekly briefs.** Fact sheet computed in SQL, model narrates it, deterministic
-verifier checks every number against the sheet, one repair pass on failure, then
-markdown plus fact sheet plus verdict stored together in one row.
+verifier checks every number and citation plus required caveats, and one repair
+pass is allowed. A second failure returns an error: no brief is saved or shown.
+Passing markdown, exact fact sheet, verdict and generation metadata are stored
+together.
 
-**Ask.** Natural-language questions over the same fact sheet, with explicit
-refusal and a statement of what filter would produce the missing figure.
+**Ask.** Natural-language questions over the exact fact sheet and filter state
+displayed by the page. A fingerprint rejects changed evidence before model
+spend. Every numeric claim and citation is verified, with one repair; a second
+failure shows no answer.
+
+**Weekly Reports and delivery.** Report screen, sectioned CSV and PowerPoint
+render from one stored document. Email and organization-bound Slack schedules,
+run-now, stable delivery keys and a per-destination audit are implemented.
+Ambiguous sends become `unknown` and are not automatically retried. The report
+dispatcher route exists but its production schedule is inactive.
 
 **Bring-your-own-model.** Six working providers (Anthropic, OpenAI, Google,
 Azure OpenAI, any OpenAI-compatible endpoint, Ollama) plus Bedrock present and
@@ -225,29 +254,41 @@ failing loudly with the workaround. Per-call token and cost metering into an
 ai_usage table, and a spend panel in Settings that reads from it.
 
 **Security.** Auth.js v5 credentials sign-in, edge middleware that verifies the
-JWT signature rather than looking for a cookie, org scoping enforced in the
-session layer on every handler, AES-256-GCM encryption at rest for every platform
-token and model key, constant-time bearer comparison on the cron routes.
+JWT signature rather than looking for a cookie, organization-guarded landscapes,
+AES-256-GCM encryption at rest for platform and model secrets, and constant-time
+bearer comparison on cron routes. Public observation pooling is intentional;
+phase 0 now contains new pooled writes to public sources. Legacy pooled rows
+still need audit/quarantine/re-collection, and complete owned-native isolation
+remains the release gate below.
 
-### Next (the first quarter of real use)
+### Next (release gates and first-quarter work)
 
-1. **Per-platform refresh windows.** The engagement refresh overlap is a two-day
-   constant in "runner.ts". On metered X it is the single biggest cost lever in
-   the system. It should be a per-platform setting with the cost shown next to it.
-2. **Reddit rollout.** The EnsembleData adapter is implemented. Confirm the
-   commercial-use terms are covered, attach the first user accounts and
-   communities, and measure vendor cost and coverage before broad rollout.
-3. **Owned-channel depth.** Meta and LinkedIn owned tokens unlock impressions,
-   reach, clicks and saves for our own accounts. Different question from the
-   competitive one, same pipes, high value to the social team.
-4. **Scheduled delivery.** Briefs and dashboard snapshots to Slack and email on a
-   schedule, not just on demand. The cron already exists; the delivery routing
-   does not.
-5. **Desk and vertical rollups.** Tags exist and map to desks. Rolling them into
-   a per-desk scorecard is a query and a screen, not new infrastructure.
-6. **Benchmarks.** Percentile bands for engagement rate by follower across the
-   tracked set, so a number has a reference point without a competitor being
-   named.
+1. **Owned-data isolation.** Implement
+   the remaining `docs/OWNED-DATA-ISOLATION.md` phases. Global channel identity,
+   exact landscape demand and public-source containment are in place. Add
+   explicit credential connections, verified owned bindings, organization-private
+   observations and run provenance; quarantine legacy private values, re-collect
+   public baselines and pass the cross-tenant suite before enabling owned depth.
+2. **Deploy and verify the collection foundation.** Run the pooled-identity
+   audit, then apply the collection-outcome and pooled-channel-demand migrations
+   immediately before matching code. Inspect `/api/health`, queue outcomes and
+   closed-day audience coverage. Do not reinstate legacy green coverage for
+   unproved vendor windows.
+3. **Chronological X coverage.** Bright Data is the configured primary and a
+   live exact-window test was incomplete; the no-Bright EnsembleData fallback is
+   selected Highlights and is always source-limited. Choose an approved
+   chronological source or explicitly accept a limited X product.
+4. **Source approvals.** Record Legal and procurement decisions for purchased
+   Facebook, Instagram, TikTok, X, Threads and LinkedIn paths; confirm commercial
+   Reddit rights before production collection.
+5. **Post Library rebuild and product cleanup.** This is separate from Content
+   Analysis. Resolve GBH News landscape membership, finish dashboard/widget
+   export gaps, and make source limitations legible without operator knowledge.
+6. **Activate communication jobs deliberately.** Tune alert signal quality and
+   test brief/report delivery before adding their cron entries. Report delivery
+   already exists; activation is an operating decision.
+7. **Per-platform cost controls.** Make refresh overlap and source priority
+   explicit per platform, with measured cost beside the setting.
 
 ### Later (only if the first quarter earns it)
 
@@ -286,12 +327,15 @@ treated as measured within one meeting, and the entire trust argument for this
 product collapses the first time somebody discovers a headline figure was
 inferred. Blanks and labelled gaps only.
 
-**No scraped data.** Where an API forbids competitor access, Data Dumpster reports the
-gap. A vendor could sell scraped TikTok data. It breaks without warning, and it
-is not defensible if the Globe is ever asked where a number came from.
+**No unreviewed or disguised acquisition.** Purchased competitor sources are
+implemented because official APIs leave material gaps. They may run only after
+Legal and procurement approve the use, and every result must retain source and
+coverage provenance. A vendor row is never represented as an official platform
+API observation.
 
-**Not a hosted multi-customer SaaS.** It is multi-tenant so Globe brands can
-coexist. It is not a business.
+**Not a hosted multi-customer SaaS.** The target supports separate Globe
+workspaces, but owned-native isolation must be completed before treating even
+that internal multi-organization shape as safe. It is not an external SaaS.
 
 **No hosted model.** Data Dumpster will never ship inference. If it did, every
 argument in "docs/BYO-MODEL.md" would be false.
@@ -351,16 +395,18 @@ exists to avoid.
 
 ## 7. Open questions
 
-**Which landscape is the real one.** The seed ships two (Boston News Landscape,
-Globe Owned Brands). The right competitive set for the Globe is a judgement call
-that belongs to the audience team, and the answer changes share of voice and
-share of engagement for everybody in it. This should be decided by a person, on
-the record, before the first brief circulates.
+**Which landscape is the real one.** The product carries BGM and Boston News
+Market landscapes. The right competitive set is a judgement call that belongs
+to the audience team, and the answer changes share of voice and share of
+engagement for everybody in it. GBH News also has collected posts but no current
+landscape membership. Decide both on the record before a brief circulates.
 
-**Whether X is worth paying for.** Metered X for a dozen competitor accounts is
-roughly 180 dollars a month at a three-day refresh window, with medium confidence
-on the rate. The measurement is whether an X-sourced number ever changes a
-decision in the first quarter. If not, drop it and save the line item.
+**Whether limited X is worth buying.** Bright Data is primary when configured,
+but its live exact-window test was incomplete; the no-Bright EnsembleData
+fallback returns selected Highlights rather than a chronological timeline.
+Measure whether those profile and engagement facts change decisions; otherwise
+choose a chronological source or remove X from claims that require complete post
+coverage.
 
 **How much history matters.** Rival IQ's genuine advantage is a decade of stored
 time series. Data Dumpster starts at zero. The open question is whether newsroom
@@ -368,11 +414,16 @@ decisions actually depend on 24-month comparisons or on 90-day ones. My read is
 90 days, but I have not tested it, and if I am wrong that is a real argument for
 buying.
 
-**Where the Facebook blind spot bites.** Facebook competitor data is not
-obtainable. The question is whether RSS plus cross-platform inference covers the
-decisions that used to be made on CrowdTangle data, or whether there is a class of
-question the Globe simply can no longer answer. Worth writing down explicitly
-after a quarter of use.
+**Where Facebook coverage can still bite.** Existing competitor Page collection
+uses Bright Data; Page Public Content Access remains a possible sanctioned route
+after approval. Caps and vendor continuity can still leave windows incomplete.
+The product must display that coverage state rather than infer Facebook
+performance from another source.
+
+**Which purchased paths Legal approves.** Implemented does not mean authorized.
+Record a source-by-source decision for Bright Data on Facebook, Instagram,
+TikTok, X, Threads and LinkedIn, plus EnsembleData Reddit commercial use and
+no-Bright fallbacks, including retention and provenance terms.
 
 **Who owns the metric dictionary.** Definitions are in code, which is correct for
 consistency and wrong for editorial ownership. At some point a person in the

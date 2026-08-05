@@ -35,13 +35,20 @@ export function ExportMenu({
   const pathname = usePathname();
   const [copied, setCopied] = React.useState(false);
 
-  const withParams = (href: string) =>
-    landscapeId ? apiUrl(href, searchParams, landscapeId) : href;
   const firstPathSegment = pathname.split('/').filter(Boolean)[0];
   const fixedPlatform =
     firstPathSegment && PLATFORM_PATHS.has(firstPathSegment)
       ? firstPathSegment as Platform
       : null;
+  const withParams = (href: string) =>
+    landscapeId
+      ? apiUrl(href, searchParams, landscapeId, {
+          // A platform page carries its scope in the pathname, not the query
+          // string. Without this override, "Instagram as CSV" exported every
+          // platform while the screen itself showed Instagram only.
+          platforms: fixedPlatform ?? undefined,
+        })
+      : href;
   const briefHref = hrefWithGlobalParams(
     '/briefs',
     searchParams,

@@ -58,9 +58,11 @@ export function DumpsterMark({
 export function DumpsterLogo({
   className,
   compact = false,
+  forceLight = false,
 }: {
   className?: string;
   compact?: boolean;
+  forceLight?: boolean;
 }) {
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
@@ -69,11 +71,17 @@ export function DumpsterLogo({
       </span>
       <span className="min-w-0 leading-tight">
         {compact ? null : (
-          <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
+          <span className={cn(
+            'block text-[9px] font-semibold uppercase tracking-[0.18em]',
+            forceLight ? 'text-zinc-400' : 'text-zinc-400 dark:text-zinc-500',
+          )}>
             Social Media
           </span>
         )}
-        <span className="block truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <span className={cn(
+          'block truncate text-sm font-semibold tracking-tight',
+          forceLight ? 'text-zinc-900' : 'text-zinc-900 dark:text-zinc-50',
+        )}>
           Data Dumpster
         </span>
       </span>

@@ -4,6 +4,11 @@ Catalogued from the live product on Matt's account, 28 and 29 July 2026. Every
 metric, screen and widget below was read off the running app rather than from
 marketing pages.
 
+**Dating note.** The Rival IQ observations remain a 28–29 July 2026 snapshot.
+Data Dumpster implementation status was rechecked on 3 August 2026 against the
+current checkout and `HANDOFF.md`. Status annotations below do not claim that
+Rival IQ itself was re-audited on 3 August.
+
 ## Information architecture
 
     Landscape          Companies, Landscape Settings, Post Tag Manager
@@ -23,8 +28,11 @@ marketing pages.
 
 The split that matters is competitive public data against your private data.
 Anything requiring a token an org owns lives in the second group and is never
-charted against rivals. LinkedIn appears ONLY there, which is the strongest
-available evidence that LinkedIn competitor data cannot be bought by anyone.
+charted against rivals. LinkedIn appeared only there in the 28–29 July Rival IQ
+snapshot. That describes Rival IQ's product navigation; it does not establish
+market availability. Data Dumpster now collects public LinkedIn company pages
+through Bright Data: follower stock, posts, likes and comments only, with every
+history window source-limited.
 
 Every platform screen carries the same five tabs: Overview, Leaderboard, Social
 Posts, Post Tags, Posted URLs.
@@ -103,13 +111,16 @@ the whole book.
 | Capability | Rival IQ | Data Dumpster |
 |---|---|---|
 | Landscape model, focus plus rivals | yes | yes |
-| Cross-channel and per-platform screens | yes | yes, plus Threads and Bluesky |
+| Cross-channel and per-platform screens | yes | yes, plus Threads, Bluesky and Reddit |
 | Applause, conversation, amplification | yes | yes, plus saves |
 | Engagement rate by follower and by view | yes | yes |
 | Social posts explorer with tags and URLs | yes | yes |
 | Post tagging, rules-based | yes | yes, plus AI tagging |
+| Platform-native metric and publication names | yes | yes: Videos/Subscribers where appropriate, Posts/Followers elsewhere |
 | Custom dashboards | yes | yes |
 | Alerts | yes | yes |
+| Scheduled PowerPoint and CSV delivery | yes | yes: email, tenant-bound Slack links, run-now and delivery audit; dispatcher schedule currently inactive |
+| Reuse of public account data across landscapes | yes | yes in the current checkout: one pooled channel, history and collection job serve organization-private landscape demand |
 | Story-level clustering | no | yes |
 | AI briefs with verified claims | no | yes |
 | Bring your own model | no | yes |
@@ -117,38 +128,28 @@ the whole book.
 
 ### Missing, ranked by how much it matters
 
-**1. Scheduled exports and PPT output.** They generate PowerPoint and CSV on a
-schedule and mail it. This is how the product reaches people who never log in,
-and it is the single biggest gap. Our Weekly Report builder covers the content
-but only produces clipboard HTML on demand.
-
-**2. Social listening.** Instant Search and Saved Searches run keyword queries
+**1. Social listening.** Instant Search and Saved Searches run keyword queries
 across public posts rather than across tracked accounts. This answers "who is
 talking about us" as opposed to "what did our rivals post", which is a
 different question and one no part of our tool addresses.
 
-**3. Discover.** Twitter Discover and Instagram Discover surface accounts you
+**2. Discover.** Twitter Discover and Instagram Discover surface accounts you
 are not tracking but probably should be. Account discovery, not measurement.
 
-**4. Owned-account private data.** Facebook Insights, Facebook Ads, Instagram
+**3. Owned-account private data.** Facebook Insights, Facebook Ads, Instagram
 Insights, Twitter Analytics, LinkedIn Analytics. Reach, impressions and spend
-that only a token holder can see. We read owned channels but do not pull the
-insights endpoints, so reach and impressions are missing everywhere.
+that only a token holder can see. We collect owned brands through the same
+public-comparable path as rivals, but the pooled runner deliberately excludes
+owner tokens and does not pull insights endpoints, so reach and impressions are
+missing everywhere.
 
-**5. Per-platform metric naming.** They say Videos on TikTok and Posts on
-Instagram. We say Posts everywhere. Small, cheap, and it is the difference
-between a tool that feels built for a platform and one that feels generic.
-
-**6. Company usage and listening usage meters.** They show what you are
-consuming against your plan. With a metered vendor underneath us this matters
-more for us than it does for them.
+**4. Vendor, company and listening usage meters.** Rival IQ shows what customers
+consume against their plan. Data Dumpster now has a dollar-spend panel for AI
+model usage, but it still lacks an acquisition-vendor unit meter and the
+company/listening plan meters described here. With metered public-data vendors
+underneath us, the vendor meter matters more for us than it does for them.
 
 ### Deliberately not copying
-
-**Data pooling across customers.** Their economics depend on one customer's
-addition benefiting everyone. A single-tenant internal tool has no such
-leverage, which is precisely why our per-company cost is higher and why the
-build-versus-buy memo lands where it does.
 
 **Runaway percentage changes.** They will print "engagement up 265,895.2%"
 against a near-zero baseline. We return null and say so.
@@ -156,13 +157,35 @@ against a near-zero baseline. We return null and say so.
 **Leaderboard-first design.** Ranking 22 companies on engagement total is a
 chart nobody acts on. Story-level and desk-level views are the replacement.
 
-## Build order
+### Decision revised after the original teardown
+
+**Public-data pooling.** The 29 July teardown classified Rival IQ's pooling as
+something a single-tenant internal tool would not copy. That conclusion no
+longer describes Data Dumpster. Public companies, channels, posts, audience
+history and collection state are intentionally reusable across organizations.
+Each landscape keeps private demand, membership, tags, dashboards and briefs;
+the shared control plane collapses overlapping demand to one channel window and
+one crawl. Adding the same brand to another landscape therefore reuses retained
+history and fresh coverage instead of buying the data again. Owner-only tokens
+are excluded from that pooled path, and owner-private observation storage is
+still a release gate. The pooling implementation is present in the current
+checkout; migration and deployment validation remain a release step in
+`HANDOFF.md`.
+
+## Original build order, status checked 3 August 2026
 
 1. Scheduled exports: PPT and CSV on a cron, delivered to Slack or email.
-   Closes the largest gap and matches the artefact Matt already sends weekly.
-2. Per-platform metric naming. An afternoon.
-3. Vendor usage meter in Settings from the free units endpoint.
+   **Implemented:** the report screen, PowerPoint, sectioned CSV, email,
+   tenant-bound Slack links, run-now and a destination-level delivery audit all
+   use the stored report document. The delivery dispatcher schedule is inactive
+   until its environment and spend/operations decision are approved.
+2. Per-platform metric naming. **Implemented:** TikTok and YouTube use video
+   language, YouTube uses subscribers, Reddit uses members/score/comments/
+   crossposts, and the remaining platforms retain post/follower language.
+3. Vendor usage meter in Settings from the free units endpoint. **Open.** The
+   model-usage dollar panel is separate and does not report acquisition units.
 4. Owned-account insights for the Globe's own channels, which unlocks reach and
-   impressions and makes the private-data half of the product real.
+   impressions and makes the private-data half of the product real. **Open and
+   gated on the owned-data isolation work in `HANDOFF.md`.**
 5. Social listening, if keyword monitoring is genuinely wanted. It is a
-   different product and should be costed as one.
+   different product and should be costed as one. **Open.**

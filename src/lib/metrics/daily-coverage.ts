@@ -2,6 +2,7 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { REPORT_TIME_ZONE, toDayString } from '@/lib/dates';
+import { summarizeDailyCoverage } from './daily-coverage-summary';
 
 /**
  * Did every tracked channel get read today?
@@ -70,9 +71,14 @@ export async function coverageGaps(day: string): Promise<CoverageGap[]> {
   }>(sql`
     SELECT ch.id AS channel_id, c.name AS company_name,
            ch.platform::text AS platform, ch.handle
-      FROM channels ch
+     FROM channels ch
       JOIN companies c ON c.id = ch.company_id
      WHERE ch.active
+       AND EXISTS (
+         SELECT 1
+           FROM landscape_channel_demands demand
+          WHERE demand.channel_id = ch.id
+       )
        AND ${NO_AUDIENCE_BY_DESIGN}
        AND NOT EXISTS (
          SELECT 1 FROM audience_snapshots a
@@ -100,32 +106,40 @@ export async function recentCoverage(days = 14): Promise<DayCoverage[]> {
         '1 day'
       )::date AS day
     ),
-    active AS (
-      SELECT count(*)::int AS n FROM channels ch
-       WHERE ch.active AND ${NO_AUDIENCE_BY_DESIGN}
+    expected AS (
+      SELECT ch.id AS channel_id,
+             min(demand.created_at AT TIME ZONE ${REPORT_TIME_ZONE})::date AS demanded_on
+        FROM channels ch
+        JOIN landscape_channel_demands demand ON demand.channel_id = ch.id
+       WHERE ch.active
+         AND ${NO_AUDIENCE_BY_DESIGN}
+       GROUP BY ch.id
     )
     SELECT d.day::text AS day,
            (SELECT count(DISTINCT a.channel_id)::int
               FROM audience_snapshots a
-              JOIN channels ch ON ch.id = a.channel_id AND ch.active
-             WHERE a.day = d.day AND ${NO_AUDIENCE_BY_DESIGN}) AS observed,
-           active.n AS active
-      FROM days d CROSS JOIN active
+              JOIN expected expected_channel
+                ON expected_channel.channel_id = a.channel_id
+               AND expected_channel.demanded_on <= d.day
+              JOIN channels ch ON ch.id = a.channel_id
+             WHERE a.day = d.day
+               AND ${NO_AUDIENCE_BY_DESIGN}) AS observed,
+           (SELECT count(*)::int
+              FROM expected expected_channel
+             WHERE expected_channel.demanded_on <= d.day) AS active
+      FROM days d
      ORDER BY d.day DESC
   `);
   return rows.map((r) => {
     const activeChannels = Number(r.active) || 0;
     const observedChannels = Number(r.observed) || 0;
-    const ratio = activeChannels > 0 ? observedChannels / activeChannels : 0;
+    const { ratio, complete } = summarizeDailyCoverage(activeChannels, observedChannels);
     return {
       day: r.day,
       activeChannels,
       observedChannels,
       ratio,
-      // 98% rather than 100%: a handful of channels are legitimately
-      // uncollectable on any given day (a deleted account, a private profile),
-      // and a threshold nobody can ever hit is a threshold everyone ignores.
-      complete: ratio >= 0.98,
+      complete,
     };
   });
 }

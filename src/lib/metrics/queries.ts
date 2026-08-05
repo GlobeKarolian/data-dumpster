@@ -56,6 +56,7 @@ import type {
   SortKey,
   SummaryResult,
   TagRow,
+  TopPostsQuery,
   TimeSeriesResult,
   UrlRow,
 } from './contract';
@@ -169,6 +170,27 @@ async function resolveScope(q: Scoped<AnalyticsQuery>): Promise<Scope> {
     byId: new Map(companies.map((c) => [c.id, c])),
     allCompanyIds: all.map((c) => c.id),
   };
+}
+
+/**
+ * Resolve one organization-private landscape membership without exposing its
+ * observations or relying on the globally pooled company attribution field.
+ * Reports use this to mark the brands that belong to the BGM portfolio even
+ * when the report itself is scoped to the wider Boston News Market landscape.
+ */
+export async function getLandscapeCompanyIdsBySlug(
+  orgId: string,
+  slug: string,
+): Promise<string[]> {
+  const { rows } = await db.execute<{ company_id: string }>(sql`
+    SELECT lc.company_id
+      FROM landscapes l
+      JOIN landscape_companies lc ON lc.landscape_id = l.id
+     WHERE l.org_id = ${orgId}::uuid
+       AND l.slug = ${slug}
+     ORDER BY lc.sort_order, lc.company_id
+  `);
+  return rows.map((row) => row.company_id);
 }
 
 /* ---------------------------------------------------------------- helpers */
@@ -326,14 +348,27 @@ function platformHasCompleteFlow(trackedChannels: number, ingestedChannels: numb
   return trackedChannels > 0 && ingestedChannels >= trackedChannels;
 }
 
+/**
+ * Useful post observations are still measurements when a capped source cannot
+ * certify the whole window. A certified empty read is also a measured zero.
+ * The caller carries completeness separately so partial totals never acquire a
+ * confident comparison merely because they are non-empty.
+ */
+function platformHasMeasuredFlow(
+  trackedChannels: number,
+  certifiedChannels: number,
+  posts: number,
+): boolean {
+  return trackedChannels > 0 && (posts > 0 || certifiedChannels >= trackedChannels);
+}
+
 function followerRateContribution(
-  ratedEngagementTotal: number,
+  followerRateSum: number,
   ratedPosts: number,
-  followers: number,
 ): { numerator: number; posts: number } {
-  if (followers <= 0 || ratedPosts <= 0) return { numerator: 0, posts: 0 };
+  if (ratedPosts <= 0) return { numerator: 0, posts: 0 };
   return {
-    numerator: safeDiv(ratedEngagementTotal, followers),
+    numerator: followerRateSum,
     posts: ratedPosts,
   };
 }
@@ -380,10 +415,12 @@ export const metricTestHelpers = {
   mergeMinimumObservedDays,
   channelProvidesAudience,
   platformHasCompleteFlow,
+  platformHasMeasuredFlow,
   followerRateContribution,
   followerRateAvailable,
   sourceMedianEngagement,
   aggregateTagPerformanceRows,
+  platformAudienceCoverageCaveats,
 };
 
 /** `a, b, c` as uuid-cast literals. Never call with an empty array. */
@@ -493,7 +530,7 @@ type AggRow = {
   saves: string | number | null;
   views: string | number | null;
   posts_missing_followers: string | number | null;
-  rated_engagement_total: string | number | null;
+  follower_rate_sum: string | number | null;
   rated_post_count: string | number | null;
   followers_last: string | number | null;
   followers_first: string | number | null;
@@ -516,8 +553,8 @@ interface PlatformAgg {
   saves: number;
   views: number;
   postsMissingFollowers: number;
-  /** Engagement from posts with a real followers-at-post denominator. */
-  ratedEngagementTotal: number;
+  /** Sum of each rated post's engagement / followers-at-post. */
+  followerRateSum: number;
   /** Posts with a real followers-at-post denominator. */
   ratedPosts: number;
   /** Latest follower reading inside the window -- a stock. */
@@ -567,10 +604,9 @@ interface CompanyAgg {
   /** Number of platform rows that are actually applicable to this company. */
   applicablePlatforms: number;
   /**
-   * Sum over platforms of (platform engagement / platform followers). Divide by
-   * `erfPosts` to get engagement rate by follower. Kept separate so the rate is
-   * computed per company+platform and then combined, never by dividing one grand
-   * total by another -- which would let a company's biggest platform swamp the rate.
+   * Sum of each post's own engagement/followers-at-post rate. Divide by
+   * `erfPosts` for the canonical mean of per-post rates. The denominator travels
+   * with the post, so a large account cannot swamp a smaller account's result.
    */
   erfNumerator: number;
   erfPosts: number;
@@ -629,6 +665,7 @@ async function companyPlatformAgg(
                    FROM channel_collection_state state
                   WHERE state.channel_id = ch.id
                     AND state.status = 'succeeded'
+                    AND state.outcome = 'certified_complete'
                     AND NOT state.has_more
                     AND state.coverage_since::date <= ${dayParam(range.start)}
                     AND state.coverage_until::date >= ${dayParam(range.end)}
@@ -693,9 +730,9 @@ async function companyPlatformAgg(
              count(*) FILTER (
                WHERE p.followers_at_post IS NULL OR p.followers_at_post = 0
              )::int                               AS posts_missing_followers,
-             coalesce(sum(p.engagement_total) FILTER (
-               WHERE p.followers_at_post > 0
-             ), 0)                                AS rated_engagement_total,
+             coalesce(sum(
+               p.engagement_total::numeric / nullif(p.followers_at_post, 0)
+             ) FILTER (WHERE p.followers_at_post > 0), 0) AS follower_rate_sum,
              count(*) FILTER (
                WHERE p.followers_at_post > 0
              )::int                               AS rated_post_count
@@ -720,7 +757,7 @@ async function companyPlatformAgg(
            coalesce(pa.saves, 0)                   AS saves,
            coalesce(pa.views, 0)                   AS views,
            coalesce(pa.posts_missing_followers, 0) AS posts_missing_followers,
-           coalesce(pa.rated_engagement_total, 0)  AS rated_engagement_total,
+           coalesce(pa.follower_rate_sum, 0)       AS follower_rate_sum,
            coalesce(pa.rated_post_count, 0)        AS rated_post_count,
            aud.followers_last,
            aud.followers_first,
@@ -755,7 +792,7 @@ async function companyPlatformAgg(
       saves: num(r.saves),
       views: num(r.views),
       postsMissingFollowers: num(r.posts_missing_followers),
-      ratedEngagementTotal: num(r.rated_engagement_total),
+      followerRateSum: num(r.follower_rate_sum),
       ratedPosts: num(r.rated_post_count),
       followersLast: num(r.followers_last),
       followersFirst: num(r.followers_first),
@@ -784,7 +821,11 @@ async function companyPlatformAgg(
     agg.audienceChangeChannels += p.audienceChangeChannels;
     agg.followersLast += p.followersLast;
     agg.followersFirst += p.followersFirst;
-    const applicable = platformHasCompleteFlow(p.trackedChannels, p.ingestedChannels);
+    const applicable = platformHasMeasuredFlow(
+      p.trackedChannels,
+      p.ingestedChannels,
+      p.posts,
+    );
     if (applicable) {
       agg.audienceDays = mergeMinimumObservedDays(
         agg.audienceDays,
@@ -800,9 +841,8 @@ async function companyPlatformAgg(
     // Only posts that captured their own denominator participate. This keeps
     // audience-less Reddit user posts from borrowing a sibling subreddit's members.
     const erf = followerRateContribution(
-      p.ratedEngagementTotal,
+      p.followerRateSum,
       p.ratedPosts,
-      p.followersLast,
     );
     agg.erfNumerator += erf.numerator;
     agg.erfPosts += erf.posts;
@@ -868,7 +908,7 @@ function metricAvailable(a: CompanyAgg, key: MetricKey): boolean {
     return completeHistory && (key !== 'audienceGrowthRate' || a.audienceChangeFirst !== 0);
   }
 
-  if (!platformHasCompleteFlow(a.trackedChannels, a.ingestedChannels)) return false;
+  if (!platformHasMeasuredFlow(a.trackedChannels, a.ingestedChannels, a.posts)) return false;
   if (key === 'engagementRateByFollower') return followerRateAvailable(a.erfPosts);
   /*
    * A rate needs a denominator.
@@ -887,6 +927,23 @@ function metricAvailable(a: CompanyAgg, key: MetricKey): boolean {
     a.audienceMaxDays,
     a.audienceChangeFirst,
   );
+}
+
+/**
+ * Availability answers whether a number exists; completeness answers whether
+ * it is safe to compare as a full-window total. Keep these questions separate.
+ */
+function metricComplete(a: CompanyAgg, key: MetricKey): boolean {
+  if (!metricAvailable(a, key)) return false;
+  if (key === 'audience') {
+    return a.audienceTrackedChannels > 0
+      && a.audienceObservedChannels >= a.audienceTrackedChannels;
+  }
+  if (key === 'audienceNetChange' || key === 'audienceGrowthRate') {
+    return a.audienceTrackedChannels > 0
+      && a.audienceChangeChannels >= a.audienceTrackedChannels;
+  }
+  return platformHasCompleteFlow(a.trackedChannels, a.ingestedChannels);
 }
 
 function metricValue(a: CompanyAgg, key: MetricKey, days: number, t: LandscapeTotals): number {
@@ -916,9 +973,8 @@ function metricValue(a: CompanyAgg, key: MetricKey, days: number, t: LandscapeTo
 /** The same arithmetic restricted to one platform, for cross-channel breakdowns. */
 function platformMetricValue(p: PlatformAgg, key: MetricKey, days: number, t: LandscapeTotals): number {
   const erf = followerRateContribution(
-    p.ratedEngagementTotal,
+    p.followerRateSum,
     p.ratedPosts,
-    p.followersLast,
   );
   const asCompany: CompanyAgg = {
     companyId: '',
@@ -941,7 +997,11 @@ function platformMetricValue(p: PlatformAgg, key: MetricKey, days: number, t: La
     audienceTrackedChannels: p.audienceTrackedChannels,
     audienceObservedChannels: p.audienceObservedChannels,
     audienceChangeChannels: p.audienceChangeChannels,
-    applicablePlatforms: platformHasCompleteFlow(p.trackedChannels, p.ingestedChannels) ? 1 : 0,
+    applicablePlatforms: platformHasMeasuredFlow(
+      p.trackedChannels,
+      p.ingestedChannels,
+      p.posts,
+    ) ? 1 : 0,
     erfNumerator: erf.numerator,
     erfPosts: erf.posts,
     byPlatform: new Map(),
@@ -961,9 +1021,8 @@ function breakdownAvailabilityOf(a: CompanyAgg, key: MetricKey):
   const out: Partial<Record<Platform, boolean>> = {};
   for (const [platform, p] of a.byPlatform) {
     const erf = followerRateContribution(
-      p.ratedEngagementTotal,
+      p.followerRateSum,
       p.ratedPosts,
-      p.followersLast,
     );
     const asCompany: CompanyAgg = {
       companyId: '',
@@ -986,7 +1045,11 @@ function breakdownAvailabilityOf(a: CompanyAgg, key: MetricKey):
       audienceTrackedChannels: p.audienceTrackedChannels,
       audienceObservedChannels: p.audienceObservedChannels,
       audienceChangeChannels: p.audienceChangeChannels,
-      applicablePlatforms: platformHasCompleteFlow(p.trackedChannels, p.ingestedChannels) ? 1 : 0,
+      applicablePlatforms: platformHasMeasuredFlow(
+        p.trackedChannels,
+        p.ingestedChannels,
+        p.posts,
+      ) ? 1 : 0,
       erfNumerator: erf.numerator,
       erfPosts: erf.posts,
       byPlatform: new Map(),
@@ -1037,12 +1100,15 @@ export async function getLeaderboard(
   for (const company of scope.companies) {
     const agg = current.get(company.id) ?? emptyCompanyAgg(company.id);
     const available = metricAvailable(agg, q.metric);
+    const complete = metricComplete(agg, q.metric);
     const value = metricValue(agg, q.metric, days, totals);
     let previousValue: number | null = null;
     let previousAvailable = false;
+    let previousComplete = false;
     if (previousAgg && prevTotals) {
       const pa = previousAgg.get(company.id) ?? emptyCompanyAgg(company.id);
       previousAvailable = metricAvailable(pa, q.metric);
+      previousComplete = metricComplete(pa, q.metric);
       previousValue = previousAvailable
         ? metricValue(pa, q.metric, prevDays, prevTotals)
         : null;
@@ -1051,9 +1117,13 @@ export async function getLeaderboard(
       company,
       value,
       available,
+      complete,
       previousValue,
       previousAvailable,
-      changePct: available ? changePct(value, previousValue) : null,
+      previousComplete,
+      changePct: available && complete && previousAvailable && previousComplete
+        ? changePct(value, previousValue)
+        : null,
       rank: 0,
       breakdown: breakdownOf(agg, q.metric, days, totals),
       breakdownAvailability: breakdownAvailabilityOf(agg, q.metric),
@@ -1120,10 +1190,9 @@ function startOfIsoWeek(d: Date): Date {
  * One statement produces every metric's series for every company.
  *
  * The inner CTEs group by company+platform+bucket even though the output is only
- * company+bucket. That extra level exists solely so engagement rate by follower can
- * be formed per platform before being combined -- collapsing to company first would
- * divide one company's total engagement by its total followers across platforms,
- * which double-counts anyone who follows the same brand in two places.
+ * company+bucket because audience remains a per-platform stock. Follower rate is
+ * already additive here as the sum of each post's own rate plus its rated-post
+ * count, so the outer query can combine it without changing the definition.
  *
  * `date_trunc('week', ...)` is Monday-based, which is what lib/dates.ts uses too.
  */
@@ -1154,9 +1223,9 @@ async function bucketSeries(
              coalesce(sum(p.amplification), 0)    AS amplification,
              coalesce(sum(p.saves), 0)            AS saves,
              coalesce(sum(p.views), 0)            AS views,
-             coalesce(sum(p.engagement_total) FILTER (
-               WHERE p.followers_at_post > 0
-             ), 0)                                AS rated_engagement_total,
+             coalesce(sum(
+               p.engagement_total::numeric / nullif(p.followers_at_post, 0)
+             ) FILTER (WHERE p.followers_at_post > 0), 0) AS follower_rate_sum,
              count(*) FILTER (
                WHERE p.followers_at_post > 0
              )::int                               AS rated_post_count
@@ -1208,7 +1277,7 @@ async function bucketSeries(
              coalesce(pb.amplification, 0)           AS amplification,
              coalesce(pb.saves, 0)                   AS saves,
              coalesce(pb.views, 0)                   AS views,
-             coalesce(pb.rated_engagement_total, 0)  AS rated_engagement_total,
+             coalesce(pb.follower_rate_sum, 0)       AS follower_rate_sum,
              coalesce(pb.rated_post_count, 0)        AS rated_post_count,
              coalesce(ab.followers_last, 0)          AS followers_last,
              coalesce(ab.followers_first, 0)         AS followers_first,
@@ -1233,10 +1302,10 @@ async function bucketSeries(
            sum(followers_first)            AS followers_first,
            min(audience_days)::int          AS audience_days,
            max(audience_max_days)::int      AS audience_max_days,
-           coalesce(sum(rated_engagement_total::numeric / nullif(followers_last, 0))
-                    FILTER (WHERE followers_last > 0 AND rated_post_count > 0), 0) AS erf_num,
+           coalesce(sum(follower_rate_sum)
+                    FILTER (WHERE rated_post_count > 0), 0) AS erf_num,
            coalesce(sum(rated_post_count)
-                    FILTER (WHERE followers_last > 0 AND rated_post_count > 0), 0)::int AS erf_posts
+                    FILTER (WHERE rated_post_count > 0), 0)::int AS erf_posts
       FROM cp
      WHERE company_id IS NOT NULL AND bucket IS NOT NULL
      GROUP BY company_id, bucket
@@ -1426,6 +1495,8 @@ const SORT_COLUMNS: Record<SortKey, string> = {
 interface PostLoadOptions {
   /** Extra predicate applied to the OUTPUT rows only, not to the median baseline. */
   restrict?: SQL;
+  /** Keep this many highest-engagement rows per platform before the final sort. */
+  perPlatformLimit?: number;
   sort?: SortKey;
   direction?: 'asc' | 'desc';
   limit: number;
@@ -1464,7 +1535,30 @@ async function loadPosts(
 
   const sortCol = SORT_COLUMNS[opts.sort ?? 'engagementTotal'];
   const dir = opts.direction === 'asc' ? 'ASC' : 'DESC';
-  const restrict = opts.restrict ? sql`WHERE ${opts.restrict}` : sql``;
+  const platformLimit = opts.perPlatformLimit
+    ? Math.min(50, Math.max(1, Math.trunc(opts.perPlatformLimit)))
+    : null;
+  const platformRestriction = platformLimit === null
+    ? null
+    : sql`f.id IN (
+        SELECT ranked.id
+          FROM (
+            SELECT candidate.id,
+                   row_number() OVER (
+                     PARTITION BY candidate.platform
+                     ORDER BY candidate.engagement_total DESC, candidate.id ASC
+                   ) AS platform_rank
+              FROM filtered candidate
+          ) ranked
+         WHERE ranked.platform_rank <= ${platformLimit}
+      )`;
+  const restrict = opts.restrict && platformRestriction
+    ? sql`WHERE (${opts.restrict}) AND (${platformRestriction})`
+    : opts.restrict
+      ? sql`WHERE ${opts.restrict}`
+      : platformRestriction
+        ? sql`WHERE ${platformRestriction}`
+        : sql``;
 
   const { rows } = await db.execute<PostRow>(sql`
     WITH filtered AS (
@@ -1586,6 +1680,31 @@ export async function getPosts(q: Scoped<PostsQuery>): Promise<Paged<PostDto>> {
   });
 
   return { items, total, page, pageSize };
+}
+
+/**
+ * Return a channel-balanced set for overview pages.
+ *
+ * A plain global LIMIT lets the selected scope's busiest network occupy every
+ * card. Ranking inside each platform first preserves several winners per
+ * channel, then the final total-engagement sort still puts the strongest work
+ * first for the casual scan. Company scope remains whatever the caller selected;
+ * overview screens must not silently narrow an all-landscape query to the focus.
+ */
+export async function getTopPostsByPlatform(
+  q: Scoped<TopPostsQuery>,
+): Promise<PostDto[]> {
+  const scope = await resolveScope(q);
+  if (scope.companyIds.length === 0) return [];
+  const perPlatform = Math.min(18, Math.max(2, Math.trunc(q.perPlatform ?? 3)));
+  const { items } = await loadPosts(scope, rangeOf(q), filtersOf(q), {
+    perPlatformLimit: perPlatform,
+    sort: 'engagementTotal',
+    direction: 'desc',
+    limit: perPlatform * 12,
+    offset: 0,
+  });
+  return items;
 }
 
 type PostDetailRow = {
@@ -2223,8 +2342,10 @@ export async function getSummary(q: Scoped<AnalyticsQuery>): Promise<SummaryResu
     key,
     value: 0,
     available: false,
+    complete: false,
     previousValue: null,
     previousAvailable: false,
+    previousComplete: false,
     changePct: null,
     spark: [],
   });
@@ -2287,7 +2408,9 @@ export async function getSummary(q: Scoped<AnalyticsQuery>): Promise<SummaryResu
 
   const stat = (key: MetricKey): HeadlineStat => {
     const available = metricAvailable(focusAgg, key);
+    const complete = metricComplete(focusAgg, key);
     const previousAvailable = metricAvailable(focusPrev, key);
+    const previousComplete = metricComplete(focusPrev, key);
     const value = metricValue(focusAgg, key, days, totals);
     const previousValue = previousAvailable
       ? metricValue(focusPrev, key, daysIn(prev), prevTotals)
@@ -2296,9 +2419,13 @@ export async function getSummary(q: Scoped<AnalyticsQuery>): Promise<SummaryResu
       key,
       value,
       available,
+      complete,
       previousValue,
       previousAvailable,
-      changePct: available ? changePct(value, previousValue) : null,
+      previousComplete,
+      changePct: available && complete && previousAvailable && previousComplete
+        ? changePct(value, previousValue)
+        : null,
       spark: sparkFor(key),
     };
   };
@@ -2379,12 +2506,16 @@ function buildLeaderboardRows(
   for (const company of scope.companies) {
     const agg = current.get(company.id) ?? emptyCompanyAgg(company.id);
     const available = metricAvailable(agg, metric);
+    const complete = metricComplete(agg, metric);
     const value = metricValue(agg, metric, days, totals);
     const previousCompanyAgg = previousAgg
       ? previousAgg.get(company.id) ?? emptyCompanyAgg(company.id)
       : null;
     const previousAvailable = previousCompanyAgg
       ? metricAvailable(previousCompanyAgg, metric)
+      : false;
+    const previousComplete = previousCompanyAgg
+      ? metricComplete(previousCompanyAgg, metric)
       : false;
     const previousValue = previousCompanyAgg && prevTotals && previousAvailable
       ? metricValue(previousCompanyAgg, metric, prevDays, prevTotals)
@@ -2393,9 +2524,13 @@ function buildLeaderboardRows(
       company,
       value,
       available,
+      complete,
       previousValue,
       previousAvailable,
-      changePct: available ? changePct(value, previousValue) : null,
+      previousComplete,
+      changePct: available && complete && previousAvailable && previousComplete
+        ? changePct(value, previousValue)
+        : null,
       rank: 0,
       breakdown: breakdownOf(agg, metric, days, totals),
       breakdownAvailability: breakdownAvailabilityOf(agg, metric),
@@ -2575,6 +2710,62 @@ type CoverageRow = {
   first_ever_day: string | null;
 };
 
+/** Platform coverage counts include only companies with a tracked account there. */
+function platformAudienceCoverageCaveats(
+  coverage: CoverageRow[],
+  collectibleDays: number,
+): string[] {
+  const byPlatform = new Map<Platform, {
+    trackedCompanies: Set<string>;
+    incompleteCompanies: Set<string>;
+    worst: number;
+    never: number;
+  }>();
+  for (const row of coverage) {
+    const missing = collectibleDays - num(row.observed_days);
+    const entry = byPlatform.get(row.platform)
+      ?? {
+        trackedCompanies: new Set<string>(),
+        incompleteCompanies: new Set<string>(),
+        worst: 0,
+        never: 0,
+      };
+    entry.trackedCompanies.add(row.company_id);
+    if (!row.first_ever_day) entry.never += 1;
+    else if (missing > 0) {
+      entry.incompleteCompanies.add(row.company_id);
+      entry.worst = Math.max(entry.worst, missing);
+    }
+    byPlatform.set(row.platform, entry);
+  }
+
+  const out: string[] = [];
+  for (const [platform, entry] of [...byPlatform.entries()]
+    .sort((a, b) => (
+      b[1].never + b[1].incompleteCompanies.size
+    ) - (
+      a[1].never + a[1].incompleteCompanies.size
+    ))) {
+    const label = PLATFORM_LABELS[platform] ?? platform;
+    if (entry.never > 0) {
+      out.push(
+        `${entry.never} of ${entry.trackedCompanies.size} tracked ${label} account` +
+        `${entry.trackedCompanies.size === 1 ? '' : 's'} ` +
+        `${entry.never === 1 ? 'has' : 'have'} never produced an audience reading.`,
+      );
+    } else if (entry.incompleteCompanies.size > 0) {
+      out.push(
+        `${entry.incompleteCompanies.size} of ${entry.trackedCompanies.size} tracked ${label} account` +
+        `${entry.trackedCompanies.size === 1 ? '' : 's'} ` +
+        `${entry.incompleteCompanies.size === 1 ? 'is' : 'are'} missing audience readings for up to ` +
+        `${entry.worst} of ${collectibleDays} collectible day` +
+        `${collectibleDays === 1 ? '' : 's'}.`,
+      );
+    }
+  }
+  return out;
+}
+
 /** How many days of audience data we actually hold per tracked channel. */
 async function coverageRows(scope: Scope, range: DateRange, f: PostFilters): Promise<CoverageRow[]> {
   if (scope.companyIds.length === 0) return [];
@@ -2738,37 +2929,7 @@ function buildCaveats(
 
   // Real gaps only: days when collection was running and still missed a channel.
   const collectible = Math.max(1, days - preCollectionDays);
-  const byPlatform = new Map<Platform, { companies: Set<string>; worst: number; never: number }>();
-  for (const r of coverage) {
-    const missing = collectible - num(r.observed_days);
-    const entry = byPlatform.get(r.platform)
-      ?? { companies: new Set<string>(), worst: 0, never: 0 };
-    if (!r.first_ever_day) entry.never += 1;
-    else if (missing > 0) {
-      entry.companies.add(r.company_id);
-      entry.worst = Math.max(entry.worst, missing);
-    }
-    byPlatform.set(r.platform, entry);
-  }
-
-  const trackedCompanies = scope.companies.length;
-  for (const [platform, e] of [...byPlatform.entries()]
-    .sort((a, b) => (b[1].never + b[1].companies.size) - (a[1].never + a[1].companies.size))) {
-    const label = PLATFORM_LABELS[platform] ?? platform;
-    if (e.never > 0) {
-      out.push(
-        `${label} has never been collected for ${e.never} channel${e.never === 1 ? '' : 's'}, ` +
-        'so those channels contribute no audience or growth figures at all. This is a ' +
-        'collection failure rather than a measurement limit.',
-      );
-    } else if (e.companies.size > 0) {
-      out.push(
-        `${label} audience is incomplete for ${e.companies.size} of ${trackedCompanies} ` +
-        `companies, missing up to ${e.worst} of ${collectible} collectible day` +
-        `${collectible === 1 ? '' : 's'}.`,
-      );
-    }
-  }
+  out.push(...platformAudienceCoverageCaveats(coverage, collectible));
 
   return out.slice(0, 15);
 }
@@ -2857,6 +3018,7 @@ export const metrics: MetricsApi = {
   getLeaderboard,
   getTimeSeries,
   getPosts,
+  getTopPostsByPlatform,
   getPostedUrls,
   getTagPerformance,
   getPostTypePerformance,

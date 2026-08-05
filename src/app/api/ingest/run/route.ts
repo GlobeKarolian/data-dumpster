@@ -1,28 +1,26 @@
 /**
- * /api/ingest/run -- the Refresh Data button.
+ * /api/ingest/run -- start or rediscover a full background refresh.
  *
- * WHY A BUTTON AND NOT ONLY A SCHEDULE
- * A newsroom user looking at a competitive screen during a breaking story does
- * not care that the cron runs at the top of the hour. They need to know the
- * numbers in front of them are current, and if they are not, they need a way to
- * make them current that does not involve asking an engineer.
- *
- * One request processes a bounded slice, but the durable queue keeps the whole
- * selected landscape/window pending. Subsequent batches or the scheduled worker
- * continue from the same queue, so the cap is a timeout boundary rather than
- * data loss.
+ * The request never performs vendor reads. It snapshots every matching profile
+ * into the durable collection queue, returns a job handle immediately, and
+ * lets bounded background invocations drain that scope ten profiles at a time.
  */
+import { randomUUID } from 'node:crypto';
+import { after } from 'next/server';
 import { z } from 'zod';
-import { apiHandler, requireRole, HttpError } from '@/lib/session';
+import { apiHandler, requireRole, HttpError, assertLandscapeInOrg } from '@/lib/session';
 import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
-import { PLATFORMS } from '@/lib/types';
-import { db } from '@/db';
-import { landscapes } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import {
-  enqueueLandscapeCollection,
-  runCollectionQueue,
-} from '@/lib/adapters/collection-queue';
+  getActiveRefreshJobForLandscape,
+  getActiveRefreshJobForScope,
+  RefreshIdempotencyConflictError,
+  startLandscapeRefresh,
+} from '@/lib/adapters/refresh-jobs';
+import {
+  refreshWorkerUrl,
+  runRefreshJobAndContinue,
+} from '@/lib/adapters/refresh-dispatch';
 import { readJson } from '../../_lib/query';
 
 export const runtime = 'nodejs';
@@ -30,67 +28,125 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  platforms: z.array(z.enum(PLATFORMS)).optional(),
+  platforms: z.array(z.enum(ADAPTER_SUPPORTED_PLATFORMS)).optional(),
   landscapeId: z.uuid(),
-  /** Cap on channels touched in one press. Keeps the request inside its budget. */
-  limit: z.number().int().min(1).max(60).default(24),
-  /** Days of history to request from each adapter. */
-  sinceDays: z.number().int().min(1).max(365).default(28),
-  /** False when the same button press is draining a queue it already created. */
-  enqueue: z.boolean().default(true),
+  since: z.coerce.date(),
+  until: z.coerce.date(),
+}).superRefine((value, context) => {
+  if (value.since > value.until) {
+    context.addIssue({ code: 'custom', message: 'Refresh start must be on or before its end.' });
+  }
+  if (value.until.getTime() - value.since.getTime() > 734 * 86_400_000) {
+    context.addIssue({ code: 'custom', message: 'Refresh windows cannot exceed two years.' });
+  }
+  if (value.until.getTime() > Date.now() + 36 * 60 * 60_000) {
+    context.addIssue({ code: 'custom', message: 'Refresh end cannot be in the future.' });
+  }
 });
 
+const activeQuerySchema = z.object({
+  landscapeId: z.uuid(),
+  platforms: z.array(z.enum(ADAPTER_SUPPORTED_PLATFORMS)).optional(),
+  since: z.coerce.date(),
+  until: z.coerce.date(),
+}).refine((value) => value.since <= value.until, {
+  message: 'Refresh start must be on or before its end.',
+});
+
+function platformQuery(req: Request): string[] | undefined {
+  const values = new URL(req.url).searchParams
+    .getAll('platforms')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
+function assertBackgroundDispatchReady(): void {
+  if (!process.env.CRON_SECRET) {
+    throw new HttpError(
+      503,
+      'Background refresh is not configured on this deployment.',
+      'refresh_worker_unavailable',
+    );
+  }
+  try {
+    refreshWorkerUrl();
+  } catch {
+    throw new HttpError(
+      503,
+      'Background refresh does not have a trusted deployment URL.',
+      'refresh_worker_unavailable',
+    );
+  }
+}
+
 export const POST = apiHandler(async (req) => {
-  const { orgId } = await requireRole('editor');
-  // A full refresh is up to 60 channels of paid vendor calls.
+  const { orgId, userId } = await requireRole('editor');
   const gate = checkRateLimit(orgId, LIMITS.ingest);
   if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
   const body = await readJson(req, bodySchema);
+  await assertLandscapeInOrg(body.landscapeId, orgId);
+  assertBackgroundDispatchReady();
 
-  const [landscape] = await db
-    .select({ id: landscapes.id })
-    .from(landscapes)
-    .where(and(eq(landscapes.id, body.landscapeId), eq(landscapes.orgId, orgId)))
-    .limit(1);
-  if (!landscape) {
-    throw new HttpError(404, 'Landscape not found.', 'landscape_not_found');
-  }
-
-  const until = new Date();
-  const since = new Date(until.getTime() - body.sinceDays * 864e5);
+  const idempotencyHeader = req.headers.get('idempotency-key')?.trim();
+  const idempotencyKey = idempotencyHeader && idempotencyHeader.length <= 128
+    ? idempotencyHeader
+    : randomUUID();
 
   try {
-    if (body.enqueue) {
-      await enqueueLandscapeCollection({
-        orgId,
-        landscapeId: body.landscapeId,
-        platforms: body.platforms,
-        since,
-        until,
-      });
-    }
-    const result = await runCollectionQueue({
+    const started = await startLandscapeRefresh({
       orgId,
+      userId,
       landscapeId: body.landscapeId,
       platforms: body.platforms,
-      maxChannels: body.limit,
-      postLimit: 500,
+      since: body.since,
+      until: body.until,
+      idempotencyKey,
     });
-    return Response.json(result);
-  } catch (err) {
-    /*
-     * The message is logged, not returned.
-     *
-     * This handed the raw error text to the client, deliberately bypassing the
-     * generic 500 in apiHandler whose own comment says Postgres errors leak
-     * table and column names and must never reach a response body. An editor
-     * could read the schema out of a failed refresh.
-     */
-    console.error('[pressbox:ingest/run] refresh failed', err);
+    if (started.snapshot.status === 'queued' || started.snapshot.status === 'running') {
+      after(() => runRefreshJobAndContinue(started.snapshot.id));
+    }
+    return Response.json(
+      { job: started.snapshot, reused: started.reused },
+      {
+        status: 202,
+        headers: {
+          'cache-control': 'private, no-store',
+          location: '/api/ingest/jobs/' + started.snapshot.id,
+        },
+      },
+    );
+  } catch (error) {
+    if (error instanceof RefreshIdempotencyConflictError) {
+      throw new HttpError(409, error.message, 'idempotency_conflict');
+    }
+    console.error('[data-dumpster:ingest/run] refresh could not be queued', error);
     throw new HttpError(
       500,
-      'The refresh failed before it could start. The error has been logged.',
+      'The refresh could not be queued. The error has been logged.',
       'ingest_failed',
     );
   }
+});
+
+export const GET = apiHandler(async (req) => {
+  const { orgId } = await requireRole('editor');
+  const query = activeQuerySchema.parse({
+    landscapeId: req.nextUrl.searchParams.get('landscapeId') ?? undefined,
+    platforms: platformQuery(req),
+    since: req.nextUrl.searchParams.get('since') ?? undefined,
+    until: req.nextUrl.searchParams.get('until') ?? undefined,
+  });
+  await assertLandscapeInOrg(query.landscapeId, orgId);
+  const job = req.nextUrl.searchParams.get('monitor') === '1'
+    ? await getActiveRefreshJobForLandscape({ orgId, landscapeId: query.landscapeId })
+    : await getActiveRefreshJobForScope({
+        orgId,
+        landscapeId: query.landscapeId,
+        platforms: query.platforms,
+        since: query.since,
+        until: query.until,
+      });
+  return Response.json({ job }, { headers: { 'cache-control': 'private, no-store' } });
 });

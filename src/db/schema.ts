@@ -13,9 +13,10 @@
  */
 import {
   pgTable, pgEnum, text, timestamp, integer, bigint, boolean,
-  jsonb, uniqueIndex, index, primaryKey, doublePrecision, date, uuid,
+  jsonb, uniqueIndex, index, primaryKey, foreignKey, check, doublePrecision, date, uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
+import { COLLECTION_OUTCOMES } from '@/lib/adapters/types';
 
 /* ------------------------------------------------------------------ enums */
 
@@ -34,6 +35,8 @@ export const roleEnum = pgEnum('role', ['owner', 'admin', 'editor', 'viewer']);
 export const ingestStatusEnum = pgEnum('ingest_status', [
   'queued', 'running', 'succeeded', 'partial', 'failed',
 ]);
+
+export const collectionOutcomeEnum = pgEnum('collection_outcome', COLLECTION_OUTCOMES);
 
 export const modelProviderEnum = pgEnum('model_provider', [
   'anthropic', 'openai', 'google', 'azure_openai',
@@ -152,6 +155,8 @@ export const channels = pgTable('channels', {
   platform: platformEnum('platform').notNull(),
   /** Public handle, e.g. "bostonglobe". */
   handle: text('handle').notNull(),
+  /** Canonical handle fallback; stable platform ids remain authoritative. */
+  identityKey: text('identity_key').notNull(),
   /** Platform-native id once resolved (page id, channel id, user id). */
   externalId: text('external_id'),
   profileUrl: text('profile_url'),
@@ -165,7 +170,39 @@ export const channels = pgTable('channels', {
   meta: jsonb('meta').$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex('channels_platform_handle_uq').on(t.companyId, t.platform, t.handle),
+  uniqueIndex('channels_platform_identity_uq').on(t.platform, t.identityKey),
+  uniqueIndex('channels_platform_external_uq')
+    .on(t.platform, t.externalId)
+    .where(sql`${t.externalId} is not null`),
+  // Supports the demand table's composite FK, proving the demanded channel
+  // belongs to the same company as the landscape membership.
+  uniqueIndex('channels_id_company_uq').on(t.id, t.companyId),
+  check('channels_identity_key_ck', sql`${t.identityKey} = CASE
+    WHEN ${t.platform} = 'youtube'::platform
+      AND regexp_replace(btrim(${t.handle}), '^@', '') ~ '^UC[A-Za-z0-9_-]{22}$'
+      THEN 'channel:' || regexp_replace(btrim(${t.handle}), '^@', '')
+    WHEN ${t.platform} = 'reddit'::platform THEN
+      CASE
+        WHEN lower(regexp_replace(btrim(${t.handle}), '^/+|/+$', '', 'g')) ~ '^(u|user)/.+$'
+          THEN 'user:' || regexp_replace(
+            lower(regexp_replace(btrim(${t.handle}), '^/+|/+$', '', 'g')),
+            '^(u|user)/', ''
+          )
+        WHEN lower(regexp_replace(btrim(${t.handle}), '^/+|/+$', '', 'g')) ~ '^r/.+$'
+          THEN 'subreddit:' || regexp_replace(
+            lower(regexp_replace(btrim(${t.handle}), '^/+|/+$', '', 'g')),
+            '^r/', ''
+          )
+        ELSE 'subreddit:' || lower(
+          regexp_replace(btrim(${t.handle}), '^/+|/+$', '', 'g')
+        )
+      END
+    WHEN ${t.platform} = 'bluesky'::platform
+      AND btrim(${t.handle}) ~* '^did:[^:]+:.+$'
+      THEN 'did:' || lower(split_part(btrim(${t.handle}), ':', 2))
+        || ':' || substring(btrim(${t.handle}) from '^[^:]+:[^:]+:(.+)$')
+    ELSE 'handle:' || lower(regexp_replace(btrim(${t.handle}), '^@', ''))
+  END`),
   index('channels_platform_idx').on(t.platform, t.active),
 ]);
 
@@ -186,6 +223,40 @@ export const landscapeCompanies = pgTable('landscape_companies', {
   sortOrder: integer('sort_order').notNull().default(0),
 }, (t) => [primaryKey({ columns: [t.landscapeId, t.companyId] })]);
 
+/**
+ * One landscape's explicit request for one pooled public account.
+ *
+ * Demand is private and may differ by window. Collection state remains global:
+ * the scheduler aggregates these rows to one required window and one job per
+ * channel. Including companyId lets membership deletion cascade the demand.
+ */
+export const landscapeChannelDemands = pgTable('landscape_channel_demands', {
+  landscapeId: uuid('landscape_id').notNull(),
+  companyId: uuid('company_id').notNull(),
+  channelId: uuid('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  requiredSince: timestamp('required_since', { withTimezone: true }).notNull(),
+  requiredUntil: timestamp('required_until', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.landscapeId, t.channelId] }),
+  foreignKey({
+    columns: [t.landscapeId, t.companyId],
+    foreignColumns: [landscapeCompanies.landscapeId, landscapeCompanies.companyId],
+    name: 'landscape_channel_demands_membership_fk',
+  }).onDelete('cascade'),
+  foreignKey({
+    columns: [t.channelId, t.companyId],
+    foreignColumns: [channels.id, channels.companyId],
+    name: 'landscape_channel_demands_channel_company_fk',
+  }).onDelete('cascade'),
+  check(
+    'landscape_channel_demands_window_ck',
+    sql`${t.requiredSince} <= ${t.requiredUntil}`,
+  ),
+  index('landscape_channel_demands_channel_idx').on(t.channelId),
+]);
+
 /* --------------------------------------------------------- measurements */
 
 /**
@@ -200,6 +271,9 @@ export const audienceSnapshots = pgTable('audience_snapshots', {
   /** Platform-specific: subscribers, page_likes, total_views, etc. */
   extra: jsonb('extra').$type<Record<string, number>>().notNull().default({}),
   capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Provenance for new pooled observations; legacy rows remain null until re-collected. */
+  sourceRunId: uuid('source_run_id'),
+  visibility: text('visibility'),
 }, (t) => [
   primaryKey({ columns: [t.channelId, t.day] }),
   index('audience_day_idx').on(t.day),
@@ -238,8 +312,11 @@ export const posts = pgTable('posts', {
   engagementRateByView: doublePrecision('engagement_rate_by_view'),
   followersAtPost: bigint('followers_at_post', { mode: 'number' }),
 
-  /** Raw platform payload, kept for reprocessing without re-fetching. */
+  /** Minimal public-safe preview metadata. The pooled runner drops arbitrary vendor payload keys. */
   raw: jsonb('raw').$type<Record<string, unknown>>(),
+  /** Provenance for new pooled observations; legacy rows remain null until re-collected. */
+  sourceRunId: uuid('source_run_id'),
+  visibility: text('visibility'),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -258,7 +335,12 @@ export const postMetricSnapshots = pgTable('post_metric_snapshots', {
   saves: bigint('saves', { mode: 'number' }).notNull().default(0),
   views: bigint('views', { mode: 'number' }).notNull().default(0),
   engagementTotal: bigint('engagement_total', { mode: 'number' }).notNull().default(0),
-}, (t) => [primaryKey({ columns: [t.postId, t.capturedAt] })]);
+  sourceRunId: uuid('source_run_id'),
+  visibility: text('visibility'),
+}, (t) => [
+  primaryKey({ columns: [t.postId, t.capturedAt] }),
+  index('post_metric_snapshots_captured_idx').on(t.capturedAt),
+]);
 
 /** Links found inside posts. Powers "what are they driving traffic to". */
 export const postedUrls = pgTable('posted_urls', {
@@ -271,6 +353,7 @@ export const postedUrls = pgTable('posted_urls', {
   pathSegments: jsonb('path_segments').$type<string[]>().notNull().default([]),
   title: text('title'),
 }, (t) => [
+  index('posted_urls_post_idx').on(t.postId),
   index('posted_urls_domain_idx').on(t.domain),
   index('posted_urls_company_idx').on(t.companyId),
 ]);
@@ -441,7 +524,13 @@ export const ingestionRuns = pgTable('ingestion_runs', {
   apiCalls: integer('api_calls').notNull().default(0),
   error: text('error'),
   detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default({}),
-}, (t) => [index('ingestion_runs_time_idx').on(t.startedAt)]);
+  /** Exact deployment-wide source that won this run; unselected:* is pre-fetch only. */
+  sourceKey: text('source_key').notNull().default('legacy-unknown'),
+  visibility: text('visibility').notNull().default('legacy-unknown'),
+}, (t) => [
+  index('ingestion_runs_time_idx').on(t.startedAt),
+  index('ingestion_runs_channel_started_idx').on(t.channelId, t.startedAt.desc()),
+]);
 
 /**
  * Durable work and coverage state for pooled public profiles.
@@ -458,7 +547,15 @@ export const channelCollectionState = pgTable('channel_collection_state', {
   requiredUntil: timestamp('required_until', { withTimezone: true }).notNull(),
   coverageSince: timestamp('coverage_since', { withTimezone: true }),
   coverageUntil: timestamp('coverage_until', { withTimezone: true }),
+  /**
+   * Latest requested upper bound the source actually answered, even when that
+   * source could not certify the historical window. This is a freshness
+   * watermark only; it must never be read as certified coverage.
+   */
+  attemptedUntil: timestamp('attempted_until', { withTimezone: true }),
   status: ingestStatusEnum('status').notNull().default('queued'),
+  /** Precise durable outcome used by the scheduler after the latest attempt. */
+  outcome: collectionOutcomeEnum('outcome'),
   attempts: integer('attempts').notNull().default(0),
   nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
   leaseToken: uuid('lease_token'),
@@ -470,6 +567,88 @@ export const channelCollectionState = pgTable('channel_collection_state', {
 }, (t) => [
   index('channel_collection_runnable_idx').on(t.status, t.nextAttemptAt, t.leaseUntil),
   index('channel_collection_coverage_idx').on(t.coverageUntil),
+]);
+
+/**
+ * Cursor and freshness state for one deployment-wide public source.
+ *
+ * Logical pooled coverage remains in `channel_collection_state`. This table
+ * keeps source mechanics separate so a Bright Data receipt can never replace
+ * an EnsembleData or official-API cursor for the same public channel.
+ */
+export const publicChannelSourceState = pgTable('public_channel_source_state', {
+  channelId: uuid('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  sourceKey: text('source_key').notNull(),
+  cursor: jsonb('cursor').$type<Record<string, unknown>>().notNull().default({}),
+  /** Last source-certified window used for incremental overlap. */
+  lastIngestedAt: timestamp('last_ingested_at', { withTimezone: true }),
+  /** Most recent time the runner was ready to call this exact source. */
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+  /** Most recent response whose source cursor was durably saved. */
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({
+    name: 'public_channel_source_state_pk',
+    columns: [t.channelId, t.sourceKey],
+  }),
+  check('public_channel_source_state_source_key_ck', sql`btrim(${t.sourceKey}) <> ''`),
+]);
+
+/**
+ * A user-visible refresh coordinator.
+ *
+ * The channel queue above remains the source of truth for collection and
+ * retries. This row only snapshots the requested scope, prevents a double
+ * click from buying the same refresh twice, and gives the UI a durable handle
+ * it can rediscover after navigation or a browser restart.
+ */
+export const refreshJobs = pgTable('refresh_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').notNull().references(() => landscapes.id, { onDelete: 'cascade' }),
+  requestedByUserId: uuid('requested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** Stable across retries when the browser loses the initial 202 response. */
+  idempotencyKey: text('idempotency_key').notNull(),
+  /** Immutable fingerprint bound to the idempotency key. */
+  requestFingerprint: text('request_fingerprint').notNull(),
+  /** One canonical active scope per landscape; overlapping requests coalesce here. */
+  scopeKey: text('scope_key').notNull(),
+  /** Exact platform/window requests folded into this coordinator. */
+  requestScopes: jsonb('request_scopes').$type<unknown>().notNull().default([]),
+  platforms: jsonb('platforms').$type<string[]>().notNull().default([]),
+  channelIds: jsonb('channel_ids').$type<string[]>().notNull().default([]),
+  requiredSince: timestamp('required_since', { withTimezone: true }).notNull(),
+  requiredUntil: timestamp('required_until', { withTimezone: true }).notNull(),
+  status: text('status').notNull().default('queued'),
+  totalProfiles: integer('total_profiles').notNull().default(0),
+  /** Token-fenced coordinator lease; channel work keeps its own finer lease. */
+  workerLeaseToken: uuid('worker_lease_token'),
+  workerLeaseUntil: timestamp('worker_lease_until', { withTimezone: true }),
+  /** Earliest time the lightweight recovery dispatcher should nudge this job. */
+  nextWakeAt: timestamp('next_wake_at', { withTimezone: true }),
+  /** Frozen terminal counters and activity; pooled queue state keeps changing later. */
+  finalSnapshot: jsonb('final_snapshot').$type<unknown>(),
+  lastError: text('last_error'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('refresh_jobs_org_idempotency_uq').on(t.orgId, t.idempotencyKey),
+  uniqueIndex('refresh_jobs_active_scope_uq')
+    .on(t.orgId, t.scopeKey)
+    .where(sql`${t.status} IN ('queued', 'running')`),
+  index('refresh_jobs_landscape_time_idx').on(t.orgId, t.landscapeId, t.createdAt),
+  index('refresh_jobs_recovery_idx').on(t.status, t.nextWakeAt, t.createdAt),
+  check(
+    'refresh_jobs_status_ck',
+    sql`${t.status} IN ('queued', 'running', 'completed', 'completed_with_issues', 'failed')`,
+  ),
+  check('refresh_jobs_window_ck', sql`${t.requiredSince} <= ${t.requiredUntil}`),
+  check('refresh_jobs_total_profiles_ck', sql`${t.totalProfiles} >= 0`),
 ]);
 
 /* ------------------------------------------------------------ relations */
@@ -485,18 +664,41 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
 
 export const channelsRelations = relations(channels, ({ one, many }) => ({
   company: one(companies, { fields: [channels.companyId], references: [companies.id] }),
-  posts: many(posts), audience: many(audienceSnapshots),
+  posts: many(posts), audience: many(audienceSnapshots), demands: many(landscapeChannelDemands),
+  publicSourceStates: many(publicChannelSourceState),
 }));
 
 export const landscapesRelations = relations(landscapes, ({ one, many }) => ({
   org: one(orgs, { fields: [landscapes.orgId], references: [orgs.id] }),
   focusCompany: one(companies, { fields: [landscapes.focusCompanyId], references: [companies.id] }),
-  members: many(landscapeCompanies),
+  members: many(landscapeCompanies), demands: many(landscapeChannelDemands),
 }));
 
 export const landscapeCompaniesRelations = relations(landscapeCompanies, ({ one }) => ({
   landscape: one(landscapes, { fields: [landscapeCompanies.landscapeId], references: [landscapes.id] }),
   company: one(companies, { fields: [landscapeCompanies.companyId], references: [companies.id] }),
+}));
+
+export const landscapeChannelDemandsRelations = relations(landscapeChannelDemands, ({ one }) => ({
+  landscape: one(landscapes, {
+    fields: [landscapeChannelDemands.landscapeId],
+    references: [landscapes.id],
+  }),
+  company: one(companies, {
+    fields: [landscapeChannelDemands.companyId],
+    references: [companies.id],
+  }),
+  channel: one(channels, {
+    fields: [landscapeChannelDemands.channelId],
+    references: [channels.id],
+  }),
+}));
+
+export const publicChannelSourceStateRelations = relations(publicChannelSourceState, ({ one }) => ({
+  channel: one(channels, {
+    fields: [publicChannelSourceState.channelId],
+    references: [channels.id],
+  }),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({

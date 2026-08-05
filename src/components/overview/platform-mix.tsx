@@ -6,6 +6,7 @@ import { compactNumber, percent } from '@/lib/utils';
 import { Panel } from '@/components/common/panel';
 import { DonutChart } from '@/components/charts/donut-chart';
 import { MetricLabel } from '@/components/ui/metric-label';
+import { PlatformBadge } from '@/components/ui/badge';
 
 /**
  * Where the focus company's weight actually sits, and how that compares to the
@@ -77,7 +78,9 @@ export function PlatformMixPanel({
                   : null;
               return (
                 <tr key={m.platform} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800/60">
-                  <td className="py-1.5 text-zinc-700 dark:text-zinc-300">{PLATFORM_LABELS[m.platform]}</td>
+                  <td className="py-1.5 text-zinc-700 dark:text-zinc-300">
+                    <PlatformBadge platform={m.platform} />
+                  </td>
                   <td className="pb-num py-1.5 text-right text-zinc-900 dark:text-zinc-100">
                     {compactNumber(m.focusValue)}
                   </td>

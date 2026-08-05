@@ -160,7 +160,7 @@ export async function fetchFeedPosts(
   userId: string,
   token: string,
   opts: { since: Date; until: Date; depth: number; onApiCall?: () => void; signal?: AbortSignal },
-): Promise<NormalizedPost[]> {
+): Promise<{ posts: NormalizedPost[]; rowCount: number }> {
   const body = await ensembleGet('/instagram/user/posts', {
     user_id: userId,
     depth: opts.depth,
@@ -180,7 +180,7 @@ export async function fetchFeedPosts(
     if (post.postedAt < opts.since || post.postedAt > opts.until) continue;
     out.push(post);
   }
-  return out;
+  return { posts: out, rowCount: rows.length };
 }
 
 /**
@@ -240,7 +240,7 @@ export async function fetchReels(
   handle: string,
   token: string,
   opts: { since: Date; until: Date; depth: number; onApiCall?: () => void; signal?: AbortSignal },
-): Promise<NormalizedPost[]> {
+): Promise<{ posts: NormalizedPost[]; rowCount: number }> {
   const body = await ensembleGet('/instagram/user/reels', {
     user_id: userId,
     depth: opts.depth,
@@ -261,7 +261,7 @@ export async function fetchReels(
     if (post.postedAt < opts.since || post.postedAt > opts.until) continue;
     out.push(post);
   }
-  return out;
+  return { posts: out, rowCount: rows.length };
 }
 
 /**
@@ -276,24 +276,53 @@ export async function fetchAllPosts(
   handle: string,
   token: string,
   opts: { since: Date; until: Date; limit: number; onApiCall?: () => void; signal?: AbortSignal },
-): Promise<{ posts: NormalizedPost[]; warnings: string[] }> {
+): Promise<{
+  posts: NormalizedPost[];
+  warnings: string[];
+  exhaustive: boolean;
+  incompleteReason?: string;
+}> {
   const depth = Math.max(1, Math.min(Math.ceil(opts.limit / 10), 6));
   const warnings: string[] = [];
+  let feedFailed = false;
+  let reelsFailed = false;
 
   const [feed, reels] = await Promise.all([
     fetchFeedPosts(userId, token, { ...opts, depth }).catch((e: unknown) => {
+      feedFailed = true;
       warnings.push('Instagram feed for @' + handle + ' failed: ' + (e instanceof Error ? e.message : String(e)));
-      return [] as NormalizedPost[];
+      return { posts: [] as NormalizedPost[], rowCount: 0 };
     }),
     fetchReels(userId, handle, token, { ...opts, depth }).catch((e: unknown) => {
+      reelsFailed = true;
       warnings.push('Instagram reels for @' + handle + ' failed: ' + (e instanceof Error ? e.message : String(e)));
-      return [] as NormalizedPost[];
+      return { posts: [] as NormalizedPost[], rowCount: 0 };
     }),
   ]);
 
   const byId = new Map<string, NormalizedPost>();
-  for (const p of feed) byId.set(p.externalId, p);
-  for (const p of reels) byId.set(p.externalId, p);
+  for (const p of feed.posts) byId.set(p.externalId, p);
+  for (const p of reels.posts) byId.set(p.externalId, p);
 
-  return { posts: [...byId.values()], warnings };
+  const incomplete: string[] = [
+    'EnsembleData\'s Instagram feed and reels responses expose neither a terminal pagination marker nor a durable continuation cursor, so a short or empty recent-feed response cannot certify the requested window. Use an endpoint with explicit paging or collect often enough to maintain independently verified coverage.',
+  ];
+  if (feedFailed || reelsFailed) {
+    const failed = [feedFailed ? 'feed' : '', reelsFailed ? 'reels' : ''].filter(Boolean).join(' and ');
+    incomplete.push('The Instagram ' + failed + ' request failed; retry that endpoint before certifying the window.');
+  }
+  const rowCap = depth * 10;
+  if (feed.rowCount >= rowCap || reels.rowCount >= rowCap) {
+    incomplete.push(
+      'EnsembleData filled the configured Instagram depth (' + depth + ' pages) without exposing a continuation cursor; increase supported depth or collect more frequently.',
+    );
+  }
+  const incompleteReason = incomplete.length > 0 ? incomplete.join(' ') : undefined;
+
+  return {
+    posts: [...byId.values()],
+    warnings,
+    exhaustive: false,
+    incompleteReason,
+  };
 }

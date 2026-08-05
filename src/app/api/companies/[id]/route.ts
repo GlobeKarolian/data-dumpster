@@ -4,14 +4,12 @@
  * PATCH  edit display metadata. The slug is left alone on rename because it is
  *        part of URLs people have already bookmarked and shared; a name is a
  *        label, a slug is an address.
- * DELETE remove the company and everything measured about it. Requires admin,
- *        because this is the one destructive action in the app that throws away
- *        history that cannot be re-fetched -- most platforms will not serve
- *        posts from two years ago a second time.
+ * DELETE is disabled. Companies and their public history are pooled; remove
+ *        landscape membership instead so a later re-add can reuse that history.
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { apiHandler, requireRole, AuthError } from '@/lib/session';
+import { apiHandler, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
 import { companies } from '@/db/schema';
 import { readJson } from '../../_lib/query';
@@ -52,16 +50,12 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
   return Response.json(updated);
 });
 
-export const DELETE = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireRole('admin');
-  const id = idSchema.parse((await ctx.params).id);
-  await assertCompanyNotSharedWithOtherOrgs(id, orgId);
-
-  const [deleted] = await db
-    .delete(companies)
-    .where(and(eq(companies.id, id), eq(companies.orgId, orgId)))
-    .returning({ id: companies.id });
-
-  if (!deleted) throw new AuthError('not_found', 'That company does not exist.');
-  return new Response(null, { status: 204 });
+export const DELETE = apiHandler(async () => {
+  await requireRole('admin');
+  throw new HttpError(
+    405,
+    'Pooled companies and their public history cannot be deleted. Remove the company from its '
+      + 'landscapes instead.',
+    'pooled_company_delete_disabled',
+  );
 });

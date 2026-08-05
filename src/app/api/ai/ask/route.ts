@@ -32,14 +32,22 @@ import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { getFactSheet } from '@/lib/metrics/queries';
 import { complete } from '@/lib/ai/client';
 import { askDataPrompt } from '@/lib/ai/prompts';
+import {
+  verifyFactSheetAnswer,
+  type FactSheetAnswerVerification,
+} from '@/lib/ai/verify';
 import { ModelError, type ModelMessage } from '@/lib/ai/types';
 import { parseRangeParams } from '@/lib/dates';
+import {
+  factSheetFingerprint,
+  factSheetScopeSchema,
+} from '@/lib/metrics/fact-sheet-request';
 import { readJson, RANGE_PRESETS } from '../../_lib/query';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-/** One completion over a large prompt, with retries. */
-export const maxDuration = 120;
+/** One completion plus one bounded verification-repair pass, each with retries. */
+export const maxDuration = 300;
 
 /**
  * History is capped rather than trusted. It arrives from the browser, it is
@@ -48,6 +56,26 @@ export const maxDuration = 120;
  */
 const MAX_HISTORY_TURNS = 10;
 
+function repairMessage(verification: FactSheetAnswerVerification): string {
+  const lines = [
+    'Your answer failed deterministic verification. Rewrite the complete answer using only the',
+    'fact sheet already supplied. Keep correct prose, remove unsupported figures, and place the',
+    'exact supporting fact path after every number.',
+    '',
+  ];
+  if (verification.unverified.length > 0) {
+    lines.push('UNSUPPORTED NUMBERS:', ...verification.unverified.map((item) => '- ' + item), '');
+  }
+  if (verification.miscited.length > 0) {
+    lines.push('WRONG CITATIONS:', ...verification.miscited.map((item) => '- ' + item), '');
+  }
+  if (verification.violations.length > 0) {
+    lines.push('RULE VIOLATIONS:', ...verification.violations.map((item) => '- ' + item), '');
+  }
+  lines.push('Return only the corrected answer. Do not discuss the repair.');
+  return lines.join('\n');
+}
+
 const askSchema = z.object({
   landscapeId: z.uuid('landscapeId must be a landscape UUID.'),
   question: z.string().trim().min(1, 'Ask a question.').max(2000),
@@ -55,6 +83,8 @@ const askSchema = z.object({
   end: z.iso.date().optional(),
   range: z.enum(RANGE_PRESETS).optional(),
   connectionId: z.uuid().optional(),
+  factsFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  ...factSheetScopeSchema.shape,
   history: z.array(z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string().max(8000),
@@ -82,8 +112,21 @@ export const POST = apiHandler(async (req: NextRequest) => {
     landscapeId: landscape.id,
     start: range.start,
     end: range.end,
+    platforms: body.platforms,
+    companyIds: body.companyIds,
+    tagIds: body.tagIds,
+    postTypes: body.postTypes,
+    search: body.search,
     compare: true,
   });
+
+  if (factSheetFingerprint(facts) !== body.factsFingerprint) {
+    throw new HttpError(
+      409,
+      'The data or filters changed since this fact sheet was displayed. Refresh before asking so the answer and evidence stay identical.',
+      'fact_sheet_changed',
+    );
+  }
 
   const request = askDataPrompt(body.question, facts);
 
@@ -102,6 +145,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
 
   let answer: string;
   let model: string;
+  let verification: FactSheetAnswerVerification;
   try {
     const result = await complete(orgId, { ...request, messages }, {
       connectionId: body.connectionId,
@@ -109,10 +153,42 @@ export const POST = apiHandler(async (req: NextRequest) => {
     });
     answer = result.text.trim();
     model = result.model;
+    verification = verifyFactSheetAnswer(answer, facts);
+
+    if (!verification.ok) {
+      const repaired = await complete(orgId, {
+        ...request,
+        messages: [
+          ...messages,
+          { role: 'assistant', content: answer },
+          { role: 'user', content: repairMessage(verification) },
+        ],
+      }, {
+        connectionId: body.connectionId,
+        connection: result.connection,
+        feature: 'ask_repair',
+      });
+      answer = repaired.text.trim();
+      model = repaired.model;
+      verification = verifyFactSheetAnswer(answer, facts);
+    }
   } catch (err) {
     // Provider messages are already written for a human and carry no secrets.
     if (err instanceof ModelError) throw new HttpError(502, err.message, 'model_error');
     throw err;
+  }
+
+  if (!verification.ok) {
+    console.error('[ai] Ask answer rejected by verification', {
+      unverified: verification.unverified.length,
+      miscited: verification.miscited.length,
+      violations: verification.violations.length,
+    });
+    throw new HttpError(
+      422,
+      'The model could not produce an answer that passed fact-sheet verification. No answer was shown.',
+      'unverified_ai_answer',
+    );
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -133,6 +209,8 @@ export const POST = apiHandler(async (req: NextRequest) => {
       'x-pressbox-range': facts.range.start + '/' + facts.range.end,
       'x-pressbox-companies': String(facts.companies.length),
       'x-pressbox-caveats': String(facts.caveats.length),
+      'x-pressbox-verified': 'true',
+      'x-pressbox-verified-claims': String(verification.stats.total),
     },
   });
 });

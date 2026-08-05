@@ -442,6 +442,7 @@ export async function WidgetGrid({
             error={result.error}
             platform={widget.platform}
             landscapeId={query.landscapeId}
+            perPlatform={1}
           />
         );
       }

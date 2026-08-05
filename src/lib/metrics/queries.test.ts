@@ -12,6 +12,8 @@ const {
   mergeMinimumObservedDays,
   metricAvailabilityForCoverage,
   platformHasCompleteFlow,
+  platformHasMeasuredFlow,
+  platformAudienceCoverageCaveats,
   safeDiv,
   sourceMedianEngagement,
 } = metricTestHelpers;
@@ -193,6 +195,46 @@ describe('audience metric availability', () => {
     assert.equal(platformHasCompleteFlow(2, 1), false);
     assert.equal(platformHasCompleteFlow(2, 2), true);
   });
+
+  it('keeps useful capped-source totals measured but explicitly incomplete', () => {
+    assert.equal(platformHasMeasuredFlow(2, 0, 14), true);
+    assert.equal(platformHasCompleteFlow(2, 0), false);
+    assert.equal(platformHasMeasuredFlow(2, 0, 0), false);
+    assert.equal(platformHasMeasuredFlow(2, 2, 0), true);
+  });
+});
+
+describe('platform audience coverage notes', () => {
+  it('counts only companies with a tracked account on that platform', () => {
+    const notes = platformAudienceCoverageCaveats([
+      {
+        company_id: 'company-a',
+        platform: 'instagram',
+        channel_id: 'instagram-a',
+        observed_days: 6,
+        first_ever_day: '2026-07-20',
+      },
+      {
+        company_id: 'company-b',
+        platform: 'instagram',
+        channel_id: 'instagram-b',
+        observed_days: 4,
+        first_ever_day: '2026-07-20',
+      },
+      {
+        company_id: 'company-a',
+        platform: 'youtube',
+        channel_id: 'youtube-a',
+        observed_days: 6,
+        first_ever_day: '2026-07-20',
+      },
+    ], 6);
+
+    assert.deepEqual(notes, [
+      '1 of 2 tracked Instagram accounts is missing audience readings for up to 2 of 6 collectible days.',
+    ]);
+    assert.ok(notes.every((note) => !note.includes('22 companies')));
+  });
 });
 
 describe('Reddit account metric boundaries', () => {
@@ -205,7 +247,7 @@ describe('Reddit account metric boundaries', () => {
   });
 
   it('leaves follower rate unavailable when no post captured a denominator', () => {
-    const contribution = followerRateContribution(0, 0, 789_224);
+    const contribution = followerRateContribution(0, 0);
     assert.deepEqual(contribution, {
       numerator: 0,
       posts: 0,
@@ -213,10 +255,11 @@ describe('Reddit account metric boundaries', () => {
     assert.equal(followerRateAvailable(contribution.posts), false);
   });
 
-  it('uses only rated post engagement and count when a source mixes coverage', () => {
-    const contribution = followerRateContribution(300, 2, 1_000);
+  it('combines the sum of per-post rates without borrowing a latest follower stock', () => {
+    const rateSum = 0.1 + 0.2;
+    const contribution = followerRateContribution(rateSum, 2);
     assert.deepEqual(contribution, {
-      numerator: 0.3,
+      numerator: rateSum,
       posts: 2,
     });
     assert.equal(followerRateAvailable(contribution.posts), true);
