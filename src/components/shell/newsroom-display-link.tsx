@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { MonitorUp } from 'lucide-react';
 import type { Platform } from '@/lib/types';
 
-const DISPLAY_PARAMS = ['range', 'start', 'end', 'companies', 'platforms', 'types', 'tags'] as const;
+const DISPLAY_PARAMS = ['companies', 'platforms', 'types', 'tags'] as const;
 
 export function NewsroomDisplayLink({
   landscapeId,

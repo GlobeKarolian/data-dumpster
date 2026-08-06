@@ -5,6 +5,11 @@ import { PLATFORM_LABELS } from '@/lib/types';
 import { formatFullDate } from '@/components/ui/format';
 import { NewsroomDisplay } from '@/components/newsroom/newsroom-display';
 import {
+  NEWSROOM_PLATFORMS,
+  newsroomTodaySearchParams,
+  newsroomTrailing24Hours,
+} from '@/lib/newsroom-display';
+import {
   analyticsQuery,
   resolveContext,
 } from '@/app/(app)/_lib/context';
@@ -30,7 +35,8 @@ export default async function NewsroomPage({
 }: {
   searchParams: Promise<SearchParamsInput>;
 }) {
-  const ctx = await resolveContext(await searchParams);
+  const requestedParams = await searchParams;
+  const ctx = await resolveContext(newsroomTodaySearchParams(requestedParams));
   if (!ctx.landscape) {
     return (
       <main className="grid min-h-dvh place-items-center bg-zinc-950 px-6 text-center text-white">
@@ -44,9 +50,17 @@ export default async function NewsroomPage({
   }
 
   const base = analyticsQuery(ctx);
-  const [summary, engagement, topPosts, freshness] = await Promise.all([
+  const generatedAt = new Date();
+  const trailing24Hours = newsroomTrailing24Hours(generatedAt);
+  const [summary, engagement, recentEngagement, topPosts, freshness] = await Promise.all([
     loadSummary(base),
     loadLeaderboard({ ...base, metric: 'engagementTotal' }),
+    loadLeaderboard({
+      ...base,
+      ...trailing24Hours,
+      compare: false,
+      metric: 'engagementTotal',
+    }),
     loadTopPostsByPlatform({ ...base, perPlatform: 3 }),
     query<FreshnessRow>(({ sql }) => sql`
       SELECT
@@ -86,6 +100,7 @@ export default async function NewsroomPage({
     ctx.error,
     summary.error,
     engagement.error,
+    recentEngagement.error,
     topPosts.error,
     freshness.error,
   ].filter((error): error is string => Boolean(error));
@@ -104,13 +119,15 @@ export default async function NewsroomPage({
       platformLabel={platformLabel}
       summary={summary.data}
       engagementRows={engagement.data}
+      recentEngagementRows={recentEngagement.data}
       topPosts={topPosts.data}
+      platforms={ctx.platforms.length > 0 ? ctx.platforms : NEWSROOM_PLATFORMS}
       freshness={{
         lastIngestedAt: fresh?.last_ingested_at ?? null,
         profileCount: Number(fresh?.profile_count ?? 0),
         freshProfileCount: Number(fresh?.fresh_profile_count ?? 0),
       }}
-      generatedAt={new Date().toISOString()}
+      generatedAt={generatedAt.toISOString()}
       errors={errors}
       exitHref={`/cross-channel?${returnParams.toString()}`}
     />

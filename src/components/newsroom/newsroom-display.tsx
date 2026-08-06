@@ -17,7 +17,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { PostDto, SummaryResult } from '@/lib/metrics/contract';
-import type { MetricKey, MetricRow } from '@/lib/types';
+import type { MetricKey, MetricRow, Platform } from '@/lib/types';
 import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/types';
 import { postPosterUrl } from '@/lib/post-preview-url';
 import { formatDateTime, formatMetric, truncate } from '@/components/ui/format';
@@ -29,12 +29,13 @@ import {
   NEWSROOM_ROTATION_MS,
   newsroomFreshness,
   newsroomLeaderboardRows,
+  newsroomPlatformWinners,
 } from '@/lib/newsroom-display';
 
 const SLIDES = [
+  { id: 'leaders', label: '24-hour leaders' },
+  { id: 'platforms', label: 'Top content by platform' },
   { id: 'pulse', label: 'Newsroom pulse' },
-  { id: 'winning', label: 'What is winning' },
-  { id: 'leaderboard', label: 'Competitive leaderboard' },
   { id: 'channels', label: 'Channel mix' },
 ] as const;
 
@@ -66,7 +67,9 @@ export interface NewsroomDisplayProps {
   platformLabel: string;
   summary: SummaryResult | null;
   engagementRows: MetricRow[];
+  recentEngagementRows: MetricRow[];
   topPosts: PostDto[];
+  platforms: readonly Platform[];
   freshness: DisplayFreshness;
   generatedAt: string;
   errors: string[];
@@ -233,87 +236,103 @@ function PulseSlide({
   );
 }
 
-function WinningPost({ post, rank, focusCompanyId }: { post: PostDto; rank: number; focusCompanyId: string | null }) {
-  const poster = postPosterUrl(post);
-  const focus = post.company.id === focusCompanyId;
+function PlatformWinnerCard({
+  platform,
+  post,
+  focusCompanyId,
+}: {
+  platform: Platform;
+  post: PostDto | null;
+  focusCompanyId: string | null;
+}) {
+  const poster = post ? postPosterUrl(post) : null;
+  const focus = post?.company.id === focusCompanyId;
   return (
     <article className={cn(
-      'grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-[1.15vw] border bg-white/[0.045]',
+      'grid min-h-0 grid-cols-[42%_minmax(0,1fr)] overflow-hidden rounded-[0.9vw] border bg-white/[0.04]',
       focus ? 'border-accent-500/70' : 'border-white/10',
     )}>
       <div className="relative min-h-0 overflow-hidden bg-black">
         {poster ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={poster} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl" />
+            <img src={poster} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-xl" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={poster} alt="" className="relative z-10 h-full w-full object-contain" />
           </>
         ) : (
-          <div className="grid h-full min-h-48 place-items-center text-zinc-700">
-            <PlatformIcon platform={post.platform} className="h-[5vw] w-[5vw] opacity-45" />
+          <div className="grid h-full place-items-center bg-white/[0.025]">
+            <PlatformIcon platform={platform} className="h-[clamp(2rem,3vw,3.8rem)] w-[clamp(2rem,3vw,3.8rem)] opacity-45" />
           </div>
         )}
-        <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between bg-gradient-to-b from-black/85 to-transparent p-[1vw]">
-          <span className="grid h-[2.4vw] min-h-8 w-[2.4vw] min-w-8 place-items-center rounded-full bg-white text-[clamp(0.7rem,0.9vw,1.1rem)] font-black text-black">
-            #{rank}
-          </span>
-          {post.outlierScore !== null && post.outlierScore >= 3 ? (
-            <span className="rounded-full bg-accent-600 px-[0.7vw] py-[0.35vw] text-[clamp(0.65rem,0.78vw,0.95rem)] font-bold text-white">
-              {post.outlierScore.toFixed(1)}x outlier
-            </span>
-          ) : null}
-        </div>
+        <span className="absolute left-[0.6vw] top-[0.6vw] z-20 inline-flex items-center gap-1.5 rounded-full bg-black/80 px-[0.55vw] py-[0.3vw] text-[clamp(0.58rem,0.7vw,0.86rem)] font-semibold text-white backdrop-blur">
+          <PlatformIcon platform={platform} className="h-[1em] w-[1em] text-white" />
+          {PLATFORM_LABELS[platform]}
+        </span>
       </div>
-      <div className="p-[clamp(0.85rem,1.1vw,1.4rem)]">
-        <div className="flex items-center gap-2">
-          <PlatformIcon platform={post.platform} className="h-[1.15em] w-[1.15em] text-white" />
-          <p className="min-w-0 flex-1 truncate text-[clamp(0.8rem,1vw,1.25rem)] font-bold text-white">
-            {post.company.name}
-          </p>
-          <span className="pb-num text-[clamp(0.7rem,0.8vw,1rem)] text-zinc-600">{formatDateTime(post.postedAt)}</span>
-        </div>
-        <p className="mt-[0.6vw] min-h-[2.9em] text-[clamp(0.78rem,0.95vw,1.2rem)] leading-[1.42] text-zinc-300">
-          {post.text ? truncate(post.text, 170) : 'No caption'}
-        </p>
-        <div className="mt-[0.8vw] flex items-center justify-between border-t border-white/10 pt-[0.7vw]">
-          <span className="pb-num text-[clamp(1rem,1.45vw,1.85rem)] font-semibold text-white">
-            {formatMetric(post.engagementTotal, 'engagementTotal')}
-            <span className="ml-1.5 text-[0.56em] font-medium uppercase tracking-wide text-zinc-600">engagement</span>
-          </span>
-          {post.permalink ? (
-            <a href={post.permalink} target="_blank" rel="noopener noreferrer" aria-label={`Open ${post.company.name} post`} className="text-zinc-600 hover:text-white">
-              <ExternalLink className="h-[1.2em] w-[1.2em]" aria-hidden />
-            </a>
-          ) : null}
-        </div>
+      <div className="flex min-w-0 flex-col p-[clamp(0.65rem,0.85vw,1.05rem)]">
+        {post ? (
+          <>
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-[clamp(0.72rem,0.9vw,1.12rem)] font-bold text-white">{post.company.name}</p>
+              {post.permalink ? (
+                <a href={post.permalink} target="_blank" rel="noopener noreferrer" aria-label={`Open ${post.company.name} ${PLATFORM_LABELS[platform]} post`} className="shrink-0 text-zinc-600 hover:text-white">
+                  <ExternalLink className="h-[1em] w-[1em]" aria-hidden />
+                </a>
+              ) : null}
+            </div>
+            <p className="pb-num mt-0.5 text-[clamp(0.58rem,0.67vw,0.82rem)] text-zinc-600">{formatDateTime(post.postedAt)}</p>
+            <p className="mt-[0.45vw] line-clamp-3 text-[clamp(0.64rem,0.76vw,0.95rem)] leading-[1.35] text-zinc-400">
+              {post.text ? truncate(post.text, 130) : 'No caption'}
+            </p>
+            <p className="pb-num mt-auto border-t border-white/10 pt-[0.45vw] text-[clamp(0.9rem,1.25vw,1.55rem)] font-semibold text-white">
+              {formatMetric(post.engagementTotal, 'engagementTotal')}
+              <span className="ml-1 text-[0.52em] font-medium uppercase tracking-wide text-zinc-600">engagement</span>
+            </p>
+          </>
+        ) : (
+          <div className="grid h-full place-items-center text-center">
+            <div>
+              <p className="text-[clamp(0.72rem,0.9vw,1.1rem)] font-semibold text-zinc-400">No post today</p>
+              <p className="mt-1 text-[clamp(0.58rem,0.66vw,0.8rem)] text-zinc-700">Nothing measured on {PLATFORM_LABELS[platform]}</p>
+            </div>
+          </div>
+        )}
       </div>
     </article>
   );
 }
 
-function WinningSlide({ posts, focusCompanyId }: { posts: PostDto[]; focusCompanyId: string | null }) {
-  const winners = posts.slice(0, 3);
+function PlatformWinnersSlide({
+  posts,
+  platforms,
+  focusCompanyId,
+}: {
+  posts: PostDto[];
+  platforms: readonly Platform[];
+  focusCompanyId: string | null;
+}) {
+  const winners = newsroomPlatformWinners(posts, platforms);
+  const gridClass = winners.length <= 2
+    ? 'grid-cols-2'
+    : winners.length <= 4
+      ? 'grid-cols-2'
+      : 'grid-cols-3';
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-[1vw] flex items-end justify-between gap-4">
+      <div className="mb-[0.8vw] flex items-end justify-between gap-4">
         <div>
-          <p className="text-[clamp(0.65rem,0.75vw,0.95rem)] font-bold uppercase tracking-[0.18em] text-accent-400">Content watch</p>
-          <h2 className="mt-1 text-[clamp(1.7rem,2.7vw,3.5rem)] font-semibold leading-none tracking-[-0.045em] text-white">What is winning right now</h2>
+          <p className="text-[clamp(0.65rem,0.75vw,0.95rem)] font-bold uppercase tracking-[0.18em] text-accent-400">Platform winners</p>
+          <h2 className="mt-1 text-[clamp(1.7rem,2.7vw,3.5rem)] font-semibold leading-none tracking-[-0.045em] text-white">Today&apos;s top content by platform</h2>
         </div>
         <p className="max-w-[36vw] text-right text-[clamp(0.72rem,0.9vw,1.12rem)] leading-relaxed text-zinc-500">
-          Highest total engagement across the selected landscape and window.
+          The highest-engagement post measured on every channel today.
         </p>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-3 gap-[1.2vw]">
-        {winners.map((post, index) => (
-          <WinningPost key={post.id} post={post} rank={index + 1} focusCompanyId={focusCompanyId} />
+      <div className={cn('grid min-h-0 flex-1 auto-rows-fr gap-[0.75vw]', gridClass)}>
+        {winners.map(({ platform, post }) => (
+          <PlatformWinnerCard key={platform} platform={platform} post={post} focusCompanyId={focusCompanyId} />
         ))}
-        {winners.length === 0 ? (
-          <div className="col-span-3 grid place-items-center rounded-[1.25vw] border border-dashed border-white/10 text-[clamp(1rem,1.3vw,1.7rem)] text-zinc-600">
-            No posts were measured in this window.
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -326,10 +345,10 @@ function LeaderboardSlide({ rows, focusCompanyId, focusName }: { rows: MetricRow
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-[0.9vw] flex items-end justify-between gap-4">
         <div>
-          <p className="text-[clamp(0.65rem,0.75vw,0.95rem)] font-bold uppercase tracking-[0.18em] text-accent-400">Competitive set</p>
-          <h2 className="mt-1 text-[clamp(1.7rem,2.7vw,3.5rem)] font-semibold leading-none tracking-[-0.045em] text-white">Who owned the conversation</h2>
+          <p className="text-[clamp(0.65rem,0.75vw,0.95rem)] font-bold uppercase tracking-[0.18em] text-accent-400">Rolling 24 hours</p>
+          <h2 className="mt-1 text-[clamp(1.7rem,2.7vw,3.5rem)] font-semibold leading-none tracking-[-0.045em] text-white">Who is generating the most engagement</h2>
         </div>
-        <p className="text-[clamp(0.72rem,0.9vw,1.12rem)] text-zinc-500">Ranked by total engagement · {focusName} stays visible</p>
+        <p className="text-[clamp(0.72rem,0.9vw,1.12rem)] text-zinc-500">Ranked by total engagement in the last 24 hours · {focusName} stays visible</p>
       </div>
       <ol className="flex min-h-0 flex-1 flex-col justify-between gap-[0.45vw]">
         {visible.map((row) => {
@@ -520,9 +539,9 @@ export function NewsroomDisplay(props: NewsroomDisplayProps) {
       </header>
 
       <main className="relative z-10 min-h-0 flex-1 px-[2.3vw] py-[1.5vw]" aria-live="polite" aria-label={SLIDES[slide].label}>
-        {slide === 0 ? <PulseSlide summary={props.summary} rows={props.engagementRows} focusCompanyId={props.focusCompanyId} focusName={props.focusName} /> : null}
-        {slide === 1 ? <WinningSlide posts={props.topPosts} focusCompanyId={props.focusCompanyId} /> : null}
-        {slide === 2 ? <LeaderboardSlide rows={props.engagementRows} focusCompanyId={props.focusCompanyId} focusName={props.focusName} /> : null}
+        {slide === 0 ? <LeaderboardSlide rows={props.recentEngagementRows} focusCompanyId={props.focusCompanyId} focusName={props.focusName} /> : null}
+        {slide === 1 ? <PlatformWinnersSlide posts={props.topPosts} platforms={props.platforms} focusCompanyId={props.focusCompanyId} /> : null}
+        {slide === 2 ? <PulseSlide summary={props.summary} rows={props.engagementRows} focusCompanyId={props.focusCompanyId} focusName={props.focusName} /> : null}
         {slide === 3 ? <ChannelSlide summary={props.summary} focusName={props.focusName} /> : null}
       </main>
 

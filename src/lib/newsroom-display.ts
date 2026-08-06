@@ -1,8 +1,61 @@
-import type { MetricRow } from '@/lib/types';
+import type { PostDto } from '@/lib/metrics/contract';
+import type { MetricRow, Platform } from '@/lib/types';
+import { toDayString } from '@/lib/dates';
 
 export const NEWSROOM_ROTATION_MS = 20_000;
 export const NEWSROOM_REFRESH_MS = 5 * 60_000;
 export const NEWSROOM_FRESH_PROFILE_HOURS = 14;
+export const NEWSROOM_PLATFORMS: readonly Platform[] = [
+  'facebook',
+  'instagram',
+  'threads',
+  'twitter',
+  'youtube',
+  'tiktok',
+  'bluesky',
+  'reddit',
+  'linkedin',
+];
+
+type NewsroomSearchParams = Record<string, string | string[] | undefined>;
+
+/** The wall display is a live view: historical URL ranges never survive entry. */
+export function newsroomTodaySearchParams(
+  input: NewsroomSearchParams,
+  now = new Date(),
+): NewsroomSearchParams {
+  const today = toDayString(now);
+  return {
+    ...input,
+    range: undefined,
+    start: today,
+    end: today,
+  };
+}
+
+export function newsroomTrailing24Hours(now = new Date()): { start: Date; end: Date } {
+  return {
+    start: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+    end: new Date(now),
+  };
+}
+
+export function newsroomPlatformWinners(
+  posts: readonly PostDto[],
+  platforms: readonly Platform[] = NEWSROOM_PLATFORMS,
+): Array<{ platform: Platform; post: PostDto | null }> {
+  const winnerByPlatform = new Map<Platform, PostDto>();
+  for (const post of posts) {
+    const current = winnerByPlatform.get(post.platform);
+    if (!current || post.engagementTotal > current.engagementTotal) {
+      winnerByPlatform.set(post.platform, post);
+    }
+  }
+  return platforms.map((platform) => ({
+    platform,
+    post: winnerByPlatform.get(platform) ?? null,
+  }));
+}
 
 export type NewsroomFreshness = {
   label: string;
