@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, Cpu, LayoutDashboard, LayoutGrid,
-  MessageSquare, Radio, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
+  MessageSquare, MonitorUp, Radio, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
 } from 'lucide-react';
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -63,7 +63,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: 'dashboards',
     label: 'Dashboards',
-    items: [{ href: '/dashboards', label: 'All Dashboards', icon: LayoutDashboard, matchPrefix: true }],
+    items: [
+      { href: '/dashboards', label: 'All Dashboards', icon: LayoutDashboard, matchPrefix: true },
+      { href: '/newsroom', label: 'Newsroom Screen', icon: MonitorUp },
+    ],
   },
   {
     id: 'settings',
@@ -90,6 +93,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/ask': 'Ask',
   '/alerts': 'Alerts',
   '/dashboards': 'Dashboards',
+  '/newsroom': 'Newsroom Screen',
   '/settings/users': 'Users and Invitations',
   '/settings/models': 'Model Connections',
   '/settings/sources': 'Social Profiles',

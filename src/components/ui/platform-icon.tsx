@@ -35,7 +35,12 @@ const ICONS: Partial<Record<Platform, BrandIcon>> = {
 
 function LinkedInMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      style={{ color: PLATFORM_COLORS.linkedin }}
+      aria-hidden
+    >
       <rect width="24" height="24" rx="2.5" fill="currentColor" />
       <circle cx="6.8" cy="7" r="1.55" fill="white" />
       <path d="M5.45 9.5h2.7v8.8h-2.7zm4.3 0h2.58v1.2h.04c.36-.68 1.24-1.4 2.56-1.4 2.74 0 3.25 1.8 3.25 4.15v4.85h-2.7v-4.3c0-1.03-.02-2.35-1.43-2.35-1.44 0-1.66 1.12-1.66 2.27v4.38h-2.7z" fill="white" />

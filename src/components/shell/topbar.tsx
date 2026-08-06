@@ -11,6 +11,7 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { CompanyFilter, PlatformFilter, type CompanyOption } from './company-filter';
 import { ExportMenu, type ExportTarget } from './export-menu';
 import { RefreshButton } from './refresh-button';
+import { NewsroomDisplayLink } from './newsroom-display-link';
 import { NAV_PLATFORMS, ROUTE_TITLES } from './nav';
 
 const PLATFORM_SET = new Set<string>(NAV_PLATFORMS);
@@ -130,6 +131,9 @@ export function Topbar({
           {showDateFilter ? <DateRangePicker /> : null}
           {effectiveExports.length > 0 ? (
           <ExportMenu targets={effectiveExports} landscapeId={landscapeId} />
+          ) : null}
+          {landscapeId && (pathname === '/cross-channel' || pathname === '/leaderboard' || isPlatform) ? (
+          <NewsroomDisplayLink landscapeId={landscapeId} platform={fixedPlatform} />
           ) : null}
           {roleAtLeast(role, 'editor') && landscapeId ? (
           <RefreshButton
