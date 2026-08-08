@@ -4,12 +4,17 @@ import {
   ArrowRight,
   BarChart3,
   Bell,
+  Database,
+  Download,
+  Eye,
   FileText,
   Layers,
+  MonitorUp,
   Search,
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  Workflow,
 } from 'lucide-react';
 import { DumpsterMark } from '@/components/shell/logo';
 import { PlatformIcon } from '@/components/ui/platform-icon';
@@ -77,6 +82,33 @@ const featureCards = [
   },
 ] as const;
 
+const workflowSteps = [
+  {
+    number: '01',
+    icon: Layers,
+    title: 'Define the field.',
+    body: 'Build a landscape around the brands, desks and competitors that matter to the question.',
+  },
+  {
+    number: '02',
+    icon: BarChart3,
+    title: 'See who moved.',
+    body: 'Compare audience, publishing and engagement inside one exact window and platform mix.',
+  },
+  {
+    number: '03',
+    icon: Eye,
+    title: 'Inspect the winner.',
+    body: 'Open the post, media and metrics behind the spike instead of stopping at the chart.',
+  },
+  {
+    number: '04',
+    icon: MonitorUp,
+    title: 'Bring it to the room.',
+    body: 'Turn the same measured view into a newsroom screen, brief, report or export.',
+  },
+] as const;
+
 function ProductScreen() {
   return (
     <div className={styles.productScreen} aria-label="Illustration of the Data Dumpster cross-channel workspace">
@@ -85,6 +117,7 @@ function ProductScreen() {
           <span className={styles.screenMark}><DumpsterMark className="h-4 w-4" /></span>
           <span>Data Dumpster</span>
         </div>
+        <span className={styles.screenMockLabel}>CONCEPT UI · SAMPLE DATA</span>
         <div className={styles.windowDots} aria-hidden="true"><i /><i /><i /></div>
       </div>
       <div className={styles.screenBody}>
@@ -152,7 +185,7 @@ function NewsroomScreen() {
     <div className={styles.newsroomScreen} aria-label="Illustration of the Data Dumpster Newsroom Screen">
       <div className={styles.newsroomChrome}>
         <div><span className={styles.newsroomDot} /> Boston News Landscape</div>
-        <span>NEWSROOM LIVE</span>
+        <span>CONCEPT SCREEN</span>
         <small>Rolling 24 hours</small>
       </div>
       <div className={styles.newsroomCopy}>
@@ -173,9 +206,55 @@ function NewsroomScreen() {
   );
 }
 
+function ReportScreen() {
+  return (
+    <div className={styles.reportScreen} aria-label="Illustration of a Data Dumpster weekly report">
+      <div className={styles.reportScreenTop}>
+        <div>
+          <span className={styles.reportMark}><DumpsterMark className="h-4 w-4" /></span>
+          <strong>Weekly competitive report</strong>
+        </div>
+        <span>CONCEPT UI · SAMPLE DATA</span>
+      </div>
+      <div className={styles.reportPaper}>
+        <div className={styles.reportHeading}>
+          <div>
+            <small>BOSTON NEWS LANDSCAPE</small>
+            <h3>The week in social</h3>
+            <p>July 27–August 2 · 22 companies · 9 platforms</p>
+          </div>
+          <span>READY TO SHARE</span>
+        </div>
+        <div className={styles.reportMetrics}>
+          <div><span>Landscape engagement</span><strong>412,086</strong><small>measured total</small></div>
+          <div><span>Focus-company rank</span><strong>#4</strong><small>of 22 measured</small></div>
+          <div><span>Top channel</span><strong>Instagram</strong><small>by engagement</small></div>
+        </div>
+        <div className={styles.reportStory}>
+          <div className={styles.reportStoryArt}><TrendingUp size={28} /></div>
+          <div>
+            <span>EXECUTIVE READOUT</span>
+            <h4>Two visual stories changed the competitive picture.</h4>
+            <p>The evidence stays attached: scope, source coverage, rankings and the posts behind the movement.</p>
+          </div>
+        </div>
+        <div className={styles.reportFooter}>
+          <span><ShieldCheck size={14} /> Computed facts verified</span>
+          <span>PowerPoint · CSV · Markdown</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AboutPage() {
   return (
     <main className={styles.promo}>
+      <aside className={styles.mockupNotice} aria-label="Mockup disclosure">
+        <span>Concept mockup</span>
+        <p>Illustrative product screens and sample figures appear below. They are not live production data.</p>
+      </aside>
+
       <section className={styles.hero}>
         <div className={styles.heroGlow} aria-hidden="true" />
         <div className={styles.heroCopy}>
@@ -246,10 +325,35 @@ export default function AboutPage() {
         </div>
       </section>
 
+      <section className={styles.workflowSection}>
+        <div className={styles.workflowIntro}>
+          <p className={styles.eyebrow}>One connected workflow</p>
+          <h2>From a crowded landscape<br /><span>to a clear next move.</span></h2>
+          <p>
+            Data Dumpster keeps discovery, evidence and delivery in one place, so the insight
+            does not fall apart between the analyst&apos;s screen and the newsroom meeting.
+          </p>
+        </div>
+        <div className={styles.workflowGrid}>
+          {workflowSteps.map(({ number, icon: Icon, title, body }) => (
+            <article key={number} className={styles.workflowCard}>
+              <div><span>{number}</span><Icon size={20} /></div>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </article>
+          ))}
+        </div>
+        <div className={styles.infrastructureBand}>
+          <div><Database size={21} /><strong>Collect once</strong><span>Reuse the same public profile across every landscape that needs it.</span></div>
+          <div><Workflow size={21} /><strong>Refresh twice daily</strong><span>New scheduled windows open every twelve hours; stored results can be read without another vendor call.</span></div>
+          <div><ShieldCheck size={21} /><strong>Show the limits</strong><span>Coverage and source caveats stay attached instead of quietly becoming zero.</span></div>
+        </div>
+      </section>
+
       <section className={styles.darkChapter}>
         <div className={styles.darkIntro}>
           <p className={styles.eyebrow}>Built for the room</p>
-          <h2>Put the live competitive picture<br /><span>where the newsroom can see it.</span></h2>
+          <h2>Put the competitive picture<br /><span>where the newsroom can see it.</span></h2>
           <p>
             Newsroom Screen turns today&apos;s stored results into a big-screen briefing: rolling
             24-hour engagement leaders first, then the top content on each platform.
@@ -263,6 +367,25 @@ export default function AboutPage() {
           <div><strong>9</strong><span>supported public platforms</span></div>
           <div><strong>5m</strong><span>screen reread from stored data</span></div>
           <div><strong>0</strong><span>extra vendor calls from the display</span></div>
+        </div>
+      </section>
+
+      <section className={styles.reportingSection}>
+        <div className={styles.reportingCopy}>
+          <p className={styles.eyebrow}>Built to leave the dashboard</p>
+          <h2>The readout is<br /><span>part of the product.</span></h2>
+          <p>
+            A useful insight has to survive the handoff. Weekly Reports keep the measured scope,
+            supporting posts, coverage notes and verified narrative together.
+          </p>
+          <div className={styles.deliveryList}>
+            <div><FileText size={19} /><span><strong>Leadership-ready structure</strong>Start with the headline, then keep the evidence close.</span></div>
+            <div><Download size={19} /><span><strong>Useful export formats</strong>Move the same report to PowerPoint, CSV or Markdown.</span></div>
+            <div><ShieldCheck size={19} /><span><strong>One measured snapshot</strong>Exports and delivery render from the stored report—not a later recomputation.</span></div>
+          </div>
+        </div>
+        <div className={styles.reportingVisual}>
+          <ReportScreen />
         </div>
       </section>
 
@@ -284,7 +407,7 @@ export default function AboutPage() {
         <div className={styles.factSheet}>
           <div className={styles.factSheetHead}>
             <span><Sparkles size={16} /> Verified briefing</span>
-            <em>FACT SHEET MATCH</em>
+            <em>ILLUSTRATIVE DATA</em>
           </div>
           <blockquote>
             “The Harbor Journal led the landscape in total engagement, driven by two Instagram
