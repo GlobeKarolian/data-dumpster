@@ -22,7 +22,7 @@
 import { z } from 'zod';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, HttpError } from '@/lib/session';
+import { apiHandler, assertLandscapeAccessible, requireOrg, requireRole, HttpError } from '@/lib/session';
 import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { db } from '@/db';
 import { briefs } from '@/db/schema';
@@ -68,13 +68,14 @@ function rangeFromBody(body: { start?: string; end?: string; range?: string }) {
 }
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const { orgId, userId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId, userId } = session;
   // Brief generation runs inference and can take five minutes per call.
   const gate = checkRateLimit(orgId, LIMITS.generate);
   if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
   const body = await readJson(req, generateSchema);
 
-  const landscape = await assertLandscapeInOrg(body.landscapeId, orgId);
+  const landscape = await assertLandscapeAccessible(body.landscapeId, session);
   const range = rangeFromBody(body);
 
   let brief: GeneratedBrief;
@@ -119,7 +120,8 @@ export const POST = apiHandler(async (req: NextRequest) => {
 });
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
+  const { orgId } = session;
   const sp = req.nextUrl.searchParams;
   const params = listSchema.parse({
     landscapeId: sp.get('landscapeId') ?? undefined,
@@ -127,7 +129,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     pageSize: sp.get('pageSize') ?? undefined,
   });
 
-  const landscape = await assertLandscapeInOrg(params.landscapeId, orgId);
+  const landscape = await assertLandscapeAccessible(params.landscapeId, session);
   const scope = and(eq(briefs.orgId, orgId), eq(briefs.landscapeId, landscape.id));
 
   const [rows, [totals]] = await Promise.all([

@@ -18,8 +18,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
-  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const session = await requireOrg();
+  const { query } = await resolveAnalyticsQuery(req, session);
   const paging = readPostsParams(req);
   return analyticsJson(await getPosts({ ...query, ...paging }));
 });

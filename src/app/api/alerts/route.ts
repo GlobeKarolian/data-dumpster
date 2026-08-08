@@ -9,11 +9,17 @@
  * signed-in members of that org.
  */
 import { z } from 'zod';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, isNull, or, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole } from '@/lib/session';
+import {
+  apiHandler,
+  assertLandscapeAccessible,
+  hasRole,
+  requireOrg,
+  requireRole,
+} from '@/lib/session';
 import { db } from '@/db';
-import { alertEvents, alertRules } from '@/db/schema';
+import { alertEvents, alertRules, userLandscapeAccess } from '@/db/schema';
 import { readJson } from '../_lib/query';
 import { alertConfigSchema, destinationsSchema } from '../_lib/alert-config';
 import { ALERT_KINDS } from './_kinds';
@@ -31,7 +37,7 @@ const createAlertSchema = z.object({
 });
 
 export const GET = apiHandler(async () => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
 
   const rows = await db
     .select({
@@ -49,7 +55,22 @@ export const GET = apiHandler(async () => {
     })
     .from(alertRules)
     .leftJoin(alertEvents, eq(alertEvents.ruleId, alertRules.id))
-    .where(eq(alertRules.orgId, orgId))
+    .where(and(
+      eq(alertRules.orgId, session.orgId),
+      hasRole(session.role, 'admin')
+        ? eq(alertRules.orgId, session.orgId)
+        : or(
+          isNull(alertRules.landscapeId),
+          exists(
+            db.select({ userId: userLandscapeAccess.userId })
+              .from(userLandscapeAccess)
+              .where(and(
+                eq(userLandscapeAccess.userId, session.userId),
+                eq(userLandscapeAccess.landscapeId, alertRules.landscapeId),
+              )),
+          ),
+        ),
+    ))
     .groupBy(alertRules.id)
     .orderBy(desc(alertRules.createdAt));
 
@@ -69,15 +90,15 @@ export const GET = apiHandler(async () => {
 });
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const body = await readJson(req, createAlertSchema);
 
-  if (body.landscapeId) await assertLandscapeInOrg(body.landscapeId, orgId);
+  if (body.landscapeId) await assertLandscapeAccessible(body.landscapeId, session);
 
   const [created] = await db
     .insert(alertRules)
     .values({
-      orgId,
+      orgId: session.orgId,
       name: body.name,
       kind: body.kind,
       landscapeId: body.landscapeId ?? null,

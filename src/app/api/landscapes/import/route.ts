@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { db } from '@/db';
-import { channels, companies, landscapeCompanies, landscapes } from '@/db/schema';
+import {
+  channels,
+  companies,
+  landscapeCompanies,
+  landscapes,
+  userLandscapeAccess,
+} from '@/db/schema';
 import { getAdapter } from '@/lib/adapters/registry';
 import {
   parseLandscapeImportCsv,
@@ -14,7 +20,13 @@ import {
   type LandscapeImportPreview,
   type LandscapeImportResult,
 } from '@/lib/landscape-import';
-import { apiHandler, HttpError, requireRole } from '@/lib/session';
+import {
+  apiHandler,
+  hasRole,
+  HttpError,
+  requireRole,
+  type OrgContext,
+} from '@/lib/session';
 import type { Platform } from '@/lib/types';
 import { slugify } from '@/lib/utils';
 import { channelIdentityKey } from '@/lib/channel-identity';
@@ -454,9 +466,10 @@ function invalidImport(plan: LandscapeImportPlan, status = 422): Response {
 
 async function commitImport(
   request: Extract<ImportRequest, { action: 'import' }>,
-  orgId: string,
+  actor: OrgContext,
   initialPlan: LandscapeImportPlan,
 ): Promise<Response> {
+  const { orgId } = actor;
   const focusCompany = initialPlan.companies.find(
     (company) => company.key === request.focusCompanyKey,
   );
@@ -604,6 +617,14 @@ async function commitImport(
     );
   }
 
+  if (!hasRole(actor.role, 'admin')) {
+    await db.insert(userLandscapeAccess).values({
+      userId: actor.userId,
+      landscapeId: landscape.id,
+      grantedBy: actor.userId,
+    });
+  }
+
   const [membership] = await db
     .select({ count: sql<number>`count(*)::integer` })
     .from(landscapeCompanies)
@@ -645,15 +666,15 @@ async function commitImport(
 }
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireRole('editor');
+  const actor = await requireRole('editor');
   const body = await readJson(req, requestSchema);
   const parsed = parseLandscapeImportCsv(body.csv);
-  const plan = await buildPlan(parsed, orgId, body.landscapeName);
+  const plan = await buildPlan(parsed, actor.orgId, body.landscapeName);
 
   if (body.action === 'preview') {
     return Response.json(plan, {
       headers: { 'cache-control': 'private, no-store' },
     });
   }
-  return commitImport(body, orgId, plan);
+  return commitImport(body, actor, plan);
 });

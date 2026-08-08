@@ -16,11 +16,17 @@
  * is gated on admin while the member list is not.
  */
 import { z } from 'zod';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { apiHandler, requireOrg, requireRole, hasRole, HttpError } from '@/lib/session';
 import { db } from '@/db';
-import { invites, roleEnum, users } from '@/db/schema';
+import {
+  invites,
+  landscapes,
+  roleEnum,
+  userLandscapeAccess,
+  users,
+} from '@/db/schema';
 import {
   createInvite, listInvites, listOrgMembers, buildInviteUrl,
   DEFAULT_INVITE_DAYS, type InviteListItem, type OrgMember,
@@ -36,7 +42,7 @@ export const dynamic = 'force-dynamic';
  * users table later cannot become part of an API response by accident. That is
  * exactly how password_hash would otherwise escape one day.
  */
-function presentMember(row: OrgMember, selfId: string) {
+function presentMember(row: OrgMember, selfId: string, landscapeIds: string[]) {
   return {
     id: row.id,
     email: row.email,
@@ -46,6 +52,7 @@ function presentMember(row: OrgMember, selfId: string) {
     createdAt: row.createdAt,
     lastSeenAt: row.lastSeenAt,
     isSelf: row.id === selfId,
+    landscapeIds,
   };
 }
 
@@ -67,17 +74,41 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const { orgId, userId, role } = await requireOrg();
   const canManage = hasRole(role, 'admin');
 
-  const [members, pending] = await Promise.all([
+  const [members, pending, landscapeRows, accessRows] = await Promise.all([
     listOrgMembers(orgId),
     canManage ? listInvites(orgId) : Promise.resolve<InviteListItem[]>([]),
+    canManage
+      ? db.select({ id: landscapes.id, name: landscapes.name })
+        .from(landscapes)
+        .where(eq(landscapes.orgId, orgId))
+        .orderBy(asc(landscapes.name))
+      : Promise.resolve([]),
+    canManage
+      ? db.select({
+        userId: userLandscapeAccess.userId,
+        landscapeId: userLandscapeAccess.landscapeId,
+      })
+        .from(userLandscapeAccess)
+        .innerJoin(users, eq(users.id, userLandscapeAccess.userId))
+        .innerJoin(landscapes, eq(landscapes.id, userLandscapeAccess.landscapeId))
+        .where(and(eq(users.orgId, orgId), eq(landscapes.orgId, orgId)))
+      : Promise.resolve([]),
   ]);
+
+  const accessByUser = new Map<string, string[]>();
+  for (const row of accessRows) {
+    const ids = accessByUser.get(row.userId) ?? [];
+    ids.push(row.landscapeId);
+    accessByUser.set(row.userId, ids);
+  }
 
   const origin = absoluteOrigin(req);
   return Response.json(
     {
       canManage,
-      users: members.map((m) => presentMember(m, userId)),
+      users: members.map((m) => presentMember(m, userId, accessByUser.get(m.id) ?? [])),
       invites: pending.map((i) => presentInvite(i, origin)),
+      landscapes: landscapeRows,
     },
     { headers: { 'cache-control': 'private, no-store' } },
   );

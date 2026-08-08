@@ -26,7 +26,10 @@ import { publicProfileOnboardingUnavailableReason } from '@/lib/adapters/support
 import { assessProfileMatch } from '@/lib/profile-verification';
 import { publicSourceCredentials } from '@/lib/adapters/public-sources';
 import { readJson } from '../../../../_lib/query';
-import { assertCompanyInOrg } from '../../../../_lib/org-scope';
+import {
+  assertCompaniesVisibleToUser,
+  assertCompanyInOrg,
+} from '../../../../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,9 +53,11 @@ function unsupported(platform: Platform): never {
 }
 
 export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const companyId = idSchema.parse((await ctx.params).id);
   await assertCompanyInOrg(companyId, orgId);
+  await assertCompaniesVisibleToUser([companyId], session);
   const [company] = await db
     .select({ name: companies.name })
     .from(companies)

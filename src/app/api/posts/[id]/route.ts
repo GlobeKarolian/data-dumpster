@@ -17,9 +17,9 @@ export const dynamic = 'force-dynamic';
 const postIdSchema = z.uuid('That is not a post id.');
 
 export const GET = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const postId = postIdSchema.parse((await ctx.params).id);
-  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const { query } = await resolveAnalyticsQuery(req, session);
   const paging = readPostsParams(req);
   const detail = await getPostDetail({ ...query, ...paging, postId });
   if (!detail) throw new AuthError('not_found', 'That post does not exist in this view.');

@@ -55,6 +55,16 @@ export default async function AlertsPage({
         FROM alert_rules r
         LEFT JOIN alert_events e ON e.rule_id = r.id
        WHERE r.org_id = ${orgId}::uuid
+         AND (
+           ${ctx.role === 'admin' || ctx.role === 'owner'}
+           OR r.landscape_id IS NULL
+           OR EXISTS (
+             SELECT 1
+               FROM user_landscape_access ula
+              WHERE ula.landscape_id = r.landscape_id
+                AND ula.user_id = ${ctx.userId}::uuid
+           )
+         )
        GROUP BY r.id
        ORDER BY r.created_at DESC
     `),
@@ -64,6 +74,16 @@ export default async function AlertsPage({
         FROM alert_events e
         JOIN alert_rules r ON r.id = e.rule_id
        WHERE e.org_id = ${orgId}::uuid
+         AND (
+           ${ctx.role === 'admin' || ctx.role === 'owner'}
+           OR r.landscape_id IS NULL
+           OR EXISTS (
+             SELECT 1
+               FROM user_landscape_access ula
+              WHERE ula.landscape_id = r.landscape_id
+                AND ula.user_id = ${ctx.userId}::uuid
+           )
+         )
        ORDER BY e.created_at DESC
        LIMIT 50
     `),

@@ -128,6 +128,20 @@ dashboards, briefs, reports and alert configuration are organization-private.
 filter; landscape membership plus the session organization is the analytical
 scope.
 
+Landscape visibility adds a second private boundary inside an organization.
+Owners and admins are universal. Editors and viewers require a matching
+`user_landscape_access` row, and the same check is applied to the shell,
+Server-Component context, analytics routes, media previews, reports, briefs,
+alerts and dashboards. This is authorization, not navigation: removing an item
+from the landscape switcher alone is never considered enforcement. A denied
+identifier returns not found so it cannot be used to enumerate private sets.
+
+Landscape creation accepts either an existing pooled focus company or a new
+focus company in the same request. When the new company already exists in the
+global pool, its row and history are reused; otherwise the company is created
+and immediately made the first landscape member. This avoids both the empty
+focus state and a client-side create-company/create-landscape race.
+
 The current model is not yet a complete boundary for owned-native insights.
 Global `channels.isOwned`, mixed-source cursors and raw payloads are legacy
 structures, and historical pooled rows may contain owner-derived values.

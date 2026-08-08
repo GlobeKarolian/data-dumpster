@@ -20,8 +20,8 @@ export const dynamic = 'force-dynamic';
 const groupBySchema = z.enum(['domain', 'url']).default('domain');
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
-  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const session = await requireOrg();
+  const { query } = await resolveAnalyticsQuery(req, session);
   const groupBy = groupBySchema.parse(req.nextUrl.searchParams.get('groupBy') ?? undefined);
   return analyticsJson({ groupBy, rows: await getPostedUrls({ ...query, groupBy }) });
 });

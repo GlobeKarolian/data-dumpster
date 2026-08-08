@@ -108,6 +108,12 @@ destroy pooled history. Stop tracking by removing landscape membership. The
 only global pause is an explicit admin quarantine, limited to a company that is
 not shared with another organization.
 
+Per-user landscape access is implemented. Owners and admins see every
+landscape; editors and viewers require `user_landscape_access` grants managed
+from Settings > Users. The migration preserves every restricted user's current
+access. New landscapes may create their focus company inline, reuse a pooled
+match and automatically grant a restricted creator access to the result.
+
 Do not present the product as safely multi-tenant and do not expand owned-native
 collection until the split in `docs/OWNED-DATA-ISOLATION.md` is implemented and
 its cross-tenant acceptance suite passes. The required boundary is:
@@ -185,7 +191,7 @@ audit. Report delivery is implemented; only its dispatcher schedule is inactive.
    release gate, not a later hardening task.
 2. Validate the full foundation, run the pooled-identity audit, apply
    every committed migration from `drizzle/0000_collection_outcome.sql` through
-   `drizzle/0006_silent_kang.sql` via `npm run db:migrate`, deploy
+   `drizzle/0008_small_clint_barton.sql` via `npm run db:migrate`, deploy
    the matching application, then inspect health and collection outcomes in
    production. Never reverse that migration-before-code order.
 3. Choose a chronological X source or accept an explicitly limited X product.

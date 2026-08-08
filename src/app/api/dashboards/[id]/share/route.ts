@@ -21,7 +21,7 @@
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { apiHandler, requireRole, AuthError } from '@/lib/session';
+import { apiHandler, assertLandscapeAccessible, requireRole, AuthError } from '@/lib/session';
 import { db } from '@/db';
 import { dashboards } from '@/db/schema';
 import { readJson } from '../../../_lib/query';
@@ -36,16 +36,26 @@ const shareSchema = z.object({ enabled: z.boolean() });
 const TOKEN_LENGTH = 21;
 
 export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
   const { enabled } = await readJson(req, shareSchema);
+
+  const [dashboard] = await db
+    .select({ landscapeId: dashboards.landscapeId })
+    .from(dashboards)
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
+    .limit(1);
+  if (!dashboard) throw new AuthError('not_found', 'That dashboard does not exist.');
+  if (dashboard.landscapeId) {
+    await assertLandscapeAccessible(dashboard.landscapeId, session);
+  }
 
   const shareToken = enabled ? nanoid(TOKEN_LENGTH) : null;
 
   const [updated] = await db
     .update(dashboards)
     .set({ shareToken, updatedAt: new Date() })
-    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, orgId)))
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
     .returning({ id: dashboards.id, shareToken: dashboards.shareToken });
 
   if (!updated) throw new AuthError('not_found', 'That dashboard does not exist.');

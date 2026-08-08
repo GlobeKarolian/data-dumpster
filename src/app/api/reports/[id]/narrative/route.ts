@@ -35,11 +35,12 @@ const draftSchema = z.object({
 });
 
 export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const id = reportIdSchema.parse((await ctx.params).id);
   const body = await readJson(req, draftSchema);
 
-  const row = await loadReport(id, orgId);
+  const row = await loadReport(id, session);
   const doc = toReportDocument(row, await orgName(orgId));
 
   let draft: Awaited<ReturnType<typeof draftNarrativeSection>>;

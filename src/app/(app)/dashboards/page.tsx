@@ -37,6 +37,16 @@ export default async function DashboardsPage({
       FROM dashboards d
       LEFT JOIN landscapes l ON l.id = d.landscape_id
      WHERE d.org_id = ${orgId}::uuid
+       AND (
+         ${roleAtLeast(ctx.role, 'admin')}
+         OR d.landscape_id IS NULL
+         OR EXISTS (
+           SELECT 1
+             FROM user_landscape_access ula
+            WHERE ula.landscape_id = d.landscape_id
+              AND ula.user_id = ${ctx.userId}::uuid
+         )
+       )
      ORDER BY d.updated_at DESC
   `);
 

@@ -10,11 +10,18 @@
  * through every list payload puts it in browser caches and server logs.
  */
 import { z } from 'zod';
-import { desc, eq, and } from 'drizzle-orm';
+import { and, desc, eq, exists, isNull, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, HttpError } from '@/lib/session';
+import {
+  apiHandler,
+  assertLandscapeAccessible,
+  hasRole,
+  requireOrg,
+  requireRole,
+  HttpError,
+} from '@/lib/session';
 import { db } from '@/db';
-import { dashboards } from '@/db/schema';
+import { dashboards, userLandscapeAccess } from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { readJson } from '../_lib/query';
 import { widgetsSchema } from '../_lib/widget';
@@ -29,7 +36,7 @@ const createDashboardSchema = z.object({
 });
 
 export const GET = apiHandler(async () => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
 
   const rows = await db
     .select({
@@ -43,7 +50,22 @@ export const GET = apiHandler(async () => {
       updatedAt: dashboards.updatedAt,
     })
     .from(dashboards)
-    .where(eq(dashboards.orgId, orgId))
+    .where(and(
+      eq(dashboards.orgId, session.orgId),
+      hasRole(session.role, 'admin')
+        ? eq(dashboards.orgId, session.orgId)
+        : or(
+          isNull(dashboards.landscapeId),
+          exists(
+            db.select({ userId: userLandscapeAccess.userId })
+              .from(userLandscapeAccess)
+              .where(and(
+                eq(userLandscapeAccess.userId, session.userId),
+                eq(userLandscapeAccess.landscapeId, dashboards.landscapeId),
+              )),
+          ),
+        ),
+    ))
     .orderBy(desc(dashboards.updatedAt));
 
   return Response.json(
@@ -53,10 +75,10 @@ export const GET = apiHandler(async () => {
 });
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const body = await readJson(req, createDashboardSchema);
 
-  if (body.landscapeId) await assertLandscapeInOrg(body.landscapeId, orgId);
+  if (body.landscapeId) await assertLandscapeAccessible(body.landscapeId, session);
 
   const slug = slugify(body.name);
   if (!slug) throw new HttpError(422, 'That name has no usable characters for a URL.', 'invalid_name');
@@ -64,14 +86,14 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const [existing] = await db
     .select({ id: dashboards.id })
     .from(dashboards)
-    .where(and(eq(dashboards.orgId, orgId), eq(dashboards.slug, slug)))
+    .where(and(eq(dashboards.orgId, session.orgId), eq(dashboards.slug, slug)))
     .limit(1);
   if (existing) throw new HttpError(409, 'A dashboard with that name already exists.', 'duplicate_dashboard');
 
   const [created] = await db
     .insert(dashboards)
     .values({
-      orgId,
+      orgId: session.orgId,
       name: body.name,
       slug,
       landscapeId: body.landscapeId ?? null,

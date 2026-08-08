@@ -14,8 +14,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const metric = readMetric(req, 'engagementTotal');
-  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const { query } = await resolveAnalyticsQuery(req, session);
   return analyticsJson({ metric, ...(await getTimeSeries({ ...query, metric })) });
 });

@@ -8,7 +8,14 @@
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, AuthError, HttpError } from '@/lib/session';
+import {
+  apiHandler,
+  assertLandscapeAccessible,
+  requireOrg,
+  requireRole,
+  AuthError,
+  HttpError,
+} from '@/lib/session';
 import { db } from '@/db';
 import { dashboards } from '@/db/schema';
 import { slugify } from '@/lib/utils';
@@ -27,15 +34,16 @@ const updateDashboardSchema = z.object({
 }).refine((b) => Object.keys(b).length > 0, 'Nothing to update.');
 
 export const GET = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const id = idSchema.parse((await ctx.params).id);
 
   const [row] = await db
     .select()
     .from(dashboards)
-    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, orgId)))
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
     .limit(1);
   if (!row) throw new AuthError('not_found', 'That dashboard does not exist.');
+  if (row.landscapeId) await assertLandscapeAccessible(row.landscapeId, session);
 
   const { shareToken, ...safe } = row;
   return Response.json(
@@ -45,11 +53,18 @@ export const GET = apiHandler<{ id: string }>(async (_req, ctx) => {
 });
 
 export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
   const body = await readJson(req, updateDashboardSchema);
 
-  if (body.landscapeId) await assertLandscapeInOrg(body.landscapeId, orgId);
+  const [existing] = await db
+    .select({ landscapeId: dashboards.landscapeId })
+    .from(dashboards)
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
+    .limit(1);
+  if (!existing) throw new AuthError('not_found', 'That dashboard does not exist.');
+  if (existing.landscapeId) await assertLandscapeAccessible(existing.landscapeId, session);
+  if (body.landscapeId) await assertLandscapeAccessible(body.landscapeId, session);
 
   let slug: string | undefined;
   if (body.name !== undefined) {
@@ -65,7 +80,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
       ...(body.widgets !== undefined ? { widgets: body.widgets } : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, orgId)))
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
     .returning();
 
   if (!updated) throw new AuthError('not_found', 'That dashboard does not exist.');
@@ -74,12 +89,20 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
 });
 
 export const DELETE = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
+
+  const [existing] = await db
+    .select({ landscapeId: dashboards.landscapeId })
+    .from(dashboards)
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
+    .limit(1);
+  if (!existing) throw new AuthError('not_found', 'That dashboard does not exist.');
+  if (existing.landscapeId) await assertLandscapeAccessible(existing.landscapeId, session);
 
   const [deleted] = await db
     .delete(dashboards)
-    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, orgId)))
+    .where(and(eq(dashboards.id, id), eq(dashboards.orgId, session.orgId)))
     .returning({ id: dashboards.id });
 
   if (!deleted) throw new AuthError('not_found', 'That dashboard does not exist.');

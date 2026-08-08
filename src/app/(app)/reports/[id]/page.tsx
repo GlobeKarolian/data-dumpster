@@ -65,6 +65,9 @@ export default async function WeeklyReportPage({
   if (result.error) throw new Error('Weekly report could not load: ' + result.error);
   const report = result.data[0];
   if (!report) notFound();
+  if (report.landscape_id && !ctx.landscapes.some((landscape) => landscape.id === report.landscape_id)) {
+    notFound();
+  }
 
   const landscapeWasExplicit = ctx.searchParams.has('landscape');
   let alternateReportId: string | null = null;

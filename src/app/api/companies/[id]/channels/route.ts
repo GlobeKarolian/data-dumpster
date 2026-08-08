@@ -34,6 +34,7 @@ import { getAdapter, hasAdapter, UNIMPLEMENTED_REASONS } from '@/lib/adapters/re
 import { publicProfileOnboardingUnavailableReason } from '@/lib/adapters/supported-platforms';
 import {
   assertCompanyInOrg,
+  assertCompaniesVisibleToUser,
   assertCompanyNotSharedWithOtherOrgs,
 } from '../../../_lib/org-scope';
 import { publicSourceCredentials } from '@/lib/adapters/public-sources';
@@ -176,9 +177,11 @@ function chooseCanonicalChannel(
 }
 
 export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const companyId = idSchema.parse((await ctx.params).id);
   await assertCompanyInOrg(companyId, orgId);
+  await assertCompaniesVisibleToUser([companyId], session);
 
   const body = await readChannelRequest(req, addChannelSchema);
   if (!hasAdapter(body.platform)) unsupported(body.platform);

@@ -38,9 +38,9 @@ export const ROLE_LABELS: Record<Role, string> = {
  * header comment of lib/invites.ts; these are the same rules, compressed.
  */
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  viewer: 'Reads everything. Cannot change anything.',
-  editor: 'Everything a viewer can do, plus add channels and companies and edit tags and reports.',
-  admin: 'Everything an editor can do, plus manage users, data sources and model connections.',
+  viewer: 'Reads assigned landscapes. Cannot change anything.',
+  editor: 'Reads and edits assigned landscapes, including channels, companies, tags and reports.',
+  admin: 'Accesses every landscape and manages users, data sources and model connections.',
   owner: 'Everything, including billing-level settings and transferring ownership.',
 };
 

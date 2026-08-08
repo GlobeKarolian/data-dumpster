@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { apiHandler, assertLandscapeInOrg, requireRole, AuthError } from '@/lib/session';
+import { apiHandler, assertLandscapeAccessible, requireRole, AuthError } from '@/lib/session';
 import { db } from '@/db';
 import { alertRules } from '@/db/schema';
 import { readJson } from '../../_lib/query';
@@ -28,11 +28,18 @@ const updateAlertSchema = z.object({
 }).refine((b) => Object.keys(b).length > 0, 'Nothing to update.');
 
 export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
   const body = await readJson(req, updateAlertSchema);
 
-  if (body.landscapeId) await assertLandscapeInOrg(body.landscapeId, orgId);
+  const [existing] = await db
+    .select({ landscapeId: alertRules.landscapeId })
+    .from(alertRules)
+    .where(and(eq(alertRules.id, id), eq(alertRules.orgId, session.orgId)))
+    .limit(1);
+  if (!existing) throw new AuthError('not_found', 'That alert does not exist.');
+  if (existing.landscapeId) await assertLandscapeAccessible(existing.landscapeId, session);
+  if (body.landscapeId) await assertLandscapeAccessible(body.landscapeId, session);
 
   const [updated] = await db
     .update(alertRules)
@@ -44,7 +51,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
       ...(body.destinations !== undefined ? { destinations: body.destinations } : {}),
       ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
     })
-    .where(and(eq(alertRules.id, id), eq(alertRules.orgId, orgId)))
+    .where(and(eq(alertRules.id, id), eq(alertRules.orgId, session.orgId)))
     .returning();
 
   if (!updated) throw new AuthError('not_found', 'That alert does not exist.');
@@ -57,12 +64,20 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
 });
 
 export const DELETE = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
+
+  const [existing] = await db
+    .select({ landscapeId: alertRules.landscapeId })
+    .from(alertRules)
+    .where(and(eq(alertRules.id, id), eq(alertRules.orgId, session.orgId)))
+    .limit(1);
+  if (!existing) throw new AuthError('not_found', 'That alert does not exist.');
+  if (existing.landscapeId) await assertLandscapeAccessible(existing.landscapeId, session);
 
   const [deleted] = await db
     .delete(alertRules)
-    .where(and(eq(alertRules.id, id), eq(alertRules.orgId, orgId)))
+    .where(and(eq(alertRules.id, id), eq(alertRules.orgId, session.orgId)))
     .returning({ id: alertRules.id });
 
   if (!deleted) throw new AuthError('not_found', 'That alert does not exist.');

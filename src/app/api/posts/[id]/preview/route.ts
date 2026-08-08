@@ -2,7 +2,12 @@ import type { NextRequest } from 'next/server';
 import { and, eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { landscapeCompanies, landscapes, posts } from '@/db/schema';
+import {
+  landscapeCompanies,
+  landscapes,
+  posts,
+  userLandscapeAccess,
+} from '@/db/schema';
 import {
   allowedInstagramRedirect,
   allowedTikTokRedirect,
@@ -13,7 +18,14 @@ import {
   storedTikTokPosterCandidates,
   type PostPreviewKind,
 } from '@/lib/post-preview-source';
-import { apiHandler, AuthError, HttpError, requireOrg } from '@/lib/session';
+import {
+  apiHandler,
+  AuthError,
+  hasRole,
+  HttpError,
+  requireOrg,
+  type OrgContext,
+} from '@/lib/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -172,7 +184,7 @@ function baseResponseHeaders(kind: PostPreviewKind, contentType: string): Header
   });
 }
 
-async function visiblePreviewPost(postId: string, orgId: string): Promise<PreviewRecord | null> {
+async function visiblePreviewPost(postId: string, ctx: OrgContext): Promise<PreviewRecord | null> {
   const [row] = await db
     .select({
       platform: posts.platform,
@@ -184,6 +196,13 @@ async function visiblePreviewPost(postId: string, orgId: string): Promise<Previe
     .from(posts)
     .innerJoin(landscapeCompanies, eq(landscapeCompanies.companyId, posts.companyId))
     .innerJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
+    .leftJoin(
+      userLandscapeAccess,
+      and(
+        eq(userLandscapeAccess.landscapeId, landscapes.id),
+        eq(userLandscapeAccess.userId, ctx.userId),
+      ),
+    )
     .where(and(
       eq(posts.id, postId),
       or(
@@ -191,7 +210,10 @@ async function visiblePreviewPost(postId: string, orgId: string): Promise<Previe
         eq(posts.platform, 'tiktok'),
         eq(posts.platform, 'threads'),
       ),
-      eq(landscapes.orgId, orgId),
+      eq(landscapes.orgId, ctx.orgId),
+      hasRole(ctx.role, 'admin')
+        ? eq(landscapes.orgId, ctx.orgId)
+        : eq(userLandscapeAccess.userId, ctx.userId),
     ))
     .limit(1);
 
@@ -203,7 +225,7 @@ async function visiblePreviewPost(postId: string, orgId: string): Promise<Previe
 }
 
 export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const postId = postIdSchema.parse((await ctx.params).id);
   const kind = kindSchema.parse(req.nextUrl.searchParams.get('kind') ?? 'poster');
   const requestedRange = kind === 'video' ? singleByteRange(req.headers.get('range')) : null;
@@ -211,7 +233,7 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
     throw new HttpError(416, 'Only one valid byte range may be requested.', 'invalid_range');
   }
 
-  const post = await visiblePreviewPost(postId, orgId);
+  const post = await visiblePreviewPost(postId, session);
   if (!post) {
     throw new AuthError('not_found', 'That post does not exist in this workspace.');
   }

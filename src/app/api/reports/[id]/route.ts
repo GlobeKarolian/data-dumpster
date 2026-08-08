@@ -43,20 +43,21 @@ const updateSchema = z.object({
 }).refine((body) => Object.keys(body).length > 0, 'Nothing to update.');
 
 export const GET = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const id = reportIdSchema.parse((await ctx.params).id);
-  const row = await loadReport(id, orgId);
+  const row = await loadReport(id, session);
   return Response.json(serializeReport(row), { headers: { 'cache-control': 'private, no-store' } });
 });
 
 export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const id = reportIdSchema.parse((await ctx.params).id);
   const body = await readJson(req, updateSchema);
 
   // Prove ownership before writing, so a failed update cannot double as an
   // existence oracle for another org's report id.
-  const existing = await loadReport(id, orgId);
+  const existing = await loadReport(id, session);
   if (body.manual !== undefined || body.narrative !== undefined) {
     const current = toReportDocument(existing, '');
     const verification = verifyReportNarrative({
@@ -91,8 +92,10 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
 });
 
 export const DELETE = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const id = reportIdSchema.parse((await ctx.params).id);
+  await loadReport(id, session);
 
   const [row] = await db
     .delete(weeklyReports)

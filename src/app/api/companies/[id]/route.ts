@@ -13,7 +13,10 @@ import { apiHandler, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
 import { companies } from '@/db/schema';
 import { readJson } from '../../_lib/query';
-import { assertCompanyNotSharedWithOtherOrgs } from '../../_lib/org-scope';
+import {
+  assertCompaniesVisibleToUser,
+  assertCompanyNotSharedWithOtherOrgs,
+} from '../../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,9 +32,11 @@ const updateCompanySchema = z.object({
 }).refine((b) => Object.keys(b).length > 0, 'Nothing to update.');
 
 export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const id = idSchema.parse((await ctx.params).id);
   const body = await readJson(req, updateCompanySchema);
+  await assertCompaniesVisibleToUser([id], session);
   await assertCompanyNotSharedWithOtherOrgs(id, orgId);
 
   const [updated] = await db

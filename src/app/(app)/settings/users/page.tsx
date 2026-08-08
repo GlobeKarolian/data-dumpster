@@ -19,10 +19,13 @@ import { PendingInvites, type InviteRecord } from '@/components/settings/pending
 import { buildInviteUrl, listInvites, listOrgMembers, DEFAULT_INVITE_DAYS } from '@/lib/invites';
 import { roleAtLeast } from '@/lib/roles';
 import { originFromHeaders } from '@/lib/origin';
-import { tryQuery } from '../../_lib/data';
+import { query, tryQuery } from '../../_lib/data';
 
 export const metadata: Metadata = { title: 'Users and Invitations' };
 export const dynamic = 'force-dynamic';
+
+type LandscapeRow = { id: string; name: string };
+type LandscapeGrantRow = { user_id: string; landscape_id: string };
 
 const PILLARS = [
   {
@@ -49,10 +52,31 @@ export default async function UsersSettingsPage() {
 
   const origin = originFromHeaders(await headers());
 
-  const [members, invites] = await Promise.all([
+  const [members, invites, landscapes, grants] = await Promise.all([
     tryQuery(() => listOrgMembers(orgId), []),
     canManage ? tryQuery(() => listInvites(orgId), []) : Promise.resolve({ data: [], error: null }),
+    query<LandscapeRow>(({ sql }) => sql`
+      SELECT id, name
+        FROM landscapes
+       WHERE org_id = ${orgId}::uuid
+       ORDER BY name ASC
+    `),
+    query<LandscapeGrantRow>(({ sql }) => sql`
+      SELECT ula.user_id, ula.landscape_id
+        FROM user_landscape_access ula
+        JOIN users u ON u.id = ula.user_id
+        JOIN landscapes l ON l.id = ula.landscape_id
+       WHERE u.org_id = ${orgId}::uuid
+         AND l.org_id = ${orgId}::uuid
+    `),
   ]);
+
+  const grantsByUser = new Map<string, string[]>();
+  for (const grant of grants.data) {
+    const ids = grantsByUser.get(grant.user_id) ?? [];
+    ids.push(grant.landscape_id);
+    grantsByUser.set(grant.user_id, ids);
+  }
 
   const memberRecords: MemberRecord[] = members.data.map((m) => ({
     id: m.id,
@@ -62,6 +86,7 @@ export default async function UsersSettingsPage() {
     createdAt: m.createdAt.toISOString(),
     lastSeenAt: m.lastSeenAt ? m.lastSeenAt.toISOString() : null,
     isSelf: m.id === userId,
+    landscapeIds: grantsByUser.get(m.id) ?? [],
   }));
 
   const inviteRecords: InviteRecord[] = invites.data.map((i) => ({
@@ -76,7 +101,7 @@ export default async function UsersSettingsPage() {
     acceptUrl: buildInviteUrl(origin, i.token),
   }));
 
-  const loadError = members.error ?? invites.error;
+  const loadError = members.error ?? invites.error ?? landscapes.error ?? grants.error;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -112,7 +137,14 @@ export default async function UsersSettingsPage() {
         </p>
       ) : null}
 
-      <UsersTable members={memberRecords} viewerRole={role} />
+      <UsersTable
+        members={memberRecords}
+        viewerRole={role}
+        landscapes={landscapes.data.map((landscape) => ({
+          id: landscape.id,
+          name: landscape.name,
+        }))}
+      />
 
       <PendingInvites
         invites={inviteRecords}

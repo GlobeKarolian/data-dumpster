@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
-  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const session = await requireOrg();
+  const { query } = await resolveAnalyticsQuery(req, session);
   return analyticsJson({ rows: await getTagPerformance(query) });
 });

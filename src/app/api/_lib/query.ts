@@ -7,17 +7,21 @@
  * "platforms=youtube,rss" means, and a chart that does not match the table under
  * it is worse than no chart. So: one schema, one resolver, one set of rules.
  *
- * The resolver is also where the tenant boundary is enforced. It returns a
- * Scoped<AnalyticsQuery> only after assertLandscapeInOrg has confirmed the
- * landscape belongs to the caller, so a handler physically cannot query metrics
- * for a landscape it did not prove ownership of.
+ * The resolver is also where the access boundary is enforced. It returns a
+ * Scoped<AnalyticsQuery> only after assertLandscapeAccessible has confirmed
+ * both organization and user access, so a handler physically cannot query
+ * metrics for a landscape the caller cannot open.
  */
 import { z } from 'zod';
 import type { NextRequest } from 'next/server';
 import { PLATFORMS, POST_TYPES, METRIC_KEYS } from '@/lib/types';
 import type { AnalyticsQuery } from '@/lib/types';
 import { parseRangeParams } from '@/lib/dates';
-import { assertLandscapeInOrg, type LandscapeRef } from '@/lib/session';
+import {
+  assertLandscapeAccessible,
+  type LandscapeRef,
+  type OrgContext,
+} from '@/lib/session';
 import type { Scoped } from '@/lib/metrics/queries';
 
 /**
@@ -87,7 +91,7 @@ export interface ResolvedAnalyticsQuery {
 }
 
 /**
- * Validate, resolve the window, and prove the landscape belongs to the org.
+ * Validate, resolve the window, and prove the caller can open the landscape.
  *
  * Note that orgId is threaded onto the query object rather than being trusted
  * from the caller: lib/metrics re-applies it as a hard guard in SQL, so even a
@@ -95,16 +99,16 @@ export interface ResolvedAnalyticsQuery {
  */
 export async function resolveAnalyticsQuery(
   req: NextRequest,
-  orgId: string,
+  ctx: OrgContext,
 ): Promise<ResolvedAnalyticsQuery> {
   const params = readAnalyticsParams(req);
-  const landscape = await assertLandscapeInOrg(params.landscapeId, orgId);
+  const landscape = await assertLandscapeAccessible(params.landscapeId, ctx);
   const { start, end } = parseRangeParams(req.nextUrl.searchParams);
 
   return {
     landscape,
     query: {
-      orgId,
+      orgId: ctx.orgId,
       landscapeId: landscape.id,
       start,
       end,

@@ -1,7 +1,7 @@
 import { PLATFORMS, POST_TYPES, type CompanyRef, type Platform, type PostType } from '@/lib/types';
 import { autoGranularity, daysIn, parseRangeParams, previousRange } from '@/lib/dates';
 import type { AnalyticsQuery, DateRange } from '@/lib/types';
-import type { Role } from '@/lib/roles';
+import { roleAtLeast, type Role } from '@/lib/roles';
 import { companiesInScope, effectiveFocusCompanyId } from '@/lib/analytics-scope';
 import type { LandscapeOption } from '@/components/shell/landscape-switcher';
 import { query, type SearchParamsInput } from './data';
@@ -92,6 +92,15 @@ export async function resolveContext(input: SearchParamsInput): Promise<AppConte
       LEFT JOIN companies fc ON fc.id = l.focus_company_id
       LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
      WHERE l.org_id = ${session.orgId}::uuid
+       AND (
+         ${roleAtLeast(session.role, 'admin')}
+         OR EXISTS (
+           SELECT 1
+             FROM user_landscape_access ula
+            WHERE ula.landscape_id = l.id
+              AND ula.user_id = ${session.userId}::uuid
+         )
+       )
      GROUP BY l.id, l.name, l.slug, l.focus_company_id, fc.name
      ORDER BY l.name ASC
   `);

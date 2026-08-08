@@ -8,6 +8,7 @@ import { formatFullDate, formatDateTime } from '@/components/ui/format';
 import { Markdown } from '@/components/briefs/markdown';
 import { VerificationPanel } from '@/components/briefs/verification-panel';
 import { parseVerification } from '@/components/briefs/verification';
+import { roleAtLeast } from '@/lib/roles';
 import { query } from '../../_lib/data';
 
 export const metadata: Metadata = { title: 'Brief' };
@@ -21,22 +22,32 @@ type BriefRow = {
   period_start: string;
   period_end: string;
   created_at: string;
+  landscape_id: string;
   landscape_name: string;
 };
 
 export default async function BriefDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { requireOrg } = await import('@/lib/session');
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
 
   const result = await query<BriefRow>(({ sql }) => sql`
-    SELECT b.id, b.title, b.body, b.facts, b.model_used,
+    SELECT b.id, b.title, b.body, b.facts, b.model_used, b.landscape_id,
            b.period_start, b.period_end, b.created_at,
            l.name AS landscape_name
       FROM briefs b
       JOIN landscapes l ON l.id = b.landscape_id
      WHERE b.id = ${id}::uuid
-       AND b.org_id = ${orgId}::uuid
+       AND b.org_id = ${session.orgId}::uuid
+       AND (
+         ${roleAtLeast(session.role, 'admin')}
+         OR EXISTS (
+           SELECT 1
+             FROM user_landscape_access ula
+            WHERE ula.landscape_id = b.landscape_id
+              AND ula.user_id = ${session.userId}::uuid
+         )
+       )
      LIMIT 1
   `);
 

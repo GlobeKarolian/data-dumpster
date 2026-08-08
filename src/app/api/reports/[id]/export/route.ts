@@ -31,10 +31,11 @@ export const maxDuration = 120;
 const exportFormatSchema = z.enum(['csv', 'pptx']);
 
 export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
+  const { orgId } = session;
   const id = reportIdSchema.parse((await ctx.params).id);
   const format = exportFormatSchema.parse(req.nextUrl.searchParams.get('format') ?? 'csv');
-  const row = await loadReport(id, orgId);
+  const row = await loadReport(id, session);
   const doc = toReportDocument(row, await orgName(orgId));
   const verification = verifyReportNarrative(doc);
   if (!verification.ok) {

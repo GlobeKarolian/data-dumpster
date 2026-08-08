@@ -1,11 +1,13 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, exists } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
-import { reportDeliveries, reportSchedules } from '@/db/schema';
+import { reportDeliveries, reportSchedules, userLandscapeAccess } from '@/db/schema';
 import {
   apiHandler,
+  assertLandscapeAccessible,
   assertLandscapeInOrg,
+  hasRole,
   requireOrg,
   requireRole,
 } from '@/lib/session';
@@ -57,13 +59,25 @@ function serializeDelivery(row: typeof reportDeliveries.$inferSelect) {
 }
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
+  const { orgId } = session;
   const params = listSchema.parse({
     landscapeId: req.nextUrl.searchParams.get('landscapeId') ?? undefined,
   });
   if (params.landscapeId) {
-    await assertLandscapeInOrg(params.landscapeId, orgId);
+    await assertLandscapeAccessible(params.landscapeId, session);
   }
+
+  const access = hasRole(session.role, 'admin')
+    ? eq(reportSchedules.orgId, orgId)
+    : exists(
+      db.select({ userId: userLandscapeAccess.userId })
+        .from(userLandscapeAccess)
+        .where(and(
+          eq(userLandscapeAccess.userId, session.userId),
+          eq(userLandscapeAccess.landscapeId, reportSchedules.landscapeId),
+        )),
+    );
 
   const schedules = await db
     .select()
@@ -72,8 +86,9 @@ export const GET = apiHandler(async (req: NextRequest) => {
       ? and(
           eq(reportSchedules.orgId, orgId),
           eq(reportSchedules.landscapeId, params.landscapeId),
+          access,
         )
-      : eq(reportSchedules.orgId, orgId))
+      : and(eq(reportSchedules.orgId, orgId), access))
     .orderBy(desc(reportSchedules.createdAt));
 
   const deliveries = schedules.length === 0

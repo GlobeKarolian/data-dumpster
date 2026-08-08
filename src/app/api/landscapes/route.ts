@@ -1,8 +1,8 @@
 /**
  * /api/landscapes -- named competitive sets.
  *
- * GET  every landscape in the org with its members and focus company.
- * POST create one.
+ * GET  every landscape the caller may access, with members and focus company.
+ * POST create one, optionally creating its focus company in the same request.
  *
  * A landscape is the unit of analysis in Data Dumpster: one focus company plus the
  * competitors it is measured against. Membership is stored in a join table so a
@@ -13,25 +13,54 @@
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { apiHandler, requireOrg, requireRole, HttpError } from '@/lib/session';
+import { apiHandler, requireOrg, requireRole, hasRole, HttpError } from '@/lib/session';
 import { db } from '@/db';
-import { companies, landscapeCompanies, landscapes } from '@/db/schema';
+import {
+  companies,
+  landscapeCompanies,
+  landscapes,
+  userLandscapeAccess,
+} from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { readJson } from '../_lib/query';
-import { assertCompaniesVisibleToOrg } from '../_lib/org-scope';
+import { assertCompaniesVisibleToUser } from '../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const inlineCompanySchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  website: z.url().max(500).nullish(),
+  logoUrl: z.url().max(500).nullish(),
+  segment: z.string().trim().max(80).nullish(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a six-digit hex color.').nullish(),
+});
 
 const createLandscapeSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(2000).nullish(),
   focusCompanyId: z.uuid().nullish(),
+  newFocusCompany: inlineCompanySchema.nullish(),
   companyIds: z.array(z.uuid()).max(50).default([]),
+}).superRefine((body, ctx) => {
+  if (!body.focusCompanyId && !body.newFocusCompany) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['focusCompanyId'],
+      message: 'Choose an existing focus company or create a new one.',
+    });
+  }
+  if (body.focusCompanyId && body.newFocusCompany) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['newFocusCompany'],
+      message: 'Use either an existing focus company or a new one, not both.',
+    });
+  }
 });
 
 export const GET = apiHandler(async () => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
 
   const rows = await db
     .select({
@@ -49,9 +78,21 @@ export const GET = apiHandler(async () => {
       sortOrder: landscapeCompanies.sortOrder,
     })
     .from(landscapes)
+    .leftJoin(
+      userLandscapeAccess,
+      and(
+        eq(userLandscapeAccess.landscapeId, landscapes.id),
+        eq(userLandscapeAccess.userId, session.userId),
+      ),
+    )
     .leftJoin(landscapeCompanies, eq(landscapeCompanies.landscapeId, landscapes.id))
     .leftJoin(companies, eq(companies.id, landscapeCompanies.companyId))
-    .where(eq(landscapes.orgId, orgId))
+    .where(and(
+      eq(landscapes.orgId, session.orgId),
+      hasRole(session.role, 'admin')
+        ? eq(landscapes.orgId, session.orgId)
+        : eq(userLandscapeAccess.userId, session.userId),
+    ))
     .orderBy(asc(landscapes.name), asc(landscapeCompanies.sortOrder));
 
   const byId = new Map<string, {
@@ -81,41 +122,113 @@ export const GET = apiHandler(async () => {
 });
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const body = await readJson(req, createLandscapeSchema);
+
+  const landscapeSlug = slugify(body.name);
+  if (!landscapeSlug) {
+    throw new HttpError(422, 'That name has no usable characters for a URL.', 'invalid_name');
+  }
+
+  const [existingLandscape] = await db
+    .select({ id: landscapes.id })
+    .from(landscapes)
+    .where(and(eq(landscapes.orgId, session.orgId), eq(landscapes.slug, landscapeSlug)))
+    .limit(1);
+  if (existingLandscape) {
+    throw new HttpError(409, 'A landscape with that name already exists.', 'duplicate_landscape');
+  }
+
+  // Validate every existing company before creating a new pooled row. A bad
+  // competitor id must not leave behind a company from an abandoned form.
+  const memberIds = await assertCompaniesVisibleToUser(
+    body.focusCompanyId ? [body.focusCompanyId, ...body.companyIds] : body.companyIds,
+    session,
+  );
+
+  let focusCompanyId = body.focusCompanyId ?? null;
+  let focusCompanyCreated = false;
+
+  if (body.newFocusCompany) {
+    const companySlug = slugify(body.newFocusCompany.name);
+    if (!companySlug) {
+      throw new HttpError(422, 'That company name has no usable characters for a URL.', 'invalid_name');
+    }
+
+    // Public companies are pooled. If another workspace already measures this
+    // company, reusing the row gives the new landscape its existing history.
+    const [pooled] = await db
+      .select({ id: companies.id })
+      .from(companies)
+      .where(eq(companies.slug, companySlug))
+      .limit(1);
+
+    if (pooled) {
+      focusCompanyId = pooled.id;
+    } else {
+      const [createdCompany] = await db
+        .insert(companies)
+        .values({
+          orgId: session.orgId,
+          name: body.newFocusCompany.name,
+          slug: companySlug,
+          website: body.newFocusCompany.website ?? null,
+          logoUrl: body.newFocusCompany.logoUrl ?? null,
+          segment: body.newFocusCompany.segment ?? null,
+          color: body.newFocusCompany.color ?? null,
+        })
+        .onConflictDoNothing({ target: companies.slug })
+        .returning({ id: companies.id });
+      if (createdCompany) {
+        focusCompanyId = createdCompany.id;
+        focusCompanyCreated = true;
+      } else {
+        const [racedCompany] = await db
+          .select({ id: companies.id })
+          .from(companies)
+          .where(eq(companies.slug, companySlug))
+          .limit(1);
+        if (!racedCompany) throw new Error('The pooled focus company could not be resolved.');
+        focusCompanyId = racedCompany.id;
+      }
+    }
+  }
 
   // The focus company is a member whether or not the caller listed it. A
   // landscape whose focus is not in its own set produces empty comparisons.
-  const memberIds = await assertCompaniesVisibleToOrg(
-    body.focusCompanyId ? [body.focusCompanyId, ...body.companyIds] : body.companyIds,
-    orgId,
-  );
-
-  const slug = slugify(body.name);
-  if (!slug) throw new HttpError(422, 'That name has no usable characters for a URL.', 'invalid_name');
-
-  const [existing] = await db
-    .select({ id: landscapes.id })
-    .from(landscapes)
-    .where(and(eq(landscapes.orgId, orgId), eq(landscapes.slug, slug)))
-    .limit(1);
-  if (existing) throw new HttpError(409, 'A landscape with that name already exists.', 'duplicate_landscape');
+  const orderedMemberIds = focusCompanyId
+    ? [focusCompanyId, ...memberIds.filter((id) => id !== focusCompanyId)]
+    : memberIds;
 
   const [created] = await db
     .insert(landscapes)
     .values({
-      orgId,
+      orgId: session.orgId,
       name: body.name,
-      slug,
+      slug: landscapeSlug,
       description: body.description ?? null,
-      focusCompanyId: body.focusCompanyId ?? null,
+      focusCompanyId,
     })
     .returning();
 
-  if (memberIds.length > 0) {
+  if (orderedMemberIds.length > 0) {
     await db.insert(landscapeCompanies).values(
-      memberIds.map((companyId, i) => ({ landscapeId: created.id, companyId, sortOrder: i })),
+      orderedMemberIds.map((companyId, i) => ({
+        landscapeId: created.id,
+        companyId,
+        sortOrder: i,
+      })),
     );
+  }
+
+  // Restricted users must retain access to the landscape they just created.
+  // Admins and owners are universal and do not need redundant grant rows.
+  if (!hasRole(session.role, 'admin')) {
+    await db.insert(userLandscapeAccess).values({
+      userId: session.userId,
+      landscapeId: created.id,
+      grantedBy: session.userId,
+    });
   }
 
   let collectionQueued = 0;
@@ -123,7 +236,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     const until = new Date();
     const { enqueueLandscapeCollection } = await import('@/lib/adapters/collection-queue');
     const collection = await enqueueLandscapeCollection({
-      orgId,
+      orgId: session.orgId,
       landscapeId: created.id,
       since: new Date(until.getTime() - 90 * 86_400_000),
       until,
@@ -136,7 +249,12 @@ export const POST = apiHandler(async (req: NextRequest) => {
   }
 
   return Response.json(
-    { ...created, companyIds: memberIds, collectionQueued },
+    {
+      ...created,
+      companyIds: orderedMemberIds,
+      focusCompanyCreated,
+      collectionQueued,
+    },
     { status: 201 },
   );
 });

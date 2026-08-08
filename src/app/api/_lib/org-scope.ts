@@ -9,8 +9,13 @@
  */
 import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import { db } from '@/db';
-import { companies, landscapeCompanies, landscapes } from '@/db/schema';
-import { HttpError } from '@/lib/session';
+import {
+  companies,
+  landscapeCompanies,
+  landscapes,
+  userLandscapeAccess,
+} from '@/db/schema';
+import { hasRole, HttpError, type OrgContext } from '@/lib/session';
 
 /**
  * Confirm every id belongs to the org, and return them deduplicated in the order
@@ -69,6 +74,59 @@ export async function assertCompaniesVisibleToOrg(
     throw new HttpError(
       422,
       missing.length + ' of the companies you referenced are not available to this workspace.',
+      'unknown_company',
+    );
+  }
+  return unique;
+}
+
+/**
+ * The same pooled-company check, narrowed by the caller's landscape grants.
+ * Admins and owners inherit the org-wide behavior; restricted roles may reuse
+ * only companies attributed to their workspace or already present in a
+ * landscape they can open. Attribution keeps a newly created, not-yet-grouped
+ * company usable without exposing pooled entities from inaccessible sets.
+ */
+export async function assertCompaniesVisibleToUser(
+  ids: readonly string[],
+  ctx: OrgContext,
+): Promise<string[]> {
+  if (hasRole(ctx.role, 'admin')) {
+    return assertCompaniesVisibleToOrg(ids, ctx.orgId);
+  }
+
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+
+  const rows = await db
+    .selectDistinct({ id: companies.id })
+    .from(companies)
+    .leftJoin(landscapeCompanies, eq(landscapeCompanies.companyId, companies.id))
+    .leftJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
+    .leftJoin(
+      userLandscapeAccess,
+      and(
+        eq(userLandscapeAccess.landscapeId, landscapes.id),
+        eq(userLandscapeAccess.userId, ctx.userId),
+      ),
+    )
+    .where(and(
+      inArray(companies.id, unique),
+      or(
+        eq(companies.orgId, ctx.orgId),
+        and(
+          eq(landscapes.orgId, ctx.orgId),
+          eq(userLandscapeAccess.userId, ctx.userId),
+        ),
+      ),
+    ));
+
+  const found = new Set(rows.map((row) => row.id));
+  const missing = unique.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new HttpError(
+      422,
+      missing.length + ' of the companies you referenced are not available to you.',
       'unknown_company',
     );
   }

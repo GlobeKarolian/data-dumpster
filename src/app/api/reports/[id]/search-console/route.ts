@@ -14,9 +14,10 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export const POST = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const id = reportIdSchema.parse((await ctx.params).id);
-  const existing = await loadReport(id, orgId);
+  const existing = await loadReport(id, session);
 
   let tables;
   try {

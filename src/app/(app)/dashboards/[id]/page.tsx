@@ -51,6 +51,12 @@ export default async function DashboardDetailPage({
   if (result.error) throw new Error('Dashboard could not load: ' + result.error);
   const dashboard = result.data[0];
   if (!dashboard) notFound();
+  if (
+    dashboard.landscape_id
+    && !ctx.landscapes.some((landscape) => landscape.id === dashboard.landscape_id)
+  ) {
+    notFound();
+  }
 
   // A saved dashboard owns its landscape. Align the URL-driven shell before
   // rendering so the top bar cannot name one landscape while the widgets query

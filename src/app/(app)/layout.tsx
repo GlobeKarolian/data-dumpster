@@ -31,10 +31,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { requireOrg } = await import('@/lib/session');
 
   let orgId: string;
+  let userId: string;
   let role: Role;
   try {
     const session = await requireOrg();
     orgId = session.orgId;
+    userId = session.userId;
     role = session.role;
   } catch {
     redirect('/login');
@@ -49,6 +51,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         LEFT JOIN companies fc ON fc.id = l.focus_company_id
         LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
        WHERE l.org_id = ${orgId}::uuid
+         AND (
+           ${role === 'admin' || role === 'owner'}
+           OR EXISTS (
+             SELECT 1
+               FROM user_landscape_access ula
+              WHERE ula.landscape_id = l.id
+                AND ula.user_id = ${userId}::uuid
+           )
+         )
        GROUP BY l.id, l.name, l.slug, l.focus_company_id, fc.name
        ORDER BY l.name ASC
     `),
@@ -58,6 +69,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         JOIN companies c ON c.id = lc.company_id
         JOIN landscapes l ON l.id = lc.landscape_id
        WHERE l.org_id = ${orgId}::uuid
+         AND (
+           ${role === 'admin' || role === 'owner'}
+           OR EXISTS (
+             SELECT 1
+               FROM user_landscape_access ula
+              WHERE ula.landscape_id = l.id
+                AND ula.user_id = ${userId}::uuid
+           )
+         )
        ORDER BY lc.sort_order ASC, c.name ASC
     `),
   ]);

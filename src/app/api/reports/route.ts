@@ -16,11 +16,18 @@
  * SQL and returned as counts.
  */
 import { z } from 'zod';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, isNull, or, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, HttpError } from '@/lib/session';
+import {
+  apiHandler,
+  assertLandscapeAccessible,
+  hasRole,
+  requireOrg,
+  requireRole,
+  HttpError,
+} from '@/lib/session';
 import { db } from '@/db';
-import { weeklyReports } from '@/db/schema';
+import { userLandscapeAccess, weeklyReports } from '@/db/schema';
 import { computeWeeklyReport } from '@/lib/reports/compute';
 import { defaultReportTitle, lastCompleteWeek } from '@/lib/reports/types';
 import { readJson } from '../_lib/query';
@@ -45,16 +52,35 @@ const listSchema = z.object({
 });
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const sp = req.nextUrl.searchParams;
   const params = listSchema.parse({
     landscapeId: sp.get('landscapeId') ?? undefined,
     limit: sp.get('limit') ?? undefined,
   });
 
+  if (params.landscapeId) await assertLandscapeAccessible(params.landscapeId, session);
+
+  const access = hasRole(session.role, 'admin')
+    ? eq(weeklyReports.orgId, session.orgId)
+    : or(
+      isNull(weeklyReports.landscapeId),
+      exists(
+        db.select({ userId: userLandscapeAccess.userId })
+          .from(userLandscapeAccess)
+          .where(and(
+            eq(userLandscapeAccess.userId, session.userId),
+            eq(userLandscapeAccess.landscapeId, weeklyReports.landscapeId),
+          )),
+      ),
+    );
   const where = params.landscapeId
-    ? and(eq(weeklyReports.orgId, orgId), eq(weeklyReports.landscapeId, params.landscapeId))
-    : eq(weeklyReports.orgId, orgId);
+    ? and(
+      eq(weeklyReports.orgId, session.orgId),
+      eq(weeklyReports.landscapeId, params.landscapeId),
+      access,
+    )
+    : and(eq(weeklyReports.orgId, session.orgId), access);
 
   const rows = await db
     .select({
@@ -88,9 +114,10 @@ export const GET = apiHandler(async (req: NextRequest) => {
 });
 
 export const POST = apiHandler(async (req: NextRequest) => {
-  const { orgId, userId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId, userId } = session;
   const body = await readJson(req, createSchema);
-  const landscape = await assertLandscapeInOrg(body.landscapeId, orgId);
+  const landscape = await assertLandscapeAccessible(body.landscapeId, session);
 
   const fallback = lastCompleteWeek();
   const period = {

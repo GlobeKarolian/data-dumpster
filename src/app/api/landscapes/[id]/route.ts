@@ -5,18 +5,25 @@
  * PATCH  rename, re-describe, change the focus company, or replace membership.
  * DELETE remove it. Posts and companies survive; only the grouping goes.
  *
- * assertLandscapeInOrg is called before anything else in every method. It is the
- * single place a client-supplied landscape id becomes trustworthy.
+ * assertLandscapeAccessible is called before user-facing reads and edits. It
+ * is the place a client-supplied landscape id becomes trustworthy.
  */
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
-import { apiHandler, assertLandscapeInOrg, requireOrg, requireRole, AuthError, HttpError } from '@/lib/session';
+import {
+  apiHandler,
+  assertLandscapeAccessible,
+  requireOrg,
+  requireRole,
+  AuthError,
+  HttpError,
+} from '@/lib/session';
 import { db } from '@/db';
 import { companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { replaceLandscapeMembership } from '@/lib/landscape-membership';
 import { readJson } from '../../_lib/query';
-import { assertCompaniesVisibleToOrg } from '../../_lib/org-scope';
+import { assertCompaniesVisibleToUser } from '../../_lib/org-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,14 +56,14 @@ async function membersOf(landscapeId: string) {
 }
 
 export const GET = apiHandler<{ id: string }>(async (_req, ctx) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const id = idSchema.parse((await ctx.params).id);
-  const landscape = await assertLandscapeInOrg(id, orgId);
+  const landscape = await assertLandscapeAccessible(id, session);
 
   const [full] = await db
     .select()
     .from(landscapes)
-    .where(and(eq(landscapes.id, landscape.id), eq(landscapes.orgId, orgId)))
+    .where(and(eq(landscapes.id, landscape.id), eq(landscapes.orgId, session.orgId)))
     .limit(1);
 
   return Response.json(
@@ -66,9 +73,9 @@ export const GET = apiHandler<{ id: string }>(async (_req, ctx) => {
 });
 
 export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
   const id = idSchema.parse((await ctx.params).id);
-  await assertLandscapeInOrg(id, orgId);
+  await assertLandscapeAccessible(id, session);
   const body = await readJson(req, updateLandscapeSchema);
 
   let slug: string | undefined;
@@ -77,7 +84,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
     if (!slug) throw new HttpError(422, 'That name has no usable characters for a URL.', 'invalid_name');
   }
 
-  if (body.focusCompanyId) await assertCompaniesVisibleToOrg([body.focusCompanyId], orgId);
+  if (body.focusCompanyId) await assertCompaniesVisibleToUser([body.focusCompanyId], session);
 
   const [updated] = await db
     .update(landscapes)
@@ -86,14 +93,14 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
       ...(body.description !== undefined ? { description: body.description ?? null } : {}),
       ...(body.focusCompanyId !== undefined ? { focusCompanyId: body.focusCompanyId ?? null } : {}),
     })
-    .where(and(eq(landscapes.id, id), eq(landscapes.orgId, orgId)))
+    .where(and(eq(landscapes.id, id), eq(landscapes.orgId, session.orgId)))
     .returning();
   if (!updated) throw new AuthError('not_found', 'That landscape does not exist.');
 
   if (body.companyIds !== undefined) {
-    const memberIds = await assertCompaniesVisibleToOrg(
+    const memberIds = await assertCompaniesVisibleToUser(
       updated.focusCompanyId ? [updated.focusCompanyId, ...body.companyIds] : body.companyIds,
-      orgId,
+      session,
     );
     await replaceLandscapeMembership(id, memberIds);
 
@@ -101,7 +108,7 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
       const until = new Date();
       const { enqueueLandscapeCollection } = await import('@/lib/adapters/collection-queue');
       await enqueueLandscapeCollection({
-        orgId,
+        orgId: session.orgId,
         landscapeId: id,
         since: new Date(until.getTime() - 90 * 86_400_000),
         until,

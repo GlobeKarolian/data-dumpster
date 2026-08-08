@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { after } from 'next/server';
 import { z } from 'zod';
-import { apiHandler, requireRole, HttpError, assertLandscapeInOrg } from '@/lib/session';
+import { apiHandler, requireRole, HttpError, assertLandscapeAccessible } from '@/lib/session';
 import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import {
@@ -82,11 +82,12 @@ function assertBackgroundDispatchReady(): void {
 }
 
 export const POST = apiHandler(async (req) => {
-  const { orgId, userId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId, userId } = session;
   const gate = checkRateLimit(orgId, LIMITS.ingest);
   if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
   const body = await readJson(req, bodySchema);
-  await assertLandscapeInOrg(body.landscapeId, orgId);
+  await assertLandscapeAccessible(body.landscapeId, session);
   assertBackgroundDispatchReady();
 
   const idempotencyHeader = req.headers.get('idempotency-key')?.trim();
@@ -131,14 +132,15 @@ export const POST = apiHandler(async (req) => {
 });
 
 export const GET = apiHandler(async (req) => {
-  const { orgId } = await requireRole('editor');
+  const session = await requireRole('editor');
+  const { orgId } = session;
   const query = activeQuerySchema.parse({
     landscapeId: req.nextUrl.searchParams.get('landscapeId') ?? undefined,
     platforms: platformQuery(req),
     since: req.nextUrl.searchParams.get('since') ?? undefined,
     until: req.nextUrl.searchParams.get('until') ?? undefined,
   });
-  await assertLandscapeInOrg(query.landscapeId, orgId);
+  await assertLandscapeAccessible(query.landscapeId, session);
   const job = req.nextUrl.searchParams.get('monitor') === '1'
     ? await getActiveRefreshJobForLandscape({ orgId, landscapeId: query.landscapeId })
     : await getActiveRefreshJobForScope({

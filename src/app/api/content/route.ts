@@ -15,12 +15,12 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
-  const { query } = await resolveAnalyticsQuery(req, orgId);
+  const session = await requireOrg();
+  const { query } = await resolveAnalyticsQuery(req, session);
   const { search } = readPostsParams(req);
   return analyticsJson(await getContentAnalysis({
     landscapeId: query.landscapeId,
-    orgId,
+    orgId: session.orgId,
     start: query.start,
     end: query.end,
     platforms: query.platforms,

@@ -28,7 +28,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { apiHandler, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
-import { roleEnum, users } from '@/db/schema';
+import { landscapes, roleEnum, userLandscapeAccess, users } from '@/db/schema';
 import { countOwners } from '@/lib/invites';
 import { readJson } from '../../../_lib/query';
 
@@ -111,6 +111,28 @@ export const PATCH = apiHandler<{ id: string }>(async (req, ctx) => {
     .returning({ id: users.id, email: users.email, name: users.name, role: users.role });
 
   if (!updated) throw new AuthError('not_found', 'That person is not a member of this organization.');
+
+  // Demotion should narrow administrative power, not unexpectedly strand the
+  // person on a blank screen. Start a newly restricted member with every
+  // current landscape, then let the admin deliberately reduce that set.
+  if (
+    (target.role === 'admin' || target.role === 'owner')
+    && (updated.role === 'editor' || updated.role === 'viewer')
+  ) {
+    const currentLandscapes = await db
+      .select({ id: landscapes.id })
+      .from(landscapes)
+      .where(eq(landscapes.orgId, actor.orgId));
+    if (currentLandscapes.length > 0) {
+      await db.insert(userLandscapeAccess)
+        .values(currentLandscapes.map((landscape) => ({
+          userId: updated.id,
+          landscapeId: landscape.id,
+          grantedBy: actor.userId,
+        })))
+        .onConflictDoNothing();
+    }
+  }
 
   return Response.json(
     {

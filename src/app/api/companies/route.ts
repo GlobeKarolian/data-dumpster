@@ -9,11 +9,17 @@
  * that can fail halfway through resolving four profiles is a bad create endpoint.
  */
 import { z } from 'zod';
-import { asc, eq, or } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { apiHandler, requireOrg, requireRole, HttpError } from '@/lib/session';
+import { apiHandler, requireOrg, requireRole, hasRole, HttpError } from '@/lib/session';
 import { db } from '@/db';
-import { channels, companies, landscapeCompanies, landscapes } from '@/db/schema';
+import {
+  channels,
+  companies,
+  landscapeCompanies,
+  landscapes,
+  userLandscapeAccess,
+} from '@/db/schema';
 import { slugify } from '@/lib/utils';
 import { readJson } from '../_lib/query';
 
@@ -29,7 +35,7 @@ const createCompanySchema = z.object({
 });
 
 export const GET = apiHandler(async () => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
 
   const rows = await db
     .selectDistinct({
@@ -53,7 +59,25 @@ export const GET = apiHandler(async () => {
     .leftJoin(channels, eq(channels.companyId, companies.id))
     .leftJoin(landscapeCompanies, eq(landscapeCompanies.companyId, companies.id))
     .leftJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
-    .where(or(eq(companies.orgId, orgId), eq(landscapes.orgId, orgId)))
+    .leftJoin(
+      userLandscapeAccess,
+      and(
+        eq(userLandscapeAccess.landscapeId, landscapes.id),
+        eq(userLandscapeAccess.userId, session.userId),
+      ),
+    )
+    .where(and(
+      or(eq(companies.orgId, session.orgId), eq(landscapes.orgId, session.orgId)),
+      hasRole(session.role, 'admin')
+        ? or(eq(companies.orgId, session.orgId), eq(landscapes.orgId, session.orgId))
+        : or(
+          eq(companies.orgId, session.orgId),
+          and(
+            eq(landscapes.orgId, session.orgId),
+            eq(userLandscapeAccess.userId, session.userId),
+          ),
+        ),
+    ))
     .orderBy(asc(companies.name), asc(channels.platform));
 
   const byId = new Map<string, {

@@ -11,7 +11,11 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { orgs, weeklyReports } from '@/db/schema';
-import { AuthError } from '@/lib/session';
+import {
+  assertLandscapeAccessible,
+  AuthError,
+  type OrgContext,
+} from '@/lib/session';
 import { sanitizeReportNarrative } from '@/lib/reports/narrative-verification';
 import {
   defaultReportTitle,
@@ -45,13 +49,14 @@ export const narrativeSchema = z.record(z.string(), z.string().max(20_000));
 export type ReportRow = typeof weeklyReports.$inferSelect;
 
 /** Fetch a report, or refuse in a way that does not confirm it exists. */
-export async function loadReport(id: string, orgId: string): Promise<ReportRow> {
+export async function loadReport(id: string, ctx: OrgContext): Promise<ReportRow> {
   const [row] = await db
     .select()
     .from(weeklyReports)
-    .where(and(eq(weeklyReports.id, id), eq(weeklyReports.orgId, orgId)))
+    .where(and(eq(weeklyReports.id, id), eq(weeklyReports.orgId, ctx.orgId)))
     .limit(1);
   if (!row) throw new AuthError('not_found', 'That report does not exist.');
+  if (row.landscapeId) await assertLandscapeAccessible(row.landscapeId, ctx);
   return row;
 }
 

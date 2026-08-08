@@ -52,8 +52,8 @@ export default async function CompaniesSettingsPage({
    * and makes the screen useless for the question people bring to it.
    */
   const ctx = await resolveContext(await searchParams);
-  const { requireOrg } = await import('@/lib/session');
-  const { orgId, role } = await requireOrg();
+  const { orgId, role, userId } = ctx;
+  const seesAllLandscapes = roleAtLeast(role, 'admin');
   const selectedLandscapeId = ctx.landscape?.id ?? null;
 
   const [companies, landscapes] = await Promise.all([
@@ -81,8 +81,11 @@ export default async function CompaniesSettingsPage({
              ) AS channels
         FROM companies c
         LEFT JOIN channels ch ON ch.company_id = c.id
-       WHERE c.org_id = ${orgId}::uuid
-          OR EXISTS (
+       WHERE (
+         ${seesAllLandscapes}
+         AND (
+           c.org_id = ${orgId}::uuid
+           OR EXISTS (
                SELECT 1
                  FROM landscape_companies visible_lc
                  JOIN landscapes visible_l
@@ -90,6 +93,22 @@ export default async function CompaniesSettingsPage({
                 WHERE visible_lc.company_id = c.id
                   AND visible_l.org_id = ${orgId}::uuid
              )
+         )
+       ) OR (
+         NOT ${seesAllLandscapes}
+         AND (
+           c.org_id = ${orgId}::uuid
+           OR EXISTS (
+             SELECT 1
+               FROM landscape_companies visible_lc
+               JOIN landscapes visible_l ON visible_l.id = visible_lc.landscape_id
+               JOIN user_landscape_access ula ON ula.landscape_id = visible_l.id
+              WHERE visible_lc.company_id = c.id
+                AND visible_l.org_id = ${orgId}::uuid
+                AND ula.user_id = ${userId}::uuid
+           )
+         )
+       )
        GROUP BY c.id
        ORDER BY c.name ASC
     `),
@@ -102,6 +121,15 @@ export default async function CompaniesSettingsPage({
         LEFT JOIN companies fc ON fc.id = l.focus_company_id
         LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
        WHERE l.org_id = ${orgId}::uuid
+         AND (
+           ${seesAllLandscapes}
+           OR EXISTS (
+             SELECT 1
+               FROM user_landscape_access ula
+              WHERE ula.landscape_id = l.id
+                AND ula.user_id = ${userId}::uuid
+           )
+         )
        GROUP BY l.id, fc.name
        ORDER BY l.name ASC
     `),

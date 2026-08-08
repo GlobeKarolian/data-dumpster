@@ -6,7 +6,7 @@ import { Building2, Check, FileUp, Loader2, Plus, Target, Trash2, X } from 'luci
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonGroup, ButtonGroupItem } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { MultiSelect } from '@/components/ui/multi-select';
@@ -59,16 +59,18 @@ const COMPANY_PLATFORM_ORDER: Platform[] = [
   'reddit',
 ];
 
-async function send(url: string, method: string, body?: unknown): Promise<void> {
+async function send<T = void>(url: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
     headers: body ? { 'content-type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(detail.slice(0, 300) || 'Request failed with status ' + res.status + '.');
+    const detail = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(detail?.error ?? 'Request failed with status ' + res.status + '.');
   }
+  if (res.status === 204) return undefined as T;
+  return await res.json() as T;
 }
 
 export function CompaniesManager({
@@ -410,7 +412,14 @@ function LandscapesCard({
   const [open, setOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [name, setName] = React.useState('');
+  const [focusMode, setFocusMode] = React.useState<'existing' | 'new'>(
+    companies.length > 0 ? 'existing' : 'new',
+  );
   const [focusCompanyId, setFocusCompanyId] = React.useState('');
+  const [newCompanyName, setNewCompanyName] = React.useState('');
+  const [newCompanyWebsite, setNewCompanyWebsite] = React.useState('');
+  const [newCompanySegment, setNewCompanySegment] = React.useState('');
+  const [newCompanyColor, setNewCompanyColor] = React.useState('#2563EB');
   const [memberIds, setMemberIds] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -422,18 +431,28 @@ function LandscapesCard({
     setBusy(true);
     setError(null);
     try {
-      const ids = focusCompanyId && !memberIds.includes(focusCompanyId)
+      const ids = focusMode === 'existing' && focusCompanyId && !memberIds.includes(focusCompanyId)
         ? [focusCompanyId, ...memberIds]
         : memberIds;
-      await send('/api/landscapes', 'POST', {
+      const created = await send<{ id: string }>('/api/landscapes', 'POST', {
         name: name.trim(),
-        focusCompanyId: focusCompanyId || null,
+        focusCompanyId: focusMode === 'existing' ? focusCompanyId || null : null,
+        newFocusCompany: focusMode === 'new' ? {
+          name: newCompanyName.trim(),
+          website: newCompanyWebsite.trim() || null,
+          segment: newCompanySegment.trim() || null,
+          color: newCompanyColor,
+        } : null,
         companyIds: ids,
       });
       setName('');
+      setFocusCompanyId('');
+      setNewCompanyName('');
+      setNewCompanyWebsite('');
+      setNewCompanySegment('');
       setMemberIds([]);
       setOpen(false);
-      router.refresh();
+      router.push('/settings/companies?landscape=' + created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the landscape.');
     } finally {
@@ -474,7 +493,6 @@ function LandscapesCard({
             <Button
               size="sm"
               variant="primary"
-              disabled={companies.length === 0}
               onClick={() => setOpen((v) => !v)}
             >
               <Plus className="h-3 w-3" aria-hidden />
@@ -492,7 +510,7 @@ function LandscapesCard({
 
       {open && canEdit ? (
         <form onSubmit={create} className="space-y-3 border-b border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Landscape name" htmlFor="landscape-name">
               <Input
                 id="landscape-name"
@@ -500,14 +518,6 @@ function LandscapesCard({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Boston metro news"
                 required
-              />
-            </Field>
-            <Field label="Focus company" hint="The brand this landscape is written from.">
-              <Select
-                value={focusCompanyId}
-                onChange={(e) => setFocusCompanyId(e.target.value)}
-                placeholder="Choose a focus company"
-                options={companies.map((c) => ({ value: c.id, label: c.name }))}
               />
             </Field>
             <Field label="Competitors" hint="Who else belongs in the comparison.">
@@ -521,15 +531,93 @@ function LandscapesCard({
               />
             </Field>
           </div>
+          <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-zinc-900 dark:text-zinc-100">Focus company</p>
+                <p className="text-[11px] text-zinc-500">The brand every comparison is written from.</p>
+              </div>
+              <ButtonGroup aria-label="Focus company source">
+                <ButtonGroupItem
+                  active={focusMode === 'existing'}
+                  disabled={companies.length === 0}
+                  onClick={() => setFocusMode('existing')}
+                >
+                  Use existing
+                </ButtonGroupItem>
+                <ButtonGroupItem
+                  active={focusMode === 'new'}
+                  onClick={() => setFocusMode('new')}
+                >
+                  Create new
+                </ButtonGroupItem>
+              </ButtonGroup>
+            </div>
+            {focusMode === 'existing' ? (
+              <Field label="Existing company" htmlFor="focus-company">
+                <Select
+                  id="focus-company"
+                  value={focusCompanyId}
+                  onChange={(e) => setFocusCompanyId(e.target.value)}
+                  placeholder="Choose a focus company"
+                  options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                  required
+                />
+              </Field>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Field label="Company name" htmlFor="new-focus-name">
+                  <Input
+                    id="new-focus-name"
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="The Boston Globe"
+                    required
+                  />
+                </Field>
+                <Field label="Website" htmlFor="new-focus-website" hint="Optional">
+                  <Input
+                    id="new-focus-website"
+                    type="url"
+                    value={newCompanyWebsite}
+                    onChange={(e) => setNewCompanyWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                  />
+                </Field>
+                <Field label="Peer group" htmlFor="new-focus-segment" hint="Optional">
+                  <Input
+                    id="new-focus-segment"
+                    value={newCompanySegment}
+                    onChange={(e) => setNewCompanySegment(e.target.value)}
+                    placeholder="Metro daily"
+                  />
+                </Field>
+                <Field label="Chart color" htmlFor="new-focus-color">
+                  <Input
+                    id="new-focus-color"
+                    type="color"
+                    value={newCompanyColor}
+                    onChange={(e) => setNewCompanyColor(e.target.value)}
+                    className="p-1"
+                  />
+                </Field>
+              </div>
+            )}
+          </div>
           <p className="text-[11px] leading-relaxed text-zinc-500">
             Share of voice and share of engagement are relative to whoever is in here, so adding or
             removing a company changes everyone’s number without anyone changing behavior. Pick the
             set you would actually defend in a meeting.
           </p>
           <div className="flex items-center gap-2">
-            <Button type="submit" variant="primary" size="sm" disabled={busy}>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={busy || (focusMode === 'existing' ? !focusCompanyId : !newCompanyName.trim())}
+            >
               {busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-              Create landscape
+              {focusMode === 'new' ? 'Create landscape and company' : 'Create landscape'}
             </Button>
             <Button type="button" size="sm" onClick={() => setOpen(false)}>
               Cancel

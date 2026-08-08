@@ -18,6 +18,14 @@ The product earns trust through three properties:
 3. Newsroom workflows such as desk tags, posted URLs, reports and alerts are
    first-class.
 
+Owners and admins can access every landscape in their organization. Editors
+and viewers can access only landscapes explicitly listed in
+`user_landscape_access`; a missing grant is treated as not found rather than as
+a discoverable forbidden resource. Existing restricted users are backfilled to
+their current landscapes when the table is introduced. A restricted user who
+creates a landscape receives its first grant automatically. New restricted
+accounts otherwise begin with no landscape access until an admin assigns it.
+
 ## Release gate
 
 The current schema is designed to pool public observations but does not yet
@@ -99,8 +107,8 @@ Measurement SQL is deliberately contained in these modules:
 
 Server Components call these modules directly. Route handlers are thin,
 Zod-validated wrappers for client interactions and external consumers. Every
-query resolves an organization-guarded landscape first; `companies.orgId` is
-attribution for a pooled company, not a tenancy boundary.
+query resolves a landscape guarded by both organization and user access first;
+`companies.orgId` is attribution for a pooled company, not a tenancy boundary.
 
 All report and analytics dates use explicit IANA zones. Product metric windows
 are pinned to `America/New_York`; report schedules store their own IANA zone.

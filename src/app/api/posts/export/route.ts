@@ -99,8 +99,8 @@ function row(p: PostDto): string {
 }
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  const { orgId } = await requireOrg();
-  const { query, landscape } = await resolveAnalyticsQuery(req, orgId);
+  const session = await requireOrg();
+  const { query, landscape } = await resolveAnalyticsQuery(req, session);
   const { search, sort, direction } = readPostsParams(req);
 
   const filename = [

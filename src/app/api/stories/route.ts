@@ -5,10 +5,7 @@
  * runtime route with a generous duration rather than an edge function.
  */
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
-import { apiHandler, requireOrg, AuthError } from '@/lib/session';
-import { db } from '@/db';
-import { landscapes } from '@/db/schema';
+import { apiHandler, assertLandscapeAccessible, requireOrg } from '@/lib/session';
 import { PLATFORMS } from '@/lib/types';
 import { parseRangeParams } from '@/lib/dates';
 import { getStoryCloud } from '@/lib/stories/query';
@@ -27,7 +24,7 @@ const querySchema = z.object({
 });
 
 export const GET = apiHandler(async (req) => {
-  const { orgId } = await requireOrg();
+  const session = await requireOrg();
   const sp = req.nextUrl.searchParams;
 
   const parsed = querySchema.parse({
@@ -38,11 +35,7 @@ export const GET = apiHandler(async (req) => {
     minSize: sp.get('minSize') ?? undefined,
   });
 
-  // Tenancy guard. Resolving the landscape inside this org is what stops a
-  // guessed id from reading another tenant's posts.
-  const [owned] = await db.select({ id: landscapes.id }).from(landscapes)
-    .where(and(eq(landscapes.id, parsed.landscapeId), eq(landscapes.orgId, orgId)));
-  if (!owned) throw new AuthError('not_found', 'That landscape does not exist.');
+  await assertLandscapeAccessible(parsed.landscapeId, session);
 
   const range = parseRangeParams(sp, 28);
 

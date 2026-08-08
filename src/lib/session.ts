@@ -8,8 +8,9 @@
  * another newsroom's landscape.
  *
  * The rule the whole app obeys: an identifier that arrived from a client is a
- * claim, not a fact. assertLandscapeInOrg turns the claim into a fact, or
- * throws. No query function in lib/metrics is called without it.
+ * claim, not a fact. assertLandscapeAccessible proves both organization and
+ * per-user access, or throws. Internal schedulers that deliberately operate at
+ * organization scope use the narrower assertLandscapeInOrg helper.
  */
 import 'server-only';
 import { and, eq } from 'drizzle-orm';
@@ -18,7 +19,7 @@ import type { NextRequest } from 'next/server';
 import type { Session } from 'next-auth';
 import { auth, type Role } from '@/auth';
 import { db } from '@/db';
-import { landscapes } from '@/db/schema';
+import { landscapes, userLandscapeAccess } from '@/db/schema';
 import { ROLE_ORDER, rankRole } from '@/lib/roles';
 
 export type { Role };
@@ -147,6 +148,46 @@ export async function assertLandscapeInOrg(
 
   if (!row) {
     throw new AuthError('not_found', 'That landscape does not exist.');
+  }
+  return row;
+}
+
+/**
+ * Verify both tenancy and the caller's per-landscape grant.
+ *
+ * Owners and admins are deliberately universal. Editors and viewers must have
+ * an explicit row in user_landscape_access. As with the org-only assertion, a
+ * missing grant is answered as not found so a copied URL cannot be used to
+ * enumerate another team's private competitive set.
+ */
+export async function assertLandscapeAccessible(
+  landscapeId: string,
+  ctx: OrgContext,
+): Promise<LandscapeRef> {
+  if (hasRole(ctx.role, 'admin')) {
+    return assertLandscapeInOrg(landscapeId, ctx.orgId);
+  }
+
+  const [row] = await db
+    .select({
+      id: landscapes.id,
+      name: landscapes.name,
+      slug: landscapes.slug,
+      focusCompanyId: landscapes.focusCompanyId,
+    })
+    .from(landscapes)
+    .innerJoin(
+      userLandscapeAccess,
+      and(
+        eq(userLandscapeAccess.landscapeId, landscapes.id),
+        eq(userLandscapeAccess.userId, ctx.userId),
+      ),
+    )
+    .where(and(eq(landscapes.id, landscapeId), eq(landscapes.orgId, ctx.orgId)))
+    .limit(1);
+
+  if (!row) {
+    throw new AuthError('not_found', 'That landscape does not exist or is not available to you.');
   }
   return row;
 }

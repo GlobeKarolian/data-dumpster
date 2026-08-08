@@ -224,6 +224,24 @@ export const landscapeCompanies = pgTable('landscape_companies', {
 }, (t) => [primaryKey({ columns: [t.landscapeId, t.companyId] })]);
 
 /**
+ * Explicit landscape access for restricted roles.
+ *
+ * Owners and admins always see every landscape in their organization, so rows
+ * here are meaningful only for editors and viewers. Keeping the exception at
+ * the role boundary avoids the dangerous state where an administrator can
+ * accidentally remove their own route back into access settings.
+ */
+export const userLandscapeAccess = pgTable('user_landscape_access', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').notNull().references(() => landscapes.id, { onDelete: 'cascade' }),
+  grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.landscapeId] }),
+  index('user_landscape_access_landscape_idx').on(t.landscapeId),
+]);
+
+/**
  * One landscape's explicit request for one pooled public account.
  *
  * Demand is private and may differ by window. Collection state remains global:
