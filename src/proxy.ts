@@ -49,9 +49,14 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'));
 }
 
+function isSharedReportPreview(req: NextRequest): boolean {
+  return /^\/api\/posts\/[0-9a-f-]+\/preview$/i.test(req.nextUrl.pathname)
+    && Boolean(req.nextUrl.searchParams.get('share')?.trim());
+}
+
 export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname, search } = req.nextUrl;
-  if (isPublic(pathname)) return NextResponse.next();
+  if (isPublic(pathname) || isSharedReportPreview(req)) return NextResponse.next();
 
   const token = await getToken({
     req,

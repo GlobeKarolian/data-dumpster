@@ -35,6 +35,13 @@ describe('post preview URLs', () => {
     }), '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview');
   });
 
+  it('scopes public report posters to the report capability token', () => {
+    assert.equal(
+      postPosterUrl(instagramReel, { reportShareToken: '8WEZuCzDYEPNeCOzHygBR' }),
+      '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview?share=8WEZuCzDYEPNeCOzHygBR',
+    );
+  });
+
   it('routes Threads posters and videos through the authenticated Meta CDN proxy', () => {
     const threadsVideo = {
       ...instagramReel,

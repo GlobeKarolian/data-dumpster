@@ -8,19 +8,28 @@ interface PostPreviewRef {
   thumbnailUrl: string | null;
 }
 
+type PostPreviewAccess = {
+  /** Revocable capability token for media embedded in a public weekly report. */
+  reportShareToken?: string | null;
+};
+
 const MOTION_TYPES = new Set<PostType>(['video', 'reel', 'short', 'live']);
 
 /**
  * Instagram and TikTok both issue signed, expiring media URLs. Browser-facing
- * posters therefore go through the authenticated post-id proxy, which can
- * resolve a fresh public preview without exposing an arbitrary URL parameter.
+ * posters therefore go through the access-controlled post-id proxy, which can
+ * resolve a fresh public preview without exposing an arbitrary media URL.
  */
-export function postPosterUrl(post: PostPreviewRef): string | null {
+export function postPosterUrl(post: PostPreviewRef, access?: PostPreviewAccess): string | null {
   if (
     (post.platform === 'instagram' || post.platform === 'tiktok' || post.platform === 'threads')
     && (post.thumbnailUrl || post.permalink)
   ) {
-    return '/api/posts/' + encodeURIComponent(post.id) + '/preview';
+    const path = '/api/posts/' + encodeURIComponent(post.id) + '/preview';
+    const shareToken = access?.reportShareToken?.trim();
+    return shareToken
+      ? path + '?share=' + encodeURIComponent(shareToken)
+      : path;
   }
   return post.thumbnailUrl;
 }

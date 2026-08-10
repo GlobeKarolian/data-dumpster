@@ -7,6 +7,7 @@ import {
   landscapes,
   posts,
   userLandscapeAccess,
+  weeklyReports,
 } from '@/db/schema';
 import {
   allowedInstagramRedirect,
@@ -18,6 +19,7 @@ import {
   storedTikTokPosterCandidates,
   type PostPreviewKind,
 } from '@/lib/post-preview-source';
+import { sharedReportContainsPost } from '@/lib/reports/share-preview';
 import {
   apiHandler,
   AuthError,
@@ -32,6 +34,10 @@ export const dynamic = 'force-dynamic';
 
 const postIdSchema = z.uuid('That is not a post id.');
 const kindSchema = z.enum(['poster', 'video']);
+const shareTokenSchema = z.string().regex(
+  /^[A-Za-z0-9_-]{21}$/,
+  'That is not a valid report share token.',
+);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const POSTER_CONTENT_TYPES = new Set([
   'image/avif',
@@ -224,16 +230,53 @@ async function visiblePreviewPost(postId: string, ctx: OrgContext): Promise<Prev
     : null;
 }
 
+async function sharedPreviewPost(postId: string, shareToken: string): Promise<PreviewRecord | null> {
+  const [report] = await db
+    .select({ computed: weeklyReports.computed })
+    .from(weeklyReports)
+    .where(eq(weeklyReports.shareToken, shareToken))
+    .limit(1);
+
+  if (!report || !sharedReportContainsPost(report.computed, postId)) return null;
+
+  const [row] = await db
+    .select({
+      platform: posts.platform,
+      thumbnailUrl: posts.thumbnailUrl,
+      mediaUrl: posts.mediaUrl,
+      permalink: posts.permalink,
+      raw: posts.raw,
+    })
+    .from(posts)
+    .where(and(
+      eq(posts.id, postId),
+      or(
+        eq(posts.platform, 'instagram'),
+        eq(posts.platform, 'tiktok'),
+        eq(posts.platform, 'threads'),
+      ),
+    ))
+    .limit(1);
+
+  return row?.platform === 'instagram'
+    || row?.platform === 'tiktok'
+    || row?.platform === 'threads'
+    ? row as PreviewRecord
+    : null;
+}
+
 export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
-  const session = await requireOrg();
   const postId = postIdSchema.parse((await ctx.params).id);
   const kind = kindSchema.parse(req.nextUrl.searchParams.get('kind') ?? 'poster');
+  const rawShareToken = req.nextUrl.searchParams.get('share');
   const requestedRange = kind === 'video' ? singleByteRange(req.headers.get('range')) : null;
   if (requestedRange === '') {
     throw new HttpError(416, 'Only one valid byte range may be requested.', 'invalid_range');
   }
 
-  const post = await visiblePreviewPost(postId, session);
+  const post = rawShareToken
+    ? await sharedPreviewPost(postId, shareTokenSchema.parse(rawShareToken))
+    : await visiblePreviewPost(postId, await requireOrg());
   if (!post) {
     throw new AuthError('not_found', 'That post does not exist in this workspace.');
   }

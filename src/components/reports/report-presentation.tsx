@@ -33,9 +33,11 @@ const SEARCH_IDS = new Set(['globeSearch', 'bostonSearch']);
 export function ReportPresentation({
   doc,
   landscapeName,
+  reportShareToken,
 }: {
   doc: ReportDocument;
   landscapeName: string | null;
+  reportShareToken?: string;
 }) {
   const searchSpecs = MANUAL_SECTIONS.filter((spec) => SEARCH_IDS.has(spec.id));
   const otherSpecs = MANUAL_SECTIONS.filter((spec) => !SEARCH_IDS.has(spec.id));
@@ -87,7 +89,7 @@ export function ReportPresentation({
                 <PerformanceSection computed={doc.computed} />
               </>
             )}
-            <TopPostsSection computed={doc.computed} />
+            <TopPostsSection computed={doc.computed} reportShareToken={reportShareToken} />
             {hasVisualBrandMetrics
               ? <BrandScorecards computed={doc.computed} />
               : <BrandsSection computed={doc.computed} />}

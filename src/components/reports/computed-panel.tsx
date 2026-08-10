@@ -262,7 +262,13 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
   );
 }
 
-export function TopPostsSection({ computed }: { computed: ComputedBlock }) {
+export function TopPostsSection({
+  computed,
+  reportShareToken,
+}: {
+  computed: ComputedBlock;
+  reportShareToken?: string;
+}) {
   const bgmPosts = computed.bgmTopPosts
     ?? computed.topPosts.filter((post) => post.isBgmOwned);
   return (
@@ -271,11 +277,13 @@ export function TopPostsSection({ computed }: { computed: ComputedBlock }) {
         title="Top Engaged Posts — Market"
         description="The five most engaged posts from every brand in this landscape."
         posts={computed.topPosts}
+        reportShareToken={reportShareToken}
       />
       <TopPostGroup
         title="Top Engaged Posts — BGM"
         description="The five most engaged posts from BGM-owned brands in the same window."
         posts={bgmPosts}
+        reportShareToken={reportShareToken}
         empty={computed.bgmTopPosts === undefined
           ? 'Recompute this report to add the BGM-only ranking.'
           : 'No BGM posts were recorded in this window.'}
@@ -288,17 +296,21 @@ function TopPostGroup({
   title,
   description,
   posts,
+  reportShareToken,
   empty = 'No posts were recorded in this window.',
 }: {
   title: string;
   description: string;
   posts: TopPost[];
+  reportShareToken?: string;
   empty?: string;
 }) {
   return (
     <SectionCard title={title} kind="computed" description={description}>
       <ol className="space-y-3 p-3">
-        {posts.map((post) => <ReportPostCard key={post.id} post={post} />)}
+        {posts.map((post) => (
+          <ReportPostCard key={post.id} post={post} reportShareToken={reportShareToken} />
+        ))}
         {posts.length === 0 ? (
           <li className="rounded-md border border-dashed border-zinc-200 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-800">
             {empty}
@@ -309,15 +321,24 @@ function TopPostGroup({
   );
 }
 
-export function ReportPostCard({ post }: { post: TopPost }) {
+export function ReportPostCard({
+  post,
+  reportShareToken,
+}: {
+  post: TopPost;
+  reportShareToken?: string;
+}) {
   const [previewFailed, setPreviewFailed] = React.useState(false);
-  const previewUrl = postPosterUrl({
-    id: post.id,
-    platform: post.platform,
-    type: post.type ?? 'text',
-    permalink: post.permalink,
-    thumbnailUrl: post.thumbnailUrl ?? null,
-  });
+  const previewUrl = postPosterUrl(
+    {
+      id: post.id,
+      platform: post.platform,
+      type: post.type ?? 'text',
+      permalink: post.permalink,
+      thumbnailUrl: post.thumbnailUrl ?? null,
+    },
+    { reportShareToken },
+  );
   const isMotion = ['video', 'reel', 'short', 'live'].includes(post.type ?? 'text');
 
   return (

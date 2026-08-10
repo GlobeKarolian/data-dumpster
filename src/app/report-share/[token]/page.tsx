@@ -63,7 +63,11 @@ export default async function SharedWeeklyReportPage({
   return (
     <main className="min-h-dvh bg-zinc-100 px-3 py-4 sm:px-6 sm:py-8 dark:bg-zinc-950">
       <div className="mx-auto max-w-6xl">
-        <ReportPresentation doc={{ ...base, narrative }} landscapeName={row.landscape_name} />
+        <ReportPresentation
+          doc={{ ...base, narrative }}
+          landscapeName={row.landscape_name}
+          reportShareToken={token}
+        />
         <p className="mx-auto mt-4 max-w-3xl text-center text-[11px] leading-relaxed text-zinc-400">
           Read-only report published from Data Dumpster. This link can be revoked by a report editor at any time.
         </p>
