@@ -16,6 +16,7 @@ import {
   REPORT_PLATFORM_LABELS,
   REPORT_PLATFORMS,
   periodLabel,
+  reportManualRows,
   type NarrativeBlock,
   type NarrativeSectionSpec,
 } from './types';
@@ -106,16 +107,17 @@ function manualMaterial(spec: NarrativeSectionSpec, doc: ReportDocument): string
     const section = MANUAL_SECTIONS.find((item) => item.id === tableId);
     if (!section) continue;
     const table = doc.manual.tables[tableId];
+    const reportRows = reportManualRows(tableId, table);
     lines.push('');
     lines.push('PASTED TABLE: ' + section.title);
-    if (!table || table.rows.length === 0) {
+    if (reportRows.length === 0) {
       lines.push('  (nothing pasted for this table this week)');
       continue;
     }
     lines.push('  ' + section.columns.map((column) => column.label).join(' | '));
-    for (const row of table.rows.slice(0, 25)) lines.push('  ' + row.join(' | '));
-    if (table.rows.length > 25) {
-      lines.push('  (' + (table.rows.length - 25) + ' further rows not shown)');
+    for (const row of reportRows.slice(0, 25)) lines.push('  ' + row.join(' | '));
+    if (reportRows.length > 25) {
+      lines.push('  (' + (reportRows.length - 25) + ' further rows not shown)');
     }
   }
 

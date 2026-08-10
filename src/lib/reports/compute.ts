@@ -174,7 +174,7 @@ export async function computeWeeklyReport(
     getSummary(base),
     getLeaderboard({ ...brandScope, metric: 'audience' }),
     getLeaderboard({ ...brandScope, metric: 'audienceNetChange' }),
-    getPosts({ ...base, sort: 'engagementTotal', direction: 'desc', page: 1, pageSize: 3 }),
+    getPosts({ ...base, sort: 'engagementTotal', direction: 'desc', page: 1, pageSize: 5 }),
     getLandscapeCompanyIdsBySlug(orgId, 'bgm'),
   ]);
   const bgmCompanyIdSet = new Set(bgmCompanyIds);
@@ -185,16 +185,26 @@ export async function computeWeeklyReport(
       sort: 'engagementTotal',
       direction: 'desc',
       page: 1,
-      pageSize: 3,
+      pageSize: 5,
     })
-    : { items: [], total: 0, page: 1, pageSize: 3 };
+    : { items: [], total: 0, page: 1, pageSize: 5 };
 
   const engagementBoard = facts.leaderboards.engagementTotal ?? [];
   const postsBoard = facts.leaderboards.posts ?? [];
+  const engagementRateBoard = facts.leaderboards.engagementRateByFollower ?? [];
   const netById = new Map(netFollowerBoard.map((r) => [r.company.id, r]));
+  const engagementById = new Map(engagementBoard.map((r) => [r.company.id, r]));
+  const postsById = new Map(postsBoard.map((r) => [r.company.id, r]));
+  const engagementRateById = new Map(engagementRateBoard.map((r) => [r.company.id, r]));
 
   const brands: BrandRow[] = followerBoard.map((row) => {
     const net = netById.get(row.company.id);
+    const engagement = engagementById.get(row.company.id);
+    const posts = postsById.get(row.company.id);
+    const engagementRate = engagementRateById.get(row.company.id);
+    const engagementByPlatform = engagement?.available ? platformSplit(engagement) : {};
+    const topEngagementPlatform = Object.entries(engagementByPlatform)
+      .sort(([, a], [, b]) => b - a)[0]?.[0] as ReportPlatform | undefined;
     return {
       companyId: row.company.id,
       name: row.company.name,
@@ -205,6 +215,21 @@ export async function computeWeeklyReport(
       netChange: net?.available ? net.value : null,
       changePct: row.changePct ?? null,
       byPlatform: platformSplit(row),
+      netChangeByPlatform: net ? platformSplit(net) : {},
+      posts: posts?.available ? posts.value : null,
+      postsChangePct: posts?.complete === false || posts?.previousComplete === false
+        ? null
+        : posts?.changePct ?? null,
+      engagementTotal: engagement?.available ? engagement.value : null,
+      engagementChangePct: engagement?.complete === false || engagement?.previousComplete === false
+        ? null
+        : engagement?.changePct ?? null,
+      engagementRateByFollower: engagementRate?.available ? engagementRate.value : null,
+      engagementRateChangePct:
+        engagementRate?.complete === false || engagementRate?.previousComplete === false
+          ? null
+          : engagementRate?.changePct ?? null,
+      topEngagementPlatform: topEngagementPlatform ?? null,
     };
   });
 

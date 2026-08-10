@@ -37,8 +37,11 @@ import { getToken } from 'next-auth/jwt';
  *                  bearer secret; the route performs its own cron check
  *  /api/health     uptime probes have no credentials by design
  *  /share/*        published dashboards, authorized by an unguessable token
+ *  /report-share/* published weekly reports, authorized the same way
  */
-const PUBLIC_PREFIXES = ['/login', '/about', '/my-globe', '/invite', '/api/auth', '/api/cron', '/share'] as const;
+const PUBLIC_PREFIXES = [
+  '/login', '/about', '/my-globe', '/invite', '/api/auth', '/api/cron', '/share', '/report-share',
+] as const;
 const PUBLIC_EXACT = ['/api/health', '/api/ingest/worker'] as const;
 
 function isPublic(pathname: string): boolean {

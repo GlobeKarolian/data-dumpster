@@ -23,6 +23,7 @@ import {
   readManual,
   readNarrative,
 } from './types';
+import { SEARCH_DASHBOARDS, type SearchTableId } from './search-console-sources';
 import {
   renderReportCsv,
   renderReportPptx,
@@ -411,6 +412,12 @@ async function reportDocument(
       start: row.periodStart,
       end: row.periodEnd,
     });
+    for (const id of Object.keys(searchTables) as SearchTableId[]) {
+      searchTables[id] = {
+        ...searchTables[id],
+        sourceUrl: manual.tables[id]?.sourceUrl ?? SEARCH_DASHBOARDS[id].url,
+      };
+    }
     manual = { ...manual, tables: { ...manual.tables, ...searchTables } };
     delete narrative.search;
     const [updated] = await db

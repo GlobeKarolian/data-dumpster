@@ -22,8 +22,10 @@ test('pulls both query tables for the exact report period and formats the dashbo
     calls.push({ url, init });
     if (url.includes('/token')) return Response.json({ access_token: 'access' });
     return Response.json({
-      rows: [{ keys: [url.includes('boston.com') ? 'boston news' : 'boston globe'], clicks: 1234,
-        impressions: 5000, ctr: 0.2468, position: 3.456 }],
+      rows: Array.from({ length: 25 }, (_, index) => ({
+        keys: [index === 0 ? (url.includes('boston.com') ? 'boston news' : 'boston globe') : 'query ' + index],
+        clicks: 1234 - index, impressions: 5000, ctr: 0.2468, position: 3.456,
+      })),
     });
   };
 
@@ -40,10 +42,12 @@ test('pulls both query tables for the exact report period and formats the dashbo
     assert.equal(body.endDate, '2026-07-26');
     assert.equal(body.type, 'web');
     assert.deepEqual(body.dimensions, ['query']);
-    assert.equal(body.rowLimit, 100);
+    assert.equal(body.rowLimit, 20);
   }
   assert.deepEqual(tables.globeSearch.rows[0], ['boston globe', '1,234', '5,000', '24.68%', '3.46']);
   assert.deepEqual(tables.bostonSearch.rows[0], ['boston news', '1,234', '5,000', '24.68%', '3.46']);
+  assert.equal(tables.globeSearch.rows.length, 20);
+  assert.equal(tables.bostonSearch.rows.length, 20);
 });
 
 test('rejects a successful-looking response with the wrong row shape', async () => {

@@ -763,6 +763,8 @@ export const weeklyReports = pgTable('weekly_reports', {
   manual: jsonb('manual').$type<Record<string, unknown>>().notNull().default({}),
   narrative: jsonb('narrative').$type<Record<string, string>>().notNull().default({}),
   status: text('status').notNull().default('draft'),
+  /** Capability token for an explicitly published, read-only report snapshot. */
+  shareToken: text('share_token'),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -770,6 +772,7 @@ export const weeklyReports = pgTable('weekly_reports', {
   uniqueIndex('weekly_reports_period_uq').on(
     t.orgId, t.landscapeId, t.periodStart, t.periodEnd,
   ),
+  uniqueIndex('weekly_reports_share_uq').on(t.shareToken),
   index('weekly_reports_org_idx').on(t.orgId, t.periodEnd),
 ]);
 

@@ -19,6 +19,7 @@ import {
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
   periodLabel,
+  reportManualRows,
   type ComputedBlock,
   type ManualState,
   type NarrativeBlock,
@@ -230,10 +231,11 @@ function manualTable(id: string, manual: ManualState): TableModel | null {
   const spec = MANUAL_SECTIONS.find((s) => s.id === id);
   if (!spec) return null;
   const table = manual.tables[id];
-  if (!table || table.rows.length === 0) return null;
+  const rows = reportManualRows(id, table);
+  if (rows.length === 0) return null;
   return {
     columns: spec.columns.map((c) => ({ label: c.label, numeric: c.numeric })),
-    rows: table.rows.map((row) => row.map((text, i) => ({ text, numeric: spec.columns[i]?.numeric }))),
+    rows: rows.map((row) => row.map((text, i) => ({ text, numeric: spec.columns[i]?.numeric }))),
   };
 }
 

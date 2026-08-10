@@ -64,6 +64,13 @@
       "when": 1786149490688,
       "tag": "0008_small_clint_barton",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786384942461,
+      "tag": "0009_rare_salo",
+      "breakpoints": true
     }
   ]
 }

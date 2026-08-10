@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { AlertTriangle, Eye, Loader2, Pencil } from 'lucide-react';
+import { Button, ButtonGroup, ButtonGroupItem } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatRelative } from '@/components/ui/format';
 import {
@@ -22,6 +22,9 @@ import { FigureFields } from './figure-fields';
 import { NarrativeField } from './narrative-field';
 import { PasteBox } from './paste-box';
 import { SearchConsoleSync } from './search-console-sync';
+import { SEARCH_DASHBOARDS, type SearchTableId } from '@/lib/reports/search-console-sources';
+import { ReportPresentation } from './report-presentation';
+import { ReportShareControl } from './report-share-control';
 
 export type ReportBuilderProps = {
   reportId: string;
@@ -37,6 +40,7 @@ export type ReportBuilderProps = {
     computed: ComputedBlock | null;
     manual: ManualState;
     narrative: NarrativeBlock;
+    shareUrl: string | null;
   };
 };
 
@@ -75,6 +79,7 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
   const [recomputeError, setRecomputeError] = React.useState<string | null>(null);
   const [searchSyncing, setSearchSyncing] = React.useState(false);
   const [searchSyncError, setSearchSyncError] = React.useState<string | null>(null);
+  const [mode, setMode] = React.useState<'view' | 'edit'>('view');
 
   const period = React.useMemo(
     () => ({ start: initial.periodStart, end: initial.periodEnd }),
@@ -202,8 +207,22 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
   };
 
   const setTable = (id: string, table: ManualTable) => {
-    setManual((m) => ({ ...m, tables: { ...m.tables, [id]: table } }));
+    setManual((m) => {
+      const sourceUrl = table.sourceUrl ?? m.tables[id]?.sourceUrl;
+      return {
+        ...m,
+        tables: {
+          ...m.tables,
+          [id]: { ...table, ...(sourceUrl !== undefined ? { sourceUrl } : {}) },
+        },
+      };
+    });
     touch();
+  };
+
+  const setSearchSource = (id: SearchTableId, sourceUrl: string) => {
+    const current = manual.tables[id] ?? emptyTable();
+    setTable(id, { ...current, sourceUrl });
   };
 
   const setFigures = (figures: Record<string, string>) => {
@@ -232,8 +251,43 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
   const searchSections = MANUAL_SECTIONS.filter((s) => s.id.endsWith('Search'));
   const referralSections = MANUAL_SECTIONS.filter((s) => s.id.endsWith('Referral'));
 
+  const controls = (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/40">
+      <ButtonGroup aria-label="Report mode">
+        <ButtonGroupItem active={mode === 'view'} onClick={() => setMode('view')}>
+          <Eye className="h-3.5 w-3.5" aria-hidden />View report
+        </ButtonGroupItem>
+        {canEdit ? (
+          <ButtonGroupItem active={mode === 'edit'} onClick={() => setMode('edit')}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden />Edit report
+          </ButtonGroupItem>
+        ) : null}
+      </ButtonGroup>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {mode === 'view' ? (
+          <ExportActions
+            doc={doc}
+            reportId={reportId}
+            beforeServerExport={canEdit ? persist : undefined}
+          />
+        ) : null}
+        {canEdit ? <ReportShareControl reportId={reportId} initialShareUrl={initial.shareUrl} /> : null}
+      </div>
+    </div>
+  );
+
+  if (mode === 'view') {
+    return (
+      <div className="space-y-3 pb-16">
+        {controls}
+        <ReportPresentation doc={doc} landscapeName={landscapeName} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 pb-16">
+      {controls}
       <header className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-600 dark:text-accent-500">
           Do not forward — confidential
@@ -322,6 +376,11 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
           busy={searchSyncing}
           error={searchSyncError}
           syncedAt={manual.tables.globeSearch?.updatedAt ?? manual.tables.bostonSearch?.updatedAt ?? null}
+          sources={{
+            globeSearch: manual.tables.globeSearch?.sourceUrl ?? SEARCH_DASHBOARDS.globeSearch.url,
+            bostonSearch: manual.tables.bostonSearch?.sourceUrl ?? SEARCH_DASHBOARDS.bostonSearch.url,
+          }}
+          onSourceChange={setSearchSource}
           onSync={() => { void syncSearchConsole(); }}
         />
         {searchSections.map((spec) => (

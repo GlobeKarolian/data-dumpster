@@ -5,7 +5,7 @@ import { ExternalLink, FileText, Loader2, Play, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDateTime, formatRelative } from '@/components/ui/format';
 import { PlatformIcon } from '@/components/ui/platform-icon';
-import { PLATFORM_LABELS } from '@/lib/types';
+import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/types';
 import { postPosterUrl } from '@/lib/post-preview-url';
 import { cn } from '@/lib/utils';
 import {
@@ -13,6 +13,7 @@ import {
   REPORT_PLATFORM_LABELS,
   type ComputedBlock,
   type Movement,
+  type ReportPlatform,
   type TopPost,
 } from '@/lib/reports/types';
 import { formatCount, formatPct, formatRate, formatSignedCount } from '@/lib/reports/render';
@@ -268,12 +269,12 @@ export function TopPostsSection({ computed }: { computed: ComputedBlock }) {
     <div className="grid items-start gap-4 xl:grid-cols-2">
       <TopPostGroup
         title="Top Engaged Posts — Market"
-        description="The three most engaged posts from every brand in this landscape."
+        description="The five most engaged posts from every brand in this landscape."
         posts={computed.topPosts}
       />
       <TopPostGroup
         title="Top Engaged Posts — BGM"
-        description="The three most engaged posts from BGM-owned brands in the same window."
+        description="The five most engaged posts from BGM-owned brands in the same window."
         posts={bgmPosts}
         empty={computed.bgmTopPosts === undefined
           ? 'Recompute this report to add the BGM-only ranking.'
@@ -308,7 +309,7 @@ function TopPostGroup({
   );
 }
 
-function ReportPostCard({ post }: { post: TopPost }) {
+export function ReportPostCard({ post }: { post: TopPost }) {
   const [previewFailed, setPreviewFailed] = React.useState(false);
   const previewUrl = postPosterUrl({
     id: post.id,
@@ -391,6 +392,202 @@ function ReportPostCard({ post }: { post: TopPost }) {
         </div>
       </article>
     </li>
+  );
+}
+
+/** Portfolio charts requested for the leadership-first report view. */
+export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
+  const brands = computed.brands.filter((brand) => brand.isBgmOwned);
+  const largestFollowerSwing = Math.max(
+    1,
+    ...brands.map((brand) => Object.values(brand.netChangeByPlatform ?? {})
+      .reduce((total, value) => total + Math.abs(value), 0)),
+  );
+  const largestRateSwing = Math.max(
+    0.01,
+    ...brands.map((brand) => Math.abs(brand.engagementRateChangePct ?? 0)),
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <SectionCard
+        title="Net Followers Added by BGM Brand"
+        kind="computed"
+        description="Each bar is the signed follower change during the week, split by platform. The center line is zero."
+      >
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+            {REPORT_PLATFORMS.map((platform) => (
+              <span key={platform} className="inline-flex items-center gap-1.5 text-[10px] text-zinc-500">
+                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: PLATFORM_COLORS[platform] }} />
+                {REPORT_PLATFORM_LABELS[platform]}
+              </span>
+            ))}
+          </div>
+          {brands.map((brand) => {
+            const entries = Object.entries(brand.netChangeByPlatform ?? {}) as Array<[ReportPlatform, number]>;
+            const positive = entries.filter(([, value]) => value > 0);
+            const negative = entries.filter(([, value]) => value < 0);
+            const positiveWidth = positive.reduce((sum, [, value]) => sum + value, 0) / largestFollowerSwing * 100;
+            const negativeWidth = Math.abs(negative.reduce((sum, [, value]) => sum + value, 0)) / largestFollowerSwing * 100;
+            return (
+              <div key={brand.companyId} className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] items-center gap-3">
+                <p className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{brand.name}</p>
+                <div className="relative grid h-5 grid-cols-2">
+                  <div className="flex justify-end overflow-hidden border-r border-zinc-300 dark:border-zinc-700">
+                    <div className="flex h-3 self-center" style={{ width: negativeWidth + '%' }}>
+                      {negative.map(([platform, value]) => (
+                        <span
+                          key={platform}
+                          title={REPORT_PLATFORM_LABELS[platform] + ': ' + formatSignedCount(value)}
+                          style={{
+                            backgroundColor: PLATFORM_COLORS[platform],
+                            width: Math.abs(value) / Math.max(1, Math.abs(negative.reduce((sum, [, part]) => sum + part, 0))) * 100 + '%',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex overflow-hidden">
+                    <div className="flex h-3 self-center" style={{ width: positiveWidth + '%' }}>
+                      {positive.map(([platform, value]) => (
+                        <span
+                          key={platform}
+                          title={REPORT_PLATFORM_LABELS[platform] + ': ' + formatSignedCount(value)}
+                          style={{
+                            backgroundColor: PLATFORM_COLORS[platform],
+                            width: value / Math.max(1, positive.reduce((sum, [, part]) => sum + part, 0)) * 100 + '%',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <p className={cn(
+                  'pb-num text-right text-xs font-semibold',
+                  brand.netChange === null
+                    ? 'text-zinc-400'
+                    : brand.netChange > 0
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : brand.netChange < 0
+                        ? 'text-red-700 dark:text-red-400'
+                        : 'text-zinc-500',
+                )}>
+                  {formatSignedCount(brand.netChange)}
+                </p>
+              </div>
+            );
+          })}
+          {brands.length === 0 ? <EmptyChart /> : null}
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Engagement Rate Change by BGM Brand"
+        kind="computed"
+        description="Week-over-week change in engagement rate by follower. Left is down; right is up."
+      >
+        <div className="space-y-3 p-4">
+          <div className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] gap-3 border-b border-zinc-100 pb-2 text-[10px] uppercase tracking-wider text-zinc-400 dark:border-zinc-800">
+            <span>Brand</span><span className="text-center">Down ← 0 → Up</span><span className="text-right">WoW</span>
+          </div>
+          {brands.map((brand) => {
+            const change = brand.engagementRateChangePct;
+            const width = change === null || change === undefined
+              ? 0
+              : Math.min(100, Math.abs(change) / largestRateSwing * 100);
+            return (
+              <div key={brand.companyId} className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] items-center gap-3">
+                <p className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{brand.name}</p>
+                <div className="relative grid h-5 grid-cols-2">
+                  <div className="flex justify-end border-r border-zinc-300 dark:border-zinc-700">
+                    {change !== null && change !== undefined && change < 0 ? (
+                      <span className="h-3 self-center bg-red-500/80" style={{ width: width + '%' }} />
+                    ) : null}
+                  </div>
+                  <div className="flex">
+                    {change !== null && change !== undefined && change >= 0 ? (
+                      <span className="h-3 self-center bg-emerald-500/80" style={{ width: width + '%' }} />
+                    ) : null}
+                  </div>
+                </div>
+                <p className={cn(
+                  'pb-num text-right text-xs font-semibold',
+                  change === null || change === undefined
+                    ? 'text-zinc-400'
+                    : change > 0
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : change < 0
+                        ? 'text-red-700 dark:text-red-400'
+                        : 'text-zinc-500',
+                )}>
+                  {change === null || change === undefined ? '—' : formatPct(change)}
+                </p>
+              </div>
+            );
+          })}
+          {brands.length === 0 ? <EmptyChart /> : null}
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+function EmptyChart() {
+  return <p className="py-5 text-center text-xs text-zinc-500">No BGM brand data was measured for this window.</p>;
+}
+
+export function BrandScorecards({ computed }: { computed: ComputedBlock }) {
+  const brands = computed.brands.filter((brand) => brand.isBgmOwned);
+  return (
+    <SectionCard
+      title="BGM Brand Scorecards"
+      kind="computed"
+      description="The same four measures for every owned brand, so leadership can scan the portfolio without reading a wide table."
+    >
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {brands.map((brand) => (
+          <article key={brand.companyId} className="border-l-2 border-accent-600 px-4 py-4">
+            <h4 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{brand.name}</h4>
+            <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
+              <BrandMetric label="Audience" value={formatCount(brand.totalFollowers)} change={brand.changePct} />
+              <BrandMetric label="Posts" value={formatCount(brand.posts)} change={brand.postsChangePct} />
+              <BrandMetric label="Engagement total" value={formatCount(brand.engagementTotal)} change={brand.engagementChangePct} />
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Most engaging channel</p>
+                <p className="mt-2 flex items-center gap-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                  {brand.topEngagementPlatform ? (
+                    <><PlatformIcon platform={brand.topEngagementPlatform} className="h-5 w-5" />{REPORT_PLATFORM_LABELS[brand.topEngagementPlatform]}</>
+                  ) : 'n/a'}
+                </p>
+              </div>
+            </div>
+          </article>
+        ))}
+        {brands.length === 0 ? <div className="p-6"><EmptyChart /></div> : null}
+      </div>
+    </SectionCard>
+  );
+}
+
+function BrandMetric({ label, value, change }: { label: string; value: string; change?: number | null }) {
+  return (
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="pb-num mt-1 text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{value}</p>
+      <p className={cn(
+        'pb-num mt-0.5 text-xs font-medium',
+        change === null || change === undefined
+          ? 'text-zinc-400'
+          : change > 0
+            ? 'text-emerald-700 dark:text-emerald-400'
+            : change < 0
+              ? 'text-red-700 dark:text-red-400'
+              : 'text-zinc-500',
+      )}>
+        {change === null || change === undefined ? 'No comparable prior week' : formatPct(change) + ' WoW'}
+      </p>
+    </div>
   );
 }
 

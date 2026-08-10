@@ -1,5 +1,5 @@
 import { createSign } from 'node:crypto';
-import type { ManualTable, Period } from './types';
+import { SEARCH_QUERY_LIMIT, type ManualTable, type Period } from './types';
 import { rowsToTsv } from './tsv';
 import type { SearchTableId } from './search-console-sources';
 
@@ -233,7 +233,10 @@ async function querySite(
         dimensions: ['query'],
         type: 'web',
         aggregationType: 'byProperty',
-        rowLimit: 100,
+        // Google orders Search Analytics query rows by clicks descending. The
+        // leadership report deliberately stops at twenty so both properties
+        // remain scannable rather than turning into data dumps of their own.
+        rowLimit: SEARCH_QUERY_LIMIT,
         dataState: 'final',
       }),
       cache: 'no-store',
@@ -249,7 +252,7 @@ async function querySite(
   if (payload.rows !== undefined && !Array.isArray(payload.rows)) {
     throw new SearchConsoleError('Google returned an unexpected Search Console response.', 'invalid_response');
   }
-  return tableFromRows((payload.rows ?? []) as SearchAnalyticsRow[]);
+  return tableFromRows(((payload.rows ?? []) as SearchAnalyticsRow[]).slice(0, SEARCH_QUERY_LIMIT));
 }
 
 /** Pull the two Web Search tables with one short-lived Google access token. */

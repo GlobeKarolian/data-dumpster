@@ -27,6 +27,7 @@ type ReportRow = {
   landscape_id: string | null;
   landscape_name: string | null;
   org_name: string;
+  share_token: string | null;
 };
 
 type AlternateReportRow = { id: string };
@@ -53,7 +54,7 @@ export default async function WeeklyReportPage({
     SELECT r.id, r.title, r.data_note, r.status, r.period_start, r.period_end,
            r.computed, r.manual, r.narrative, r.landscape_id,
            l.name AS landscape_name,
-           o.name AS org_name
+           o.name AS org_name, r.share_token
       FROM weekly_reports r
       JOIN orgs o ON o.id = r.org_id
       LEFT JOIN landscapes l ON l.id = r.landscape_id
@@ -156,6 +157,7 @@ export default async function WeeklyReportPage({
             computed,
             manual,
             narrative,
+            shareUrl: report.share_token ? '/report-share/' + report.share_token : null,
           }}
         />
       </div>

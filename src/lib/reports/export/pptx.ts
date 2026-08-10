@@ -13,6 +13,7 @@ import {
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
   periodLabel,
+  reportManualRows,
   type Movement,
   type ReportPlatform,
 } from '@/lib/reports/types';
@@ -1044,7 +1045,7 @@ function addManualSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: number
   }
 
   for (const spec of MANUAL_SECTIONS) {
-    const rows = doc.manual.tables[spec.id]?.rows ?? [];
+    const rows = reportManualRows(spec.id, doc.manual.tables[spec.id]);
     if (rows.length === 0) continue;
     const PAGE_SIZE = 13;
     for (let offset = 0; offset < rows.length; offset += PAGE_SIZE) {

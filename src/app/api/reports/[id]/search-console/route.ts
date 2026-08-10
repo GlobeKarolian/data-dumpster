@@ -7,6 +7,7 @@ import {
   SearchConsoleError,
 } from '@/lib/reports/search-console';
 import { readManual, readNarrative } from '@/lib/reports/types';
+import { SEARCH_DASHBOARDS, type SearchTableId } from '@/lib/reports/search-console-sources';
 import { loadReport, reportIdSchema, serializeReport } from '../../_lib';
 
 export const runtime = 'nodejs';
@@ -37,6 +38,12 @@ export const POST = apiHandler<{ id: string }>(async (_req, ctx) => {
   }
 
   const manual = readManual(existing.manual);
+  for (const id of Object.keys(tables) as SearchTableId[]) {
+    tables[id] = {
+      ...tables[id],
+      sourceUrl: manual.tables[id]?.sourceUrl ?? SEARCH_DASHBOARDS[id].url,
+    };
+  }
   const narrative = readNarrative(existing.narrative);
   delete narrative.search;
 

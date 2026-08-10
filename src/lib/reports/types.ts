@@ -68,6 +68,16 @@ export type BrandRow = {
   netChange: number | null;
   changePct: number | null;
   byPlatform: Partial<Record<ReportPlatform, number>>;
+  /** Signed follower change by platform for the report window. */
+  netChangeByPlatform?: Partial<Record<ReportPlatform, number>>;
+  /** Publishing and engagement metrics used by the visual brand scorecards. */
+  posts?: number | null;
+  postsChangePct?: number | null;
+  engagementTotal?: number | null;
+  engagementChangePct?: number | null;
+  engagementRateByFollower?: number | null;
+  engagementRateChangePct?: number | null;
+  topEngagementPlatform?: ReportPlatform | null;
 };
 
 export type TopPost = {
@@ -190,6 +200,8 @@ export type ManualTable = {
   raw: string;
   rows: string[][];
   updatedAt: string | null;
+  /** Optional human-auditable report URL associated with this table. */
+  sourceUrl?: string;
   /**
    * What a rolled-up row is made of, keyed by its first cell.
    *
@@ -204,6 +216,16 @@ export type ManualTable = {
 };
 
 export type ManualBlock = Record<string, ManualTable>;
+
+export const SEARCH_QUERY_LIMIT = 20;
+
+/** Keep the screen, AI evidence, and every export on the same visible row set. */
+export function reportManualRows(sectionId: string, table: ManualTable | undefined): string[][] {
+  const rows = table?.rows ?? [];
+  return sectionId === 'globeSearch' || sectionId === 'bostonSearch'
+    ? rows.slice(0, SEARCH_QUERY_LIMIT)
+    : rows;
+}
 
 /**
  * External report sections. Search Console can be synchronized through its
@@ -470,6 +492,7 @@ export function readManual(value: unknown): ManualState {
         raw: typeof raw.raw === 'string' ? raw.raw : '',
         rows,
         updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+        ...(typeof raw.sourceUrl === 'string' ? { sourceUrl: raw.sourceUrl } : {}),
         ...(Object.keys(breakdown).length > 0 ? { breakdown } : {}),
       };
     }

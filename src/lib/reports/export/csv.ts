@@ -11,6 +11,7 @@ import {
   NARRATIVE_SECTIONS,
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
+  reportManualRows,
   type ComputedBlock,
 } from '@/lib/reports/types';
 import { executiveLines, type ReportDocument } from '@/lib/reports/render';
@@ -66,7 +67,7 @@ function rowsForManualSection(
   sectionId: string,
   width: number,
 ): CsvValue[][] {
-  const rows = doc.manual.tables[sectionId]?.rows ?? [];
+  const rows = reportManualRows(sectionId, doc.manual.tables[sectionId]);
   return rows.map((source) => {
     const row: CsvValue[] = [];
     for (let index = 0; index < width; index += 1) row.push(source[index] ?? '');

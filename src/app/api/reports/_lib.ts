@@ -38,6 +38,10 @@ export const manualSchema = z.object({
       raw: z.string().max(400_000),
       rows: z.array(z.array(z.string().max(4_000))).max(2_000),
       updatedAt: z.string().nullable(),
+      // Keystrokes are autosaved, so temporarily incomplete URLs must remain
+      // valid document state. Renderers only expose recognized Google Looker
+      // URLs and fall back to the approved defaults for anything else.
+      sourceUrl: z.string().max(2_000).optional(),
       breakdown: z.record(z.string(), z.array(z.string().max(4_000))).optional(),
     }),
   ).default({}),
