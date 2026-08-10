@@ -42,12 +42,12 @@ test('pulls both query tables for the exact report period and formats the dashbo
     assert.equal(body.endDate, '2026-07-26');
     assert.equal(body.type, 'web');
     assert.deepEqual(body.dimensions, ['query']);
-    assert.equal(body.rowLimit, 20);
+    assert.equal(body.rowLimit, 25_000);
   }
   assert.deepEqual(tables.globeSearch.rows[0], ['boston globe', '1,234', '5,000', '24.68%', '3.46']);
   assert.deepEqual(tables.bostonSearch.rows[0], ['boston news', '1,234', '5,000', '24.68%', '3.46']);
-  assert.equal(tables.globeSearch.rows.length, 20);
-  assert.equal(tables.bostonSearch.rows.length, 20);
+  assert.equal(tables.globeSearch.rows.length, 25);
+  assert.equal(tables.bostonSearch.rows.length, 25);
 });
 
 test('rejects a successful-looking response with the wrong row shape', async () => {

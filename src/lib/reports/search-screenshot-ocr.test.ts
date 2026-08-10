@@ -45,7 +45,17 @@ test('accepts the headerless TSV emitted by Tesseract.js 6', () => {
   assert.deepEqual(rows[0]?.cells, ['weather boston', '812', '3,905', '20.79%', '2.98']);
 });
 
-test('deduplicates overlapping screenshots and caps the report at twenty rows', () => {
+test('extracts the comparison dashboard columns and leaves unavailable position blank', () => {
+  const rows = searchRowsFromTsv(tsv([[
+    { text: '21', left: 10 }, { text: 'boston', left: 80 }, { text: 'globe', left: 150 },
+    { text: '1,885', left: 400 }, { text: '-14.4%', left: 500 },
+    { text: '18,375', left: 600 }, { text: '-9.2%', left: 700 },
+    { text: '10.26%', left: 800 }, { text: '-5.6%', left: 900 },
+  ]]), 'comparison.jpg');
+  assert.deepEqual(rows[0]?.cells, ['boston globe', '1,885', '18,375', '10.26%', '']);
+});
+
+test('deduplicates overlapping screenshots without discarding later rows', () => {
   const row = (index: number): SearchOcrRow => ({
     cells: [`query ${index}`, String(index), '100', '1%', '2'], confidence: 90, source: `${index}.jpg`,
   });
@@ -53,7 +63,7 @@ test('deduplicates overlapping screenshots and caps the report at twenty rows', 
     Array.from({ length: 15 }, (_, index) => row(index)),
     Array.from({ length: 15 }, (_, index) => row(index + 10)),
   ]);
-  assert.equal(merged.length, 20);
+  assert.equal(merged.length, 25);
   assert.equal(merged[10].cells[0], 'query 10');
-  assert.equal(merged[19].cells[0], 'query 19');
+  assert.equal(merged[24].cells[0], 'query 24');
 });

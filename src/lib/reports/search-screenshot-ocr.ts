@@ -1,5 +1,3 @@
-import { SEARCH_QUERY_LIMIT } from './types';
-
 export type SearchOcrRow = {
   cells: [string, string, string, string, string];
   confidence: number;
@@ -28,6 +26,10 @@ function numericText(value: string): string {
 }
 
 function isMetricToken(value: string): boolean {
+  const compact = value.replace(/\s+/g, '');
+  // Do not let the OCR corrections below turn ordinary words such as "globe"
+  // into numbers merely because they contain an l or o.
+  if (!/^[+-]?[\dOoIl|][\dOoIl|,.]*%?$/.test(compact)) return false;
   const normalized = numericText(value);
   return INTEGER.test(normalized) || DECIMAL.test(normalized);
 }
@@ -105,29 +107,48 @@ function combinePercentTokens(words: TsvWord[]): TsvWord[] {
 
 function rowFromLine(words: TsvWord[], source: string): SearchOcrRow | null {
   const line = combinePercentTokens(words);
-  const metricIndexes: number[] = [];
-  for (let index = line.length - 1; index >= 0 && metricIndexes.length < 4; index -= 1) {
-    if (isMetricToken(line[index].text)) metricIndexes.unshift(index);
-  }
-  if (metricIndexes.length !== 4) return null;
+  const allMetricIndexes = line.flatMap((word, index) => isMetricToken(word.text) ? [index] : []);
+  if (allMetricIndexes.length < 4) return null;
 
-  const [clicksIndex, impressionsIndex, ctrIndex, positionIndex] = metricIndexes;
-  if (!(clicksIndex < impressionsIndex && impressionsIndex < ctrIndex && ctrIndex < positionIndex)) return null;
+  // Looker Studio's comparison table has rank, clicks, click change,
+  // impressions, impression change, CTR, and CTR change. The sanctioned API
+  // table has clicks, impressions, CTR, and average position. Accept both and
+  // normalize them to the report's five stored columns.
+  const comparisonTable = allMetricIndexes.length >= 7;
+  const metricIndexes = comparisonTable
+    ? allMetricIndexes.slice(-7)
+    : allMetricIndexes.slice(-4);
+  const rankIndex = comparisonTable ? metricIndexes[0] : null;
+  const clicksIndex = comparisonTable ? metricIndexes[1] : metricIndexes[0];
+  const impressionsIndex = comparisonTable ? metricIndexes[3] : metricIndexes[1];
+  const ctrIndex = comparisonTable ? metricIndexes[5] : metricIndexes[2];
+  const positionIndex = comparisonTable ? null : metricIndexes[3];
 
   const clicks = numericText(line[clicksIndex].text);
   const impressions = numericText(line[impressionsIndex].text);
   const ctr = numericText(line[ctrIndex].text);
-  const position = numericText(line[positionIndex].text);
-  if (!INTEGER.test(clicks) || !INTEGER.test(impressions) || !DECIMAL.test(ctr) || !DECIMAL.test(position)) {
+  const position = positionIndex === null ? '' : numericText(line[positionIndex].text);
+  if (!INTEGER.test(clicks) || !INTEGER.test(impressions) || !DECIMAL.test(ctr)
+    || (position && !DECIMAL.test(position))) {
     return null;
   }
 
-  let queryWords = line.slice(0, clicksIndex);
-  if (queryWords.length > 1 && /^\d{1,3}[.)]?$/.test(queryWords[0].text)) queryWords = queryWords.slice(1);
+  let queryWords = comparisonTable
+    ? line.slice((rankIndex ?? -1) + 1, clicksIndex)
+    : line.slice(0, clicksIndex);
+  if (!comparisonTable && queryWords.length > 1 && /^\d{1,3}[.)]?$/.test(queryWords[0].text)) {
+    queryWords = queryWords.slice(1);
+  }
   const query = queryWords.map((word) => word.text).join(' ').replace(/\s+/g, ' ').trim();
   if (!query || queryWords.every((word) => HEADER_WORDS.test(word.text))) return null;
 
-  const usedWords = [...queryWords, line[clicksIndex], line[impressionsIndex], line[ctrIndex], line[positionIndex]];
+  const usedWords = [
+    ...queryWords,
+    line[clicksIndex],
+    line[impressionsIndex],
+    line[ctrIndex],
+    ...(positionIndex === null ? [] : [line[positionIndex]]),
+  ];
   const confidence = usedWords.reduce((sum, word) => sum + word.confidence, 0) / usedWords.length;
   return {
     cells: [query, clicks, impressions, ctr, position],
@@ -159,7 +180,6 @@ export function mergeSearchOcrRows(groups: SearchOcrRow[][]): SearchOcrRow[] {
       if (seen.has(key)) continue;
       seen.add(key);
       rows.push(row);
-      if (rows.length >= SEARCH_QUERY_LIMIT) return rows;
     }
   }
   return rows;

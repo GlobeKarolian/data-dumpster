@@ -402,7 +402,8 @@ row freezes the report window, landscape, formats, recipients and destinations.
 
 The Globe.com and Boston.com Web Search tables use the official Search Console
 Search Analytics API with the report's inclusive start and end dates, Web Search
-type, query dimension and top 20 rows sorted by clicks. The two Looker Studio
+type and query dimension, sorted by clicks. The report preserves every returned
+row rather than applying a product-side display cap. The two Looker Studio
 reports remain linked from the builder as a human audit trail; a report or short
 share URL does not grant API access and production does not replay a Google
 browser session. An interactive pull saves both tables and

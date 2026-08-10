@@ -16,10 +16,10 @@ import {
   REPORT_PLATFORM_LABELS,
   REPORT_PLATFORMS,
   periodLabel,
-  reportManualRows,
   type NarrativeBlock,
   type NarrativeSectionSpec,
 } from './types';
+import { reportManualRows } from './manual-rows';
 import {
   describeDirection,
   formatCount,

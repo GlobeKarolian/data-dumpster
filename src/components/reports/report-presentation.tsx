@@ -7,9 +7,9 @@ import {
   MANUAL_FIGURES,
   MANUAL_SECTIONS,
   periodLabel,
-  reportManualRows,
   type ManualSectionSpec,
 } from '@/lib/reports/types';
+import { reportManualRows } from '@/lib/reports/manual-rows';
 import { sourceUrlFor, type SearchTableId } from '@/lib/reports/search-console-sources';
 import {
   BrandScorecards,
@@ -103,15 +103,15 @@ export function ReportPresentation({
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-400">Google Web Search</p>
             <h2 className="mt-1 text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-              The top 20 searches for Globe.com and Boston.com
+              Web searches for Globe.com and Boston.com
             </h2>
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-              Ranked by URL clicks for the report dates. Each table is sourced from Google Search Console.
+              Every included row, ranked by URL clicks for the report dates. Each table is sourced from Google Search Console.
             </p>
           </div>
           <div className="grid items-start gap-4 xl:grid-cols-2">
             {searchSpecs.map((spec) => (
-              <ReadOnlyTable key={spec.id} spec={spec} doc={doc} limit={20} showSource />
+              <ReadOnlyTable key={spec.id} spec={spec} doc={doc} showSource />
             ))}
           </div>
           <Narrative title="What search demand tells us" text={doc.narrative.search} />
@@ -181,16 +181,14 @@ function Narrative({ title, text, prominent = false }: { title: string; text?: s
 function ReadOnlyTable({
   spec,
   doc,
-  limit,
   showSource = false,
 }: {
   spec: ManualSectionSpec;
   doc: ReportDocument;
-  limit?: number;
   showSource?: boolean;
 }) {
   const table = doc.manual.tables[spec.id];
-  const rows = reportManualRows(spec.id, table).slice(0, limit);
+  const rows = reportManualRows(spec.id, table);
   const searchId = spec.id as SearchTableId;
   const source = showSource ? sourceUrlFor(searchId, table?.sourceUrl) : null;
   return (
@@ -198,7 +196,7 @@ function ReadOnlyTable({
       title={spec.title}
       kind={showSource ? 'synced' : 'manual'}
       description={rows.length > 0
-        ? rows.length + (limit ? ' of up to ' + limit : '') + ' ranked rows'
+        ? rows.length + ' ranked rows'
         : 'No data has been pulled for this report yet.'}
       actions={source ? (
         <a href={source} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400">

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored Tesseract runtime and language assets are third-party build output.
+    "public/ocr/**",
   ]),
 ]);
 

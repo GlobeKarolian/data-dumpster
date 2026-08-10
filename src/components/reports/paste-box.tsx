@@ -7,6 +7,7 @@ import { formatRelative } from '@/components/ui/format';
 import { cn } from '@/lib/utils';
 import type { ManualSectionSpec, ManualTable } from '@/lib/reports/types';
 import { emptyTable, parseTable, rowsToTsv } from '@/lib/reports/tsv';
+import { reportManualRows } from '@/lib/reports/manual-rows';
 import { importAdobeFreeform, describeImport, type ImportSummary } from '@/lib/reports/freeform-import';
 import { readTabularFile } from '@/lib/reports/tabular-file';
 import { SectionCard } from './ui';
@@ -49,6 +50,10 @@ export function PasteBox({
   // pushes the table itself off screen.
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const parsed = React.useMemo(() => parseTable(table.raw, spec.columns), [table.raw, spec.columns]);
+  const currentRows = React.useMemo(
+    () => reportManualRows(spec.id, table),
+    [spec.id, table],
+  );
 
   const applyRaw = (raw: string) => {
     const result = parseTable(raw, spec.columns);
@@ -100,12 +105,12 @@ export function PasteBox({
   };
 
   const setCell = (rowIndex: number, colIndex: number, value: string) => {
-    const rows = table.rows.map((row, i) =>
+    const rows = currentRows.map((row, i) =>
       i === rowIndex ? row.map((cell, j) => (j === colIndex ? value : cell)) : row);
     applyRows(rows);
   };
 
-  const rowCount = table.rows.length;
+  const rowCount = currentRows.length;
 
   return (
     <SectionCard
@@ -201,13 +206,13 @@ export function PasteBox({
             }
             className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-zinc-900 placeholder:text-zinc-400 transition-colors focus:border-accent-600 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-600"
           />
-          {rowCount > 0 ? <PreviewTable spec={spec} rows={table.rows} /> : null}
+          {rowCount > 0 ? <PreviewTable spec={spec} rows={currentRows} /> : null}
         </div>
       ) : (
         <div>
           {spec.importer === 'adobeFreeform' && rowCount > 0 ? (
             <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
-              <ReferralChart rows={table.rows} rank={spec.importRank ?? 'subscriptions'} />
+              <ReferralChart rows={currentRows} rank={spec.importRank ?? 'subscriptions'} />
             </div>
           ) : null}
           <div className="overflow-x-auto">
@@ -230,7 +235,7 @@ export function PasteBox({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-              {table.rows.map((row, i) => {
+              {currentRows.map((row, i) => {
                 const parts = table.breakdown?.[row[0] ?? ''];
                 const isOpen = expanded === row[0];
                 return (
@@ -277,7 +282,7 @@ export function PasteBox({
                       <td className="px-1 py-1 text-right">
                         <button
                           type="button"
-                          onClick={() => applyRows(table.rows.filter((_, k) => k !== i))}
+                          onClick={() => applyRows(currentRows.filter((_, k) => k !== i))}
                           className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800"
                           aria-label={'Remove row ' + (i + 1)}
                         >
@@ -312,7 +317,7 @@ export function PasteBox({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => applyRows([...table.rows, spec.columns.map(() => '')])}
+              onClick={() => applyRows([...currentRows, spec.columns.map(() => '')])}
               disabled={disabled}
             >
               <Plus className="h-3 w-3" aria-hidden />

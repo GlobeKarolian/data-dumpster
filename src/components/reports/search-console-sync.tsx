@@ -45,7 +45,7 @@ export function SearchConsoleSync({
             ) : null}
           </div>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Top 20 Web Search queries for {period.start} through {period.end}, sorted by URL clicks,
+            Web Search queries for {period.start} through {period.end}, sorted by URL clicks,
             for Globe.com and Boston.com.
           </p>
         </div>

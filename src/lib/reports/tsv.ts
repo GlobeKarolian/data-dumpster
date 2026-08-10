@@ -126,14 +126,24 @@ export function parseTable(raw: string, columns: ManualColumnSpec[]): ParseResul
   const split = lines.map((line) => splitLine(line, delimiter).map((cell) => cell.trim()));
 
   let headerDropped = false;
+  let headerIndexes: number[] | null = null;
   if (split.length > 1 && looksLikeHeader(split[0], columns)) {
-    split.shift();
+    const header = split.shift() ?? [];
     headerDropped = true;
+    const normalized = header.map(normalizeHeader);
+    headerIndexes = columns.map((column) => {
+      const expected = [normalizeHeader(column.label), normalizeHeader(column.key)];
+      return normalized.findIndex((cell) => expected.includes(cell)
+        || (column.key === 'ctr' && cell === 'urlctr'));
+    });
   }
 
   let raggedRows = 0;
   const width = columns.length;
   const rows = split.map((cells) => {
+    if (headerIndexes) {
+      return headerIndexes.map((index) => index >= 0 ? (cells[index] ?? '') : '');
+    }
     if (cells.length !== width) raggedRows += 1;
     const padded = cells.slice(0, width);
     while (padded.length < width) padded.push('');

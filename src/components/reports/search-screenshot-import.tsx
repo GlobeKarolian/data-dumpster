@@ -105,7 +105,7 @@ export function SearchScreenshotImport({
       if (rows.length === 0) {
         setState({
           status: 'error',
-          message: 'No complete Search Query, URL Clicks, Impressions, CTR, and Avg Position rows were found. Crop closer to the table and try again.',
+          message: 'No complete Query, URL Clicks, Impressions, and URL CTR rows were found. Crop closer to the table and try again.',
         });
         return;
       }

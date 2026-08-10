@@ -217,16 +217,6 @@ export type ManualTable = {
 
 export type ManualBlock = Record<string, ManualTable>;
 
-export const SEARCH_QUERY_LIMIT = 20;
-
-/** Keep the screen, AI evidence, and every export on the same visible row set. */
-export function reportManualRows(sectionId: string, table: ManualTable | undefined): string[][] {
-  const rows = table?.rows ?? [];
-  return sectionId === 'globeSearch' || sectionId === 'bostonSearch'
-    ? rows.slice(0, SEARCH_QUERY_LIMIT)
-    : rows;
-}
-
 /**
  * External report sections. Search Console can be synchronized through its
  * official API; the referral report, paid dashboard and Apple News remain
@@ -237,9 +227,9 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'globeSearch',
     title: 'Globe.com Top Web Searches Sorted By URL Clicks',
-    hint: 'Drop screenshots of the Globe.com Looker Studio table, review the OCR, and use the extracted top 20 rows. Paste remains available as a fallback.',
+    hint: 'Drop screenshots of the Globe.com Looker Studio table, review the OCR, and use every extracted row. Paste remains available as a fallback.',
     importer: 'searchScreenshot',
-    importHint: 'Include Search Query, URL Clicks, Impressions, CTR, and Avg Position in each screenshot.',
+    importHint: 'Include Query, URL Clicks, Impressions, and URL CTR in each screenshot. Comparison columns are allowed.',
     columns: [
       { key: 'query', label: 'Search Query' },
       { key: 'clicks', label: 'URL Clicks', numeric: true },
@@ -251,9 +241,9 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'bostonSearch',
     title: 'Boston.com Top Web Searches Sorted By URL Clicks',
-    hint: 'Drop screenshots of the Boston.com Looker Studio table, review the OCR, and use the extracted top 20 rows. Paste remains available as a fallback.',
+    hint: 'Drop screenshots of the Boston.com Looker Studio table, review the OCR, and use every extracted row. Paste remains available as a fallback.',
     importer: 'searchScreenshot',
-    importHint: 'Include Search Query, URL Clicks, Impressions, CTR, and Avg Position in each screenshot.',
+    importHint: 'Include Query, URL Clicks, Impressions, and URL CTR in each screenshot. Comparison columns are allowed.',
     columns: [
       { key: 'query', label: 'Search Query' },
       { key: 'clicks', label: 'URL Clicks', numeric: true },

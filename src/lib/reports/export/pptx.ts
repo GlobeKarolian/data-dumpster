@@ -13,10 +13,10 @@ import {
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
   periodLabel,
-  reportManualRows,
   type Movement,
   type ReportPlatform,
 } from '@/lib/reports/types';
+import { reportManualRows } from '@/lib/reports/manual-rows';
 import {
   executiveLines,
   formatCount,

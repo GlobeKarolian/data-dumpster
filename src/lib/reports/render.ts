@@ -19,12 +19,12 @@ import {
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
   periodLabel,
-  reportManualRows,
   type ComputedBlock,
   type ManualState,
   type NarrativeBlock,
   type Period,
 } from './types';
+import { reportManualRows } from './manual-rows';
 
 export type ReportDocument = {
   title: string;

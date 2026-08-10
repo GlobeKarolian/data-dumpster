@@ -11,9 +11,9 @@ import {
   NARRATIVE_SECTIONS,
   REPORT_PLATFORMS,
   REPORT_PLATFORM_LABELS,
-  reportManualRows,
   type ComputedBlock,
 } from '@/lib/reports/types';
+import { reportManualRows } from '@/lib/reports/manual-rows';
 import { executiveLines, type ReportDocument } from '@/lib/reports/render';
 
 export type CsvValue = string | number | boolean | null | undefined;
