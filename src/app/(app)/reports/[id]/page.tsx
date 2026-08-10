@@ -7,6 +7,7 @@ import { DeleteReportButton } from '@/components/reports/delete-report-button';
 import { roleAtLeast } from '@/lib/roles';
 import { sanitizeReportNarrative } from '@/lib/reports/narrative-verification';
 import { reportLandscapeDestination } from '@/lib/reports/landscape-navigation';
+import { isSearchConsoleConfigured } from '@/lib/reports/search-console';
 import { readComputed, readManual, readNarrative } from '@/lib/reports/types';
 import { resolveContext } from '../../_lib/context';
 import { query, type SearchParamsInput } from '../../_lib/data';
@@ -148,6 +149,7 @@ export default async function WeeklyReportPage({
           orgName={report.org_name}
           landscapeName={report.landscape_name}
           canEdit={roleAtLeast(ctx.role, 'editor')}
+          searchConsoleConfigured={isSearchConsoleConfigured()}
           initial={{
             title: report.title,
             dataNote: report.data_note,

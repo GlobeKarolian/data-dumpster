@@ -402,9 +402,10 @@ row freezes the report window, landscape, formats, recipients and destinations.
 
 The Globe.com and Boston.com Web Search tables use the official Search Console
 Search Analytics API with the report's inclusive start and end dates, Web Search
-type, query dimension and top 100 rows sorted by clicks. The two Looker Studio
-reports remain linked from the builder as a human audit trail; production does
-not replay a Google browser session. An interactive pull saves both tables and
+type, query dimension and top 20 rows sorted by clicks. The two Looker Studio
+reports remain linked from the builder as a human audit trail; a report or short
+share URL does not grant API access and production does not replay a Google
+browser session. An interactive pull saves both tables and
 invalidates only the search narrative. A scheduled delivery performs the same
 pull when Search Console credentials are configured. Manual paste remains a
 fallback when the connector is intentionally absent.

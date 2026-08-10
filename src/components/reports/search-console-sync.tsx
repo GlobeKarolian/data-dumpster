@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CheckCircle2, ExternalLink, Link2, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Link2, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   SEARCH_DASHBOARDS,
@@ -13,6 +13,7 @@ import type { Period } from '@/lib/reports/types';
 
 export function SearchConsoleSync({
   period,
+  configured,
   disabled,
   busy,
   error,
@@ -22,6 +23,7 @@ export function SearchConsoleSync({
   onSync,
 }: {
   period: Period;
+  configured: boolean;
   disabled?: boolean;
   busy: boolean;
   error: string | null;
@@ -43,19 +45,29 @@ export function SearchConsoleSync({
             ) : null}
           </div>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Pulls the top 20 Web Search queries for {period.start} through {period.end}, sorted by URL clicks,
+            Top 20 Web Search queries for {period.start} through {period.end}, sorted by URL clicks,
             for Globe.com and Boston.com.
           </p>
         </div>
-        <Button type="button" variant="primary" size="sm" disabled={disabled || busy} onClick={onSync}>
+        <Button type="button" variant="primary" size="sm" disabled={disabled || busy || !configured} onClick={onSync}>
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden />}
-          {busy ? 'Pulling Google data…' : 'Pull report dates'}
+          {busy ? 'Pulling Google data…' : configured ? 'Pull report dates' : 'Google connection required'}
         </Button>
       </div>
+      {!configured ? (
+        <div className="mt-3 flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <p>
+            Automatic Google pull is not connected yet. These links open and document the Looker Studio sources,
+            but a pasted report link does not grant Search Console data access. Export or copy the two tables into
+            the sections below until the secure Google connection is enabled.
+          </p>
+        </div>
+      ) : null}
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         {(Object.entries(SEARCH_DASHBOARDS) as Array<[SearchTableId, (typeof SEARCH_DASHBOARDS)[SearchTableId]]>)
           .map(([id, dashboard]) => {
-            const value = sources[id] ?? dashboard.url;
+            const value = sources[id]?.trim() || dashboard.url;
             const parsed = parseSearchDashboardUrl(value);
             const href = sourceUrlFor(id, value);
             return (
@@ -84,7 +96,9 @@ export function SearchConsoleSync({
                   ? 'mt-1.5 block text-[10px] text-emerald-700 dark:text-emerald-400'
                   : 'mt-1.5 block text-[10px] text-red-600 dark:text-red-400'}>
                   {parsed
-                    ? 'Recognized Looker Studio report · ' + parsed.reportId.slice(0, 8) + '…'
+                    ? parsed.kind === 'report'
+                      ? 'Looker Studio report ready · ' + parsed.reportId.slice(0, 8) + '…'
+                      : 'Google short report link ready'
                     : 'Paste a Google Looker Studio report URL.'}
                 </span>
               </label>

@@ -84,15 +84,6 @@ function parseServiceAccount(raw: string): ServiceAccountCredentials {
 
 /** Read deployment credentials without ever returning their values to the client. */
 export function searchConsoleConfigFromEnv(): SearchConsoleConfig {
-  const globeSite = requiredEnv('GOOGLE_SEARCH_CONSOLE_GLOBE_SITE');
-  const bostonSite = requiredEnv('GOOGLE_SEARCH_CONSOLE_BOSTON_SITE');
-  if (!globeSite || !bostonSite) {
-    throw new SearchConsoleError(
-      'Search Console needs both the Globe.com and Boston.com property identifiers.',
-      'not_configured',
-    );
-  }
-
   const serviceAccount = requiredEnv('GOOGLE_SEARCH_CONSOLE_SERVICE_ACCOUNT_JSON');
   let credentials: SearchConsoleCredentials;
   if (serviceAccount) {
@@ -108,6 +99,15 @@ export function searchConsoleConfigFromEnv(): SearchConsoleConfig {
       );
     }
     credentials = { kind: 'refresh_token', clientId, clientSecret, refreshToken };
+  }
+
+  const globeSite = requiredEnv('GOOGLE_SEARCH_CONSOLE_GLOBE_SITE');
+  const bostonSite = requiredEnv('GOOGLE_SEARCH_CONSOLE_BOSTON_SITE');
+  if (!globeSite || !bostonSite) {
+    throw new SearchConsoleError(
+      'Search Console needs both the Globe.com and Boston.com property identifiers.',
+      'not_configured',
+    );
   }
 
   return {

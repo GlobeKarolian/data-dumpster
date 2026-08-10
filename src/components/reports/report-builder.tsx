@@ -31,6 +31,7 @@ export type ReportBuilderProps = {
   orgName: string;
   landscapeName: string | null;
   canEdit: boolean;
+  searchConsoleConfigured: boolean;
   initial: {
     title: string;
     dataNote: string | null;
@@ -68,7 +69,14 @@ function sectionSpec(id: string) {
  * it is only ever replaced by a recompute, which is the guarantee the whole
  * design rests on.
  */
-export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initial }: ReportBuilderProps) {
+export function ReportBuilder({
+  reportId,
+  orgName,
+  landscapeName,
+  canEdit,
+  searchConsoleConfigured,
+  initial,
+}: ReportBuilderProps) {
   const [title, setTitle] = React.useState(initial.title);
   const [dataNote, setDataNote] = React.useState(initial.dataNote ?? '');
   const [manual, setManual] = React.useState<ManualState>(initial.manual);
@@ -372,13 +380,14 @@ export function ReportBuilder({ reportId, orgName, landscapeName, canEdit, initi
       <div className="space-y-3">
         <SearchConsoleSync
           period={period}
+          configured={searchConsoleConfigured}
           disabled={!canEdit}
           busy={searchSyncing}
           error={searchSyncError}
           syncedAt={manual.tables.globeSearch?.updatedAt ?? manual.tables.bostonSearch?.updatedAt ?? null}
           sources={{
-            globeSearch: manual.tables.globeSearch?.sourceUrl ?? SEARCH_DASHBOARDS.globeSearch.url,
-            bostonSearch: manual.tables.bostonSearch?.sourceUrl ?? SEARCH_DASHBOARDS.bostonSearch.url,
+            globeSearch: manual.tables.globeSearch?.sourceUrl?.trim() || SEARCH_DASHBOARDS.globeSearch.url,
+            bostonSearch: manual.tables.bostonSearch?.sourceUrl?.trim() || SEARCH_DASHBOARDS.bostonSearch.url,
           }}
           onSourceChange={setSearchSource}
           onSync={() => { void syncSearchConsole(); }}

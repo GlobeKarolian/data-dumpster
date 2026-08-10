@@ -14,19 +14,22 @@ export const SEARCH_DASHBOARDS: Record<SearchTableId, { label: string; url: stri
 
 const LOOKER_HOSTS = new Set(['datastudio.google.com', 'lookerstudio.google.com']);
 const REPORT_PATH = /\/reporting\/([a-z0-9-]+)\/page\/([a-z0-9_-]+)/i;
+const SHORT_PATH = /\/s\/([a-z0-9_-]+)\/?$/i;
 
 export type SearchDashboardReference = {
   url: string;
-  reportId: string;
-  pageId: string;
-};
+} & (
+  | { kind: 'report'; reportId: string; pageId: string }
+  | { kind: 'short'; shareId: string }
+);
 
 /**
  * Validate and normalize a user-supplied Looker Studio report URL.
  *
  * The URL is an audit/configuration reference; automated query data still
- * comes from the sanctioned Search Console API. Accepting only Google's two
- * Looker hosts prevents a public report from becoming an arbitrary-link host.
+ * comes from the sanctioned Search Console API. Google emits both canonical
+ * `/reporting/.../page/...` URLs and session-aware `/s/...` share links, so the
+ * editor accepts both while still refusing to become an arbitrary-link host.
  */
 export function parseSearchDashboardUrl(value: string): SearchDashboardReference | null {
   let parsed: URL;
@@ -36,10 +39,19 @@ export function parseSearchDashboardUrl(value: string): SearchDashboardReference
     return null;
   }
   if (parsed.protocol !== 'https:' || !LOOKER_HOSTS.has(parsed.hostname.toLowerCase())) return null;
-  const match = parsed.pathname.match(REPORT_PATH);
-  if (!match) return null;
   parsed.hash = '';
-  return { url: parsed.toString(), reportId: match[1], pageId: match[2] };
+  const report = parsed.pathname.match(REPORT_PATH);
+  if (report) {
+    return {
+      kind: 'report',
+      url: parsed.toString(),
+      reportId: report[1],
+      pageId: report[2],
+    };
+  }
+  const short = parsed.pathname.match(SHORT_PATH);
+  if (short) return { kind: 'short', url: parsed.toString(), shareId: short[1] };
+  return null;
 }
 
 export function sourceUrlFor(
