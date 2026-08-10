@@ -30,6 +30,10 @@ export function buildContentSecurityPolicy(isDevelopment: boolean): string {
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
     `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ''}`,
+    // Screenshot-to-table OCR runs in a self-hosted Web Worker. The blob is
+    // only a same-origin bootstrap wrapper; its worker script and model files
+    // are all served by this app.
+    "worker-src 'self' blob:",
     // The browser talks only to this origin; every vendor call is server-side.
     "connect-src 'self'",
     'upgrade-insecure-requests',

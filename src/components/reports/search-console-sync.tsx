@@ -59,8 +59,8 @@ export function SearchConsoleSync({
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <p>
             Automatic Google pull is not connected yet. These links open and document the Looker Studio sources,
-            but a pasted report link does not grant Search Console data access. Export or copy the two tables into
-            the sections below until the secure Google connection is enabled.
+            but a pasted report link does not grant Search Console data access. Take screenshots of each table and
+            drop them into the matching section below; the browser will extract editable rows for review.
           </p>
         </div>
       ) : null}

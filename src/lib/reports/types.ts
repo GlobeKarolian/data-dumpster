@@ -171,7 +171,7 @@ export type ManualColumnSpec = {
  * browser and copying gives a shape no delimiter sniffer can recover. Those
  * sections take the file itself.
  */
-export type ManualImporter = 'adobeFreeform';
+export type ManualImporter = 'adobeFreeform' | 'searchScreenshot';
 
 export type ManualSectionSpec = {
   id: string;
@@ -237,7 +237,9 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'globeSearch',
     title: 'Globe.com Top Web Searches Sorted By URL Clicks',
-    hint: 'Pulled from the same Globe.com Search Console property shown in the linked dashboard. Paste remains available as a fallback.',
+    hint: 'Drop screenshots of the Globe.com Looker Studio table, review the OCR, and use the extracted top 20 rows. Paste remains available as a fallback.',
+    importer: 'searchScreenshot',
+    importHint: 'Include Search Query, URL Clicks, Impressions, CTR, and Avg Position in each screenshot.',
     columns: [
       { key: 'query', label: 'Search Query' },
       { key: 'clicks', label: 'URL Clicks', numeric: true },
@@ -249,7 +251,9 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
   {
     id: 'bostonSearch',
     title: 'Boston.com Top Web Searches Sorted By URL Clicks',
-    hint: 'Pulled from the same Boston.com Search Console property shown in the linked dashboard. Paste remains available as a fallback.',
+    hint: 'Drop screenshots of the Boston.com Looker Studio table, review the OCR, and use the extracted top 20 rows. Paste remains available as a fallback.',
+    importer: 'searchScreenshot',
+    importHint: 'Include Search Query, URL Clicks, Impressions, CTR, and Avg Position in each screenshot.',
     columns: [
       { key: 'query', label: 'Search Query' },
       { key: 'clicks', label: 'URL Clicks', numeric: true },

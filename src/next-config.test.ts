@@ -13,4 +13,5 @@ test('production CSP never permits eval', () => {
   const policy = buildContentSecurityPolicy(false);
   assert.match(policy, /script-src 'self' 'unsafe-inline'/);
   assert.doesNotMatch(policy, /unsafe-eval/);
+  assert.match(policy, /worker-src 'self' blob:/);
 });

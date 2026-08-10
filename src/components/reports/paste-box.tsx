@@ -11,6 +11,7 @@ import { importAdobeFreeform, describeImport, type ImportSummary } from '@/lib/r
 import { readTabularFile } from '@/lib/reports/tabular-file';
 import { SectionCard } from './ui';
 import { ReferralChart } from './referral-chart';
+import { SearchScreenshotImport } from './search-screenshot-import';
 
 const DELIMITER_LABEL: Record<string, string> = {
   tab: 'tab separated',
@@ -161,13 +162,28 @@ export function PasteBox({
     >
       {mode === 'paste' ? (
         <div className="space-y-2 p-4">
-          {spec.importer ? (
+          {spec.importer === 'adobeFreeform' ? (
             <>
               <DropZone
                 hint={spec.importHint}
                 state={importState}
                 disabled={disabled}
                 onFile={importFile}
+              />
+              <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500">
+                or paste rows directly
+              </p>
+            </>
+          ) : null}
+          {spec.importer === 'searchScreenshot' ? (
+            <>
+              <SearchScreenshotImport
+                spec={spec}
+                disabled={disabled}
+                onApply={(next) => {
+                  onChange(next);
+                  setMode('grid');
+                }}
               />
               <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500">
                 or paste rows directly
@@ -189,7 +205,7 @@ export function PasteBox({
         </div>
       ) : (
         <div>
-          {spec.importer && rowCount > 0 ? (
+          {spec.importer === 'adobeFreeform' && rowCount > 0 ? (
             <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
               <ReferralChart rows={table.rows} rank={spec.importRank ?? 'subscriptions'} />
             </div>
