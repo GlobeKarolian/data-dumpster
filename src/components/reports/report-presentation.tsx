@@ -109,7 +109,7 @@ export function ReportPresentation({
               Every included row, ranked by URL clicks for the report dates. Each table is sourced from Google Search Console.
             </p>
           </div>
-          <div className="grid items-start gap-4 xl:grid-cols-2">
+          <div className="space-y-4">
             {searchSpecs.map((spec) => (
               <ReadOnlyTable key={spec.id} spec={spec} doc={doc} showSource />
             ))}
@@ -123,7 +123,7 @@ export function ReportPresentation({
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Referral</p>
               <h2 className="mt-1 text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">Platform referral performance</h2>
             </div>
-            <div className="grid items-start gap-4 xl:grid-cols-2">
+            <div className="space-y-4">
               {otherSpecs.map((spec) => (
                 <ReadOnlyTable key={spec.id} spec={spec} doc={doc} />
               ))}

@@ -266,7 +266,7 @@ export function TopPostsSection({ computed }: { computed: ComputedBlock }) {
   const bgmPosts = computed.bgmTopPosts
     ?? computed.topPosts.filter((post) => post.isBgmOwned);
   return (
-    <div className="grid items-start gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
       <TopPostGroup
         title="Top Engaged Posts — Market"
         description="The five most engaged posts from every brand in this landscape."
@@ -409,7 +409,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
   );
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
       <SectionCard
         title="Net Followers Added by BGM Brand"
         kind="computed"
