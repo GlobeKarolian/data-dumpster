@@ -9,6 +9,7 @@ describe('request proxy', () => {
   it('leaves public product and policy pages available to reviewers', async () => {
     for (const pathname of [
       '/about',
+      '/about/internal',
       '/about/privacy',
       '/about/data-deletion',
       '/about/terms',

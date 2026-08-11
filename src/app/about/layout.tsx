@@ -3,6 +3,7 @@ import { DumpsterLogo } from '@/components/shell/logo';
 
 const policyLinks = [
   { href: '/about', label: 'Product' },
+  { href: '/about/internal', label: 'Inside BGM' },
   { href: '/about/training', label: 'Training' },
   { href: '/about/privacy', label: 'Privacy' },
   { href: '/about/data-deletion', label: 'Data deletion' },
