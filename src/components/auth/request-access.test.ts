@@ -16,11 +16,13 @@ test('public request flow is approval-gated and does not enumerate accounts', ()
   );
   const schema = readFileSync(resolve(root, 'src/db/schema.ts'), 'utf8');
 
-  assert.match(page, /No access is granted until a person approves it/);
-  assert.match(page, /single-use setup link/);
+  assert.doesNotMatch(page, /Get inside/);
+  assert.doesNotMatch(page, /Ask for access\. Skip the invite chase/);
+  assert.doesNotMatch(page, /The administrators are alerted automatically/);
   assert.match(page, /<RequestAccessHero \/>/);
   assert.match(page, /relative min-h-dvh overflow-hidden bg-black/);
   assert.match(page, /bg-white\/95/);
+  assert.match(page, /<h1 className="text-2xl font-semibold tracking-tight">Request access<\/h1>/);
   assert.match(hero, /B7aksBgcJzFDO\/giphy\.gif/);
   assert.match(hero, /object-cover object-center/);
   assert.match(hero, /gifs\/ace-ventura-funny-dog-B7aksBgcJzFDO/);
