@@ -62,6 +62,8 @@ export interface StartRefreshJobInput {
   since: Date;
   until: Date;
   idempotencyKey: string;
+  /** Named-operator action that bypasses the normal 12-hour freshness reuse. */
+  forceCollection?: boolean;
 }
 
 export class RefreshIdempotencyConflictError extends Error {
@@ -460,7 +462,7 @@ async function expandActiveRefreshJob(
         platforms: queuePlatforms,
         since: input.since,
         until: input.until,
-        force: false,
+        force: input.forceCollection ?? false,
       })
     : { queued: 0, channelIds: [] };
 
@@ -585,7 +587,7 @@ export async function startLandscapeRefresh(
     platforms: effectivePlatforms,
     since: input.since,
     until: input.until,
-    force: false,
+    force: input.forceCollection ?? false,
   });
   const initialStatus: RefreshJobStatus = enqueued.channelIds.length > 0 ? 'queued' : 'completed';
   const now = new Date();

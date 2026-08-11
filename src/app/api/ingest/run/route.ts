@@ -8,7 +8,9 @@
 import { randomUUID } from 'node:crypto';
 import { after } from 'next/server';
 import { z } from 'zod';
-import { apiHandler, requireRole, HttpError, assertLandscapeAccessible } from '@/lib/session';
+import { apiHandler, requireOrg, HttpError, assertLandscapeAccessible } from '@/lib/session';
+import { canTriggerManualRefresh } from '@/lib/manual-refresh-policy';
+import { roleAtLeast } from '@/lib/roles';
 import { checkRateLimit, LIMITS } from '../../_lib/rate-limit';
 import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import {
@@ -82,7 +84,14 @@ function assertBackgroundDispatchReady(): void {
 }
 
 export const POST = apiHandler(async (req) => {
-  const session = await requireRole('editor');
+  const session = await requireOrg();
+  if (!canTriggerManualRefresh(session.email)) {
+    throw new HttpError(
+      403,
+      'Manual data refresh is limited to the designated data operators.',
+      'manual_refresh_forbidden',
+    );
+  }
   const { orgId, userId } = session;
   const gate = checkRateLimit(orgId, LIMITS.ingest);
   if (!gate.ok) throw new HttpError(429, gate.message, 'rate_limited');
@@ -104,6 +113,7 @@ export const POST = apiHandler(async (req) => {
       since: body.since,
       until: body.until,
       idempotencyKey,
+      forceCollection: true,
     });
     if (started.snapshot.status === 'queued' || started.snapshot.status === 'running') {
       after(() => runRefreshJobAndContinue(started.snapshot.id));
@@ -132,7 +142,10 @@ export const POST = apiHandler(async (req) => {
 });
 
 export const GET = apiHandler(async (req) => {
-  const session = await requireRole('editor');
+  const session = await requireOrg();
+  if (!roleAtLeast(session.role, 'editor') && !canTriggerManualRefresh(session.email)) {
+    throw new HttpError(403, 'Refresh status requires editor access.', 'forbidden');
+  }
   const { orgId } = session;
   const query = activeQuerySchema.parse({
     landscapeId: req.nextUrl.searchParams.get('landscapeId') ?? undefined,

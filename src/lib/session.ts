@@ -62,6 +62,7 @@ export interface OrgContext {
   orgId: string;
   userId: string;
   role: Role;
+  email: string | null;
 }
 
 /**
@@ -87,11 +88,11 @@ export async function requireSession(): Promise<Session> {
  */
 export async function requireOrg(): Promise<OrgContext> {
   const session = await requireSession();
-  const { id, orgId, role } = session.user;
+  const { id, orgId, role, email } = session.user;
   if (!orgId || !role) {
     throw new AuthError('unauthenticated', 'Your session is out of date. Sign in again.');
   }
-  return { orgId, userId: id, role };
+  return { orgId, userId: id, role, email: email ?? null };
 }
 
 /**

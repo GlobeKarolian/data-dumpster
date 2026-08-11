@@ -41,7 +41,7 @@ test('production opens exactly two collection windows and recovery cannot enqueu
   assert.match(route, /mode === 'scheduled'[\s\S]*startAutomaticRefreshCoordinators\(\)/);
 });
 
-test('the shell is a status monitor and direct coordinators respect the freshness fence', () => {
+test('automatic collection keeps its fence while named operators can start a forced refresh', () => {
   const root = process.cwd();
   const button = readFileSync(
     resolve(root, 'src/components/shell/refresh-button.tsx'),
@@ -55,10 +55,17 @@ test('the shell is a status monitor and direct coordinators respect the freshnes
     resolve(root, 'src/lib/adapters/refresh-jobs.ts'),
     'utf8',
   );
+  const route = readFileSync(
+    resolve(root, 'src/app/api/ingest/run/route.ts'),
+    'utf8',
+  );
 
   assert.match(button, /Automatic · 2× daily/);
   assert.match(request, /monitor: '1'/);
-  assert.doesNotMatch(button, /startRefreshJob|method:\s*['"]POST['"]/);
-  assert.doesNotMatch(request, /startRefreshJob|method:\s*['"]POST['"]/);
+  assert.match(button, /manualRefreshAllowed/);
+  assert.match(request, /startRefreshJob[\s\S]*method:\s*'POST'/);
+  assert.match(route, /canTriggerManualRefresh\(session\.email\)/);
+  assert.match(route, /forceCollection:\s*true/);
+  assert.match(coordinators, /force:\s*input\.forceCollection \?\? false/);
   assert.doesNotMatch(coordinators, /force:\s*true/);
 });

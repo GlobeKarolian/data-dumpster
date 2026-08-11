@@ -5,6 +5,7 @@ import {
   activeRefreshUrl,
   getActiveRefreshJob,
   getRefreshJob,
+  startRefreshJob,
 } from './refresh-request';
 
 const job: RefreshJobSnapshot = {
@@ -72,4 +73,31 @@ test('job polling reads the tenant-protected job endpoint', async () => {
   });
   assert.equal(requested, '/api/ingest/jobs/' + job.id);
   assert.equal(found.remaining, 0);
+});
+
+test('manual refresh posts the selected scope to the protected endpoint', async () => {
+  let requested = '';
+  let init: RequestInit | undefined;
+  const found = await startRefreshJob({
+    landscapeId: job.landscapeId,
+    since: job.requiredSince,
+    until: job.requiredUntil,
+    platforms: ['youtube'],
+  }, {
+    fetcher: async (input, requestInit) => {
+      requested = String(input);
+      init = requestInit;
+      return new Response(JSON.stringify({ job }), { status: 202 });
+    },
+  });
+
+  assert.equal(requested, '/api/ingest/run');
+  assert.equal(init?.method, 'POST');
+  assert.deepEqual(JSON.parse(String(init?.body)), {
+    landscapeId: job.landscapeId,
+    since: job.requiredSince,
+    until: job.requiredUntil,
+    platforms: ['youtube'],
+  });
+  assert.equal(found.id, job.id);
 });

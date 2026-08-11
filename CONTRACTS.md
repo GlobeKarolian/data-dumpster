@@ -173,16 +173,20 @@ The durable Postgres queue:
   force; and
 - tracks attempted freshness separately from certified coverage.
 
-The shell exposes automatic collection status rather than a user-triggered paid
-refresh. New freshness windows open at 00:00 and 12:00 UTC. Offset recovery
+The shell exposes automatic collection status to ordinary users. Two named data
+operators (`matt.karolian@globe.com` and `matt@boston.com`) also receive an
+explicit manual-refresh control. New freshness windows open at 00:00 and 12:00
+UTC. Offset recovery
 workers may resume continuations, paid receipts and eligible retries already in
 the durable queue, but they never reconcile fresh profiles into another window.
 The browser can monitor an active `refresh_jobs` coordinator and may be closed
-without stopping collection. The authenticated `POST /api/ingest/run` remains
-available for controlled recovery clients, but it respects the same twelve-hour
-freshness fence and cannot force a third normal crawl. Terminal counters and
-activity are frozen because the pooled channel queue continues changing after a
-coordinator finishes.
+without stopping collection. The authenticated `POST /api/ingest/run` is denied
+to every other identity and lets those two operators deliberately bypass the
+twelve-hour freshness fence. Landscape authorization, paid-endpoint rate limits,
+pooled channel leases and one active coordinator per landscape still apply, so
+an overlapping manual request attaches to existing work instead of buying a
+duplicate crawl. Terminal counters and activity are frozen because the pooled
+channel queue continues changing after a coordinator finishes.
 
 Neon's HTTP driver does not provide a multi-statement transaction. The write
 order is load-bearing: stable platform identity first, audience second, posts

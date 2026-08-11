@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
 import { AppShell, type ShellLandscape } from '@/components/shell/app-shell';
+import { canTriggerManualRefresh } from '@/lib/manual-refresh-policy';
 import type { Role } from '@/lib/roles';
 import { query } from './_lib/data';
 
@@ -33,11 +34,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let orgId: string;
   let userId: string;
   let role: Role;
+  let manualRefreshAllowed: boolean;
   try {
     const session = await requireOrg();
     orgId = session.orgId;
     userId = session.userId;
     role = session.role;
+    manualRefreshAllowed = canTriggerManualRefresh(session.email);
   } catch {
     redirect('/login');
   }
@@ -99,5 +102,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     companies: byLandscape.get(l.id) ?? [],
   }));
 
-  return <AppShell landscapes={shellLandscapes} role={role}>{children}</AppShell>;
+  return (
+    <AppShell
+      landscapes={shellLandscapes}
+      role={role}
+      manualRefreshAllowed={manualRefreshAllowed}
+    >
+      {children}
+    </AppShell>
+  );
 }

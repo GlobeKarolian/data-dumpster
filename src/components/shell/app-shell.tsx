@@ -23,10 +23,12 @@ export interface ShellLandscape extends LandscapeOption {
 export function AppShell({
   landscapes,
   role,
+  manualRefreshAllowed,
   children,
 }: {
   landscapes: ShellLandscape[];
   role: Role;
+  manualRefreshAllowed: boolean;
   children: React.ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
@@ -58,6 +60,7 @@ export function AppShell({
           landscapeName={active?.name ?? null}
           landscapeId={active?.id ?? null}
           role={role}
+          manualRefreshAllowed={manualRefreshAllowed}
           onOpenNavigation={() => setMobileNavOpen(true)}
         />
         <main className="w-full min-w-0 max-w-full flex-1 px-4 py-5 lg:px-6">

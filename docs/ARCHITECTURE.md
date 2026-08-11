@@ -254,13 +254,15 @@ profiles and create newly due work. Offset recovery invocations call the same
 route with `mode=recover`; that mode skips reconciliation and can only claim
 continuations, paid snapshot receipts and retries already in the durable queue.
 
-The shell is a status monitor; clicking it does not purchase or queue data. It
-polls the tenant-protected job endpoint when an existing coordinator is active
-and shows worker-active profiles, queued profiles, eligible retry times and
-recent outcomes. `POST /api/ingest/run` remains available for controlled
-recovery clients and validates the editor and tenant, but it uses the same
-twelve-hour freshness fence rather than forcing settled profiles due. One
-active coordinator per landscape coalesces overlapping scopes. The separate
+The shell is a status monitor for ordinary users. Two named data operators
+(`matt.karolian@globe.com` and `matt@boston.com`) also receive a manual-refresh
+control. It polls the tenant-protected job endpoint when an existing coordinator
+is active and shows worker-active profiles, queued profiles, eligible retry
+times and recent outcomes. `POST /api/ingest/run` is server-authorized against
+that exact operator allowlist and can deliberately force settled profiles due;
+tenant/landscape checks and the paid-endpoint rate limit still apply. One active
+coordinator per landscape coalesces overlapping scopes, and pooled channel
+leases prevent a concurrent request from purchasing duplicate work. The separate
 `/api/cron/refresh` wake runs every ten minutes only to recover an existing
 coordinator dispatch; it creates no estate demand. Terminal progress/activity
 is frozen, so later pooled collection cannot reopen or rewrite an old job.

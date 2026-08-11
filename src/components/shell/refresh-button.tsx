@@ -28,6 +28,7 @@ import {
 import {
   getActiveRefreshJob,
   getRefreshJob,
+  startRefreshJob,
 } from './refresh-request';
 
 const PLATFORM_SET = new Set<string>(ADAPTER_SUPPORTED_PLATFORMS);
@@ -91,10 +92,12 @@ export function RefreshButton({
   className,
   landscapeId,
   platforms,
+  manualRefreshAllowed,
 }: {
   className?: string;
   landscapeId: string;
   platforms?: Platform[];
+  manualRefreshAllowed: boolean;
 }) {
   const router = useRouter();
   const { searchParams } = useUrlState();
@@ -118,6 +121,8 @@ export function RefreshButton({
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [panelPosition, setPanelPosition] = React.useState({ top: 64, left: 16, maxHeight: 640 });
   const [activityOpen, setActivityOpen] = React.useState(true);
+  const [starting, setStarting] = React.useState(false);
+  const [startError, setStartError] = React.useState<string | null>(null);
   const anchorRef = React.useRef<HTMLDivElement>(null);
   const refreshedJobs = React.useRef(new Set<string>());
   const scopedJob = attachedScope === scopeKey ? job : null;
@@ -234,14 +239,35 @@ export function RefreshButton({
     };
   }, [acceptJob, scopedJob]);
 
-  const run = () => {
+  const run = async () => {
     openPanel();
     setActivityOpen(true);
+    if (!manualRefreshAllowed || active || starting) return;
+
+    setStarting(true);
+    setStartError(null);
+    try {
+      const started = await startRefreshJob({
+        landscapeId,
+        since: requiredSince,
+        until: requiredUntil,
+        platforms: selectedPlatforms.length > 0 ? selectedPlatforms : undefined,
+      });
+      acceptJob(started);
+    } catch (cause) {
+      setStartError(cause instanceof Error ? cause.message : 'The refresh could not be started.');
+    } finally {
+      setStarting(false);
+    }
   };
 
   const buttonLabel = active && scopedJob
     ? 'Refreshing · ' + scopedJob.settled + '/' + scopedJob.total
-    : 'Automatic · 2× daily';
+    : starting
+      ? 'Starting refresh…'
+      : manualRefreshAllowed
+        ? 'Refresh now'
+        : 'Automatic · 2× daily';
   const liveSummary = scopedJob
     ? scopedJob.settled + ' of ' + scopedJob.total + ' profiles settled.'
     : 'Automatic refresh is scheduled twice daily.';
@@ -251,9 +277,13 @@ export function RefreshButton({
       <Tooltip
         content={(
           <span className="block">
-            Public profile data refreshes automatically twice daily.
+            {manualRefreshAllowed
+              ? 'Start a manual refresh for the selected landscape and date window.'
+              : 'Public profile data refreshes automatically twice daily.'}
             <span className="mt-1.5 block text-zinc-500 dark:text-zinc-400">
-              Pending receipts and retries resume in the background without opening another refresh window.
+              {manualRefreshAllowed
+                ? 'Paid source calls are pooled and an active refresh is reused instead of duplicated.'
+                : 'Pending receipts and retries resume in the background without opening another refresh window.'}
             </span>
           </span>
         )}
@@ -264,12 +294,13 @@ export function RefreshButton({
         <Button
           variant="primary"
           size="sm"
-          onClick={run}
-          aria-label="Automatic refresh status"
-          aria-busy={active}
+          onClick={() => { void run(); }}
+          aria-label={manualRefreshAllowed ? 'Refresh data now' : 'Automatic refresh status'}
+          aria-busy={active || starting}
+          disabled={starting}
           className="w-full justify-center whitespace-nowrap"
         >
-          {active ? (
+          {active || starting ? (
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
           ) : (
             <Clock3 className="h-3 w-3" aria-hidden />
@@ -299,7 +330,9 @@ export function RefreshButton({
             )}
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                {active && scopedJob
+                {starting
+                  ? 'Starting manual refresh'
+                  : active && scopedJob
                   ? 'Refreshing ' + plural(scopedJob.total, 'profile', 'profiles')
                   : scopedJob?.status === 'completed'
                     ? 'Refresh complete'
@@ -307,6 +340,12 @@ export function RefreshButton({
                       ? 'Refresh finished with notes'
                       : 'Automatic refresh is on'}
               </p>
+
+              {startError ? (
+                <p className="mt-2 rounded bg-red-50 px-2 py-1.5 text-[11px] leading-relaxed text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                  {startError}
+                </p>
+              ) : null}
 
               {scopedJob ? (
                 <>
@@ -436,6 +475,10 @@ export function RefreshButton({
                     ) : null}
                   </div>
                 </>
+              ) : starting ? (
+                <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  Registering the landscape profiles in the durable collection queue.
+                </p>
               ) : (
                 <div className="mt-1 space-y-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                   <p>

@@ -63,3 +63,19 @@ export async function getActiveRefreshJob(
   });
   return (await responseEnvelope(response)).job;
 }
+
+export async function startRefreshJob(
+  request: RefreshScopeRequest,
+  options: { fetcher?: typeof fetch; signal?: AbortSignal } = {},
+): Promise<RefreshJobSnapshot> {
+  const response = await (options.fetcher ?? fetch)('/api/ingest/run', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    signal: options.signal,
+  });
+  const envelope = await responseEnvelope(response);
+  if (!envelope.job) throw new Error('The refresh service returned no job status.');
+  return envelope.job;
+}

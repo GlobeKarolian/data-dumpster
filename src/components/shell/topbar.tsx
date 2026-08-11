@@ -65,6 +65,7 @@ export function Topbar({
   landscapeName,
   landscapeId,
   role,
+  manualRefreshAllowed,
   onOpenNavigation,
 }: {
   companies: CompanyOption[];
@@ -73,6 +74,7 @@ export function Topbar({
   landscapeName: string | null;
   landscapeId: string | null;
   role: Role;
+  manualRefreshAllowed: boolean;
   onOpenNavigation: () => void;
 }) {
   const pathname = usePathname();
@@ -135,10 +137,11 @@ export function Topbar({
           {landscapeId && (pathname === '/cross-channel' || pathname === '/leaderboard' || isPlatform) ? (
           <NewsroomDisplayLink landscapeId={landscapeId} platform={fixedPlatform} />
           ) : null}
-          {roleAtLeast(role, 'editor') && landscapeId ? (
+          {(roleAtLeast(role, 'editor') || manualRefreshAllowed) && landscapeId ? (
           <RefreshButton
             landscapeId={landscapeId}
             platforms={fixedPlatform ? [fixedPlatform] : undefined}
+            manualRefreshAllowed={manualRefreshAllowed}
           />
           ) : null}
         </div>

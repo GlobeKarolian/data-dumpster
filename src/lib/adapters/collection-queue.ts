@@ -494,7 +494,8 @@ async function enqueueDemandedChannels(
             channel_collection_state.coverage_until
           ) >= ${staleBefore}
           THEN channel_collection_state.status
-        WHEN channel_collection_state.status = 'succeeded'
+        WHEN NOT ${options.force}
+          AND channel_collection_state.status = 'succeeded'
           AND NOT channel_collection_state.has_more
           AND channel_collection_state.coverage_since <= least(
             channel_collection_state.required_since,
@@ -534,7 +535,8 @@ async function enqueueDemandedChannels(
             channel_collection_state.coverage_until
           ) >= ${staleBefore}
           THEN channel_collection_state.next_attempt_at
-        WHEN channel_collection_state.status = 'succeeded'
+        WHEN NOT ${options.force}
+          AND channel_collection_state.status = 'succeeded'
           AND NOT channel_collection_state.has_more
           AND channel_collection_state.coverage_since <= least(
             channel_collection_state.required_since,
@@ -574,7 +576,8 @@ async function enqueueDemandedChannels(
             channel_collection_state.coverage_until
           ) >= ${staleBefore}
           THEN channel_collection_state.last_error
-        WHEN channel_collection_state.status = 'succeeded'
+        WHEN NOT ${options.force}
+          AND channel_collection_state.status = 'succeeded'
           AND NOT channel_collection_state.has_more
           AND channel_collection_state.coverage_since <= least(
             channel_collection_state.required_since,
