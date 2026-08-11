@@ -599,7 +599,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               <div key={brand.companyId} className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] items-center gap-3">
                 <p className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{brand.name}</p>
                 <div className="relative grid h-5 grid-cols-2">
-                  <div className="flex justify-end overflow-hidden border-r border-zinc-300 dark:border-zinc-700">
+                  <div className="flex justify-end border-r border-zinc-300 dark:border-zinc-700">
                     <div className="flex h-3 self-center" style={{ width: negativeWidth + '%' }}>
                       {negative.map(([platform, value]) => (
                         <ChartSegment
@@ -614,7 +614,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
                       ))}
                     </div>
                   </div>
-                  <div className="flex overflow-hidden">
+                  <div className="flex">
                     <div className="flex h-3 self-center" style={{ width: positiveWidth + '%' }}>
                       {positive.map(([platform, value]) => (
                         <ChartSegment

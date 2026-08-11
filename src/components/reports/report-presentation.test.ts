@@ -19,6 +19,11 @@ describe('weekly report presentation', () => {
     assert.match(panel, /brand\.engagementByPlatform/);
     assert.match(panel, /<Tooltip/);
     assert.match(panel, /aria-label=\{brandName \+ ', ' \+ label \+ ': ' \+ formattedValue\}/);
+    assert.doesNotMatch(
+      panel,
+      /justify-end overflow-hidden|className="flex overflow-hidden"/,
+      'chart containers must not clip the tooltip above their bars',
+    );
     assert.match(compute, /engagementByPlatform,/);
     assert.match(compute, /viewsByPlatform,/);
   });
