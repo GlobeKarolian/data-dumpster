@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   ArrowRight,
   BarChart3,
   Bell,
+  BookOpen,
+  CirclePlay,
   Database,
   Download,
   Eye,
@@ -33,6 +36,20 @@ export const metadata: Metadata = {
       'One competitive view across the social platforms that shape the news cycle.',
     type: 'website',
     url: 'https://pressbox-kappa.vercel.app/about',
+    images: [
+      {
+        url: 'https://pressbox-kappa.vercel.app/product/data-dumpster-social.png',
+        width: 1200,
+        height: 630,
+        alt: 'Data Dumpster competitive intelligence for newsrooms',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Data Dumpster — Know what is breaking through',
+    description: 'Competitive intelligence built for newsrooms.',
+    images: ['https://pressbox-kappa.vercel.app/product/data-dumpster-social.png'],
   },
 };
 
@@ -109,77 +126,6 @@ const workflowSteps = [
   },
 ] as const;
 
-function ProductScreen() {
-  return (
-    <div className={styles.productScreen} aria-label="Illustration of the Data Dumpster cross-channel workspace">
-      <div className={styles.screenTopbar}>
-        <div className={styles.screenBrand}>
-          <span className={styles.screenMark}><DumpsterMark className="h-4 w-4" /></span>
-          <span>Data Dumpster</span>
-        </div>
-        <span className={styles.screenMockLabel}>CONCEPT UI · SAMPLE DATA</span>
-        <div className={styles.windowDots} aria-hidden="true"><i /><i /><i /></div>
-      </div>
-      <div className={styles.screenBody}>
-        <aside className={styles.mockSidebar}>
-          <div className={styles.landscapePill}>
-            <strong>Boston News</strong>
-            <span>22 companies</span>
-          </div>
-          <div className={styles.mockNav}>
-            <span className={styles.mockNavActive}><BarChart3 size={15} /> Cross-Channel</span>
-            {platforms.slice(0, 6).map((platform) => (
-              <span key={platform}>
-                <PlatformIcon
-                  platform={platform}
-                  className={
-                    platform === 'twitter' || platform === 'threads'
-                      ? 'h-3.5 w-3.5 !text-zinc-50'
-                      : 'h-3.5 w-3.5'
-                  }
-                />
-                {PLATFORM_LABELS[platform]}
-              </span>
-            ))}
-          </div>
-        </aside>
-        <div className={styles.mockCanvas}>
-          <div className={styles.canvasHeader}>
-            <div>
-              <span>Cross-Channel</span>
-              <small>Boston News Landscape</small>
-            </div>
-            <span className={styles.livePill}>Automatic · 2× daily</span>
-          </div>
-          <div className={styles.statGrid}>
-            <div><span>Audience</span><strong>8.7M</strong><i className={styles.sparkOne} /></div>
-            <div><span>Posts</span><strong>1,284</strong><i className={styles.sparkTwo} /></div>
-            <div><span>Engagement</span><strong>412k</strong><i className={styles.sparkThree} /></div>
-          </div>
-          <div className={styles.topContentHeader}>
-            <div><small>TOP CONTENT</small><strong>What is breaking through</strong></div>
-            <span>Last 7 days</span>
-          </div>
-          <div className={styles.postGrid}>
-            <article className={styles.postCard}>
-              <div className={`${styles.postArt} ${styles.postArtRed}`}><span>1</span></div>
-              <div><strong>The Harbor Journal</strong><span>Instagram · 18.4k engagement</span></div>
-            </article>
-            <article className={styles.postCard}>
-              <div className={`${styles.postArt} ${styles.postArtBlue}`}><span>2</span></div>
-              <div><strong>Metro Newsroom</strong><span>Facebook · 12.7k engagement</span></div>
-            </article>
-            <article className={styles.postCard}>
-              <div className={`${styles.postArt} ${styles.postArtGold}`}><span>3</span></div>
-              <div><strong>City Desk</strong><span>TikTok · 9.8k engagement</span></div>
-            </article>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function NewsroomScreen() {
   return (
     <div className={styles.newsroomScreen} aria-label="Illustration of the Data Dumpster Newsroom Screen">
@@ -250,29 +196,44 @@ function ReportScreen() {
 export default function AboutPage() {
   return (
     <main className={styles.promo}>
-      <aside className={styles.mockupNotice} aria-label="Mockup disclosure">
-        <span>Concept mockup</span>
-        <p>Illustrative product screens and sample figures appear below. They are not live production data.</p>
-      </aside>
-
       <section className={styles.hero}>
         <div className={styles.heroGlow} aria-hidden="true" />
         <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}>Competitive intelligence for newsrooms</p>
+          <p className={styles.eyebrow}>Built by Boston Globe Media for modern newsrooms</p>
           <h1>Know what&apos;s breaking through.<br /><span>Before the meeting.</span></h1>
           <p className={styles.heroSummary}>
-            Data Dumpster turns the public social landscape into a clear newsroom signal—who is
-            winning, what is working, and what deserves your attention next.
+            Data Dumpster turns a fragmented social landscape into one clear, defensible view of
+            who is winning, what is working and where the newsroom should look next.
           </p>
           <div className={styles.heroActions}>
-            <Link href="/login" className={styles.primaryAction}>
-              Sign in <ArrowRight size={17} />
+            <a href="#see-the-signal" className={styles.primaryAction}>
+              Explore the product <ArrowRight size={17} />
+            </a>
+            <Link href="/about/training" className={styles.secondaryAction}>
+              Training center
             </Link>
-            <a href="#see-the-signal" className={styles.secondaryAction}>See how it works</a>
           </div>
         </div>
         <div className={styles.heroProduct}>
-          <ProductScreen />
+          <div className={styles.heroImageGlow} aria-hidden="true" />
+          <Image
+            src="/product/data-dumpster-laptop.png"
+            alt="Data Dumpster displaying a detailed top-post performance view on a laptop"
+            width={2800}
+            height={1845}
+            priority
+            sizes="(max-width: 768px) 96vw, 1280px"
+            className={styles.heroImage}
+          />
+          <p className={styles.productDisclosure}>
+            Product interface shown for illustration. Live metrics and available features depend on source coverage and user access.
+          </p>
+        </div>
+        <div className={styles.heroProof} aria-label="Product highlights">
+          <div><strong>9</strong><span>social platforms in one view</span></div>
+          <div><strong>3h</strong><span>automatic collection cadence</span></div>
+          <div><strong>1</strong><span>shared source of truth</span></div>
+          <div><strong>100%</strong><span>traceable reported figures</span></div>
         </div>
       </section>
 
@@ -345,7 +306,7 @@ export default function AboutPage() {
         </div>
         <div className={styles.infrastructureBand}>
           <div><Database size={21} /><strong>Collect once</strong><span>Reuse the same public profile across every landscape that needs it.</span></div>
-          <div><Workflow size={21} /><strong>Refresh twice daily</strong><span>New scheduled windows open every twelve hours; stored results can be read without another vendor call.</span></div>
+          <div><Workflow size={21} /><strong>Refresh automatically</strong><span>Pooled collection runs throughout the day; stored results can be read without another vendor call.</span></div>
           <div><ShieldCheck size={21} /><strong>Show the limits</strong><span>Coverage and source caveats stay attached instead of quietly becoming zero.</span></div>
         </div>
       </section>
@@ -439,14 +400,48 @@ export default function AboutPage() {
         </div>
       </section>
 
+      <section className={styles.trainingSection}>
+        <div className={styles.trainingCopy}>
+          <p className={styles.eyebrow}>Ready for rollout</p>
+          <h2>Training is part<br /><span>of the product.</span></h2>
+          <p>
+            Give editors, audience teams and newsroom leaders a shared way to read the signal,
+            challenge the evidence and turn an insight into a decision.
+          </p>
+          <Link href="/about/training" className={styles.primaryAction}>
+            Open the training center <ArrowRight size={17} />
+          </Link>
+        </div>
+        <div className={styles.trainingPreview}>
+          <article>
+            <span><CirclePlay size={21} /> Start here</span>
+            <strong>A three-minute orientation</strong>
+            <p>Learn the landscape, date and company controls before you read a single number.</p>
+          </article>
+          <article>
+            <span><BookOpen size={21} /> Desk reference</span>
+            <strong>Eight-page quick-start guide</strong>
+            <p>Daily workflows, weekly reports, evidence labels and the data-quality guardrails.</p>
+          </article>
+          <article>
+            <span><MonitorUp size={21} /> Team workshop</span>
+            <strong>Fourteen-slide training deck</strong>
+            <p>A complete 35–40 minute newsroom session with speaker notes and a guided exercise.</p>
+          </article>
+        </div>
+      </section>
+
       <section className={styles.closingSection}>
         <div className={styles.closingMark}><DumpsterMark className="h-10 w-10" /></div>
         <p className={styles.eyebrow}>Data Dumpster</p>
         <h2>Less dashboard.<br />More direction.</h2>
         <p>See the competitive landscape, understand the signal and walk into the room ready.</p>
-        <Link href="/login" className={styles.primaryAction}>
-          Open Data Dumpster <ArrowRight size={17} />
-        </Link>
+        <div className={styles.heroActions}>
+          <Link href="/login" className={styles.primaryAction}>
+            Open Data Dumpster <ArrowRight size={17} />
+          </Link>
+          <Link href="/about/training" className={styles.secondaryAction}>View training</Link>
+        </div>
       </section>
     </main>
   );

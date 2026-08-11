@@ -3,6 +3,7 @@ import { DumpsterLogo } from '@/components/shell/logo';
 
 const policyLinks = [
   { href: '/about', label: 'Product' },
+  { href: '/about/training', label: 'Training' },
   { href: '/about/privacy', label: 'Privacy' },
   { href: '/about/data-deletion', label: 'Data deletion' },
   { href: '/about/terms', label: 'Terms' },
@@ -25,7 +26,7 @@ export default function AboutLayout({ children }: Readonly<{ children: React.Rea
             </Link>
           </div>
           <div className="hidden items-center justify-between gap-1 sm:flex sm:justify-end">
-            <nav aria-label="Product policies" className="flex flex-1 items-center justify-between sm:flex-none sm:justify-start">
+            <nav aria-label="Product information" className="flex flex-1 items-center justify-between sm:flex-none sm:justify-start">
               {policyLinks.map((item) => (
                 <Link
                   key={item.href}

@@ -37,9 +37,37 @@ describe('weekly report presentation', () => {
       'utf8',
     );
 
-    assert.match(presentation, /!reportShareToken && doc\.computed\.caveats\.length > 0/);
+    assert.match(presentation, /const isSharedReport = reportShareToken !== undefined/);
+    assert.match(presentation, /!isSharedReport && doc\.computed\.caveats\.length > 0/);
+    assert.match(presentation, /showCoverageNotes=\{!isSharedReport\}/);
     assert.match(panel, /<PostDetailDialog/);
     assert.match(panel, /role="button"/);
     assert.match(publicDetail, /sharedReportContainsPost\(report\.computed, id\)/);
+  });
+
+  it('keeps the detailed performance figures and complete brand table in shared reports', () => {
+    const presentation = readFileSync(
+      resolve(root, 'src/components/reports/report-presentation.tsx'),
+      'utf8',
+    );
+
+    assert.match(presentation, /<PerformanceSection[\s\S]*showCoverageNotes=\{!isSharedReport\}/);
+    assert.match(presentation, /<BrandsSection computed=\{doc\.computed\} \/>/);
+    assert.match(presentation, /hasVisualBrandMetrics \? <BrandScorecards/);
+    assert.ok(
+      presentation.indexOf('<PerformanceSection') < presentation.indexOf('<PortfolioCharts'),
+      'performance figures should lead the computed report sections',
+    );
+
+    const panel = readFileSync(
+      resolve(root, 'src/components/reports/computed-panel.tsx'),
+      'utf8',
+    );
+    assert.match(panel, /Platform audience/);
+    assert.match(panel, /aria-label=\{label \+ ': ' \+ formatted\}/);
+    assert.match(panel, /<PlatformIcon platform=\{p\}/);
+    assert.match(panel, /BRAND_RANKING_PLATFORMS = REPORT_PLATFORMS\.filter\(\(platform\) => platform !== 'reddit'\)/);
+    assert.match(panel, /BRAND_RANKING_PLATFORMS\.map\(\(p\) =>/);
+    assert.doesNotMatch(panel, /colSpan=\{4 \+ REPORT_PLATFORMS\.length\}/);
   });
 });

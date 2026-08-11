@@ -27,6 +27,7 @@ const TH = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider
 const THR = TH.replace('text-left', 'text-right');
 const TD = 'px-3 py-2 text-sm text-zinc-800 dark:text-zinc-200';
 const TDR = 'pb-num px-3 py-2 text-right text-sm text-zinc-800 dark:text-zinc-200';
+const BRAND_RANKING_PLATFORMS = REPORT_PLATFORMS.filter((platform) => platform !== 'reddit');
 
 function toneOf(movement: Movement): 'neutral' | 'up' | 'down' {
   if (movement.direction === 'up') return 'up';
@@ -85,7 +86,13 @@ export function RecomputeBar({
   );
 }
 
-export function PerformanceSection({ computed }: { computed: ComputedBlock }) {
+export function PerformanceSection({
+  computed,
+  showCoverageNotes = true,
+}: {
+  computed: ComputedBlock;
+  showCoverageNotes?: boolean;
+}) {
   const f = computed.focus;
   const brand = f.companyName ?? 'Focus brand not set';
   const platformCoverageNotes = computed.caveats.filter((caveat) => /^\d+ of \d+ tracked /.test(caveat));
@@ -141,7 +148,7 @@ export function PerformanceSection({ computed }: { computed: ComputedBlock }) {
               : formatPct(f.engagementPerPost.changePct) + ' week over week')}
         />
       </div>
-      {computed.caveats.length > 0 ? (
+      {showCoverageNotes && computed.caveats.length > 0 ? (
         <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
             Data coverage notes
@@ -190,24 +197,22 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
       kind="computed"
       description="Every brand in the landscape, ranked by total followers. BGM-owned brands are highlighted in red."
     >
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
+      <div className="overflow-hidden">
+        <table className="w-full table-fixed border-collapse">
           <thead className="border-b border-zinc-200 dark:border-zinc-800">
             <tr>
-              <th className={THR} scope="col">#</th>
-              <th className={TH} scope="col">Brand</th>
-              <th className={THR} scope="col">
+              <th className={THR + ' w-10'} scope="col">#</th>
+              <th className={TH + ' w-[28%]'} scope="col">Brand</th>
+              <th className={THR + ' w-[17%]'} scope="col">
                 <HeaderWithDefinition label="Total followers" metric="audience" />
               </th>
-              <th className={THR} scope="col">
+              <th className={THR + ' w-[14%]'} scope="col">
                 <HeaderWithDefinition
                   label="Net change"
                   hint="Followers on the last day of the window minus the first day, summed across every platform column shown here."
                 />
               </th>
-              {REPORT_PLATFORMS.map((p) => (
-                <th key={p} className={THR} scope="col">{REPORT_PLATFORM_LABELS[p]}</th>
-              ))}
+              <th className={THR} scope="col">Platform audience</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
@@ -224,12 +229,12 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
                 </td>
                 <td className={cn(
                   TD,
-                  'font-medium whitespace-nowrap',
+                  'font-medium',
                   b.isBgmOwned && 'font-semibold text-accent-700 dark:text-accent-400',
                 )}>
-                  {b.name}
+                  <span className="break-words">{b.name}</span>
                   {b.isBgmOwned ? (
-                    <span className="ml-2 rounded bg-accent-600/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent-700 dark:text-accent-400">
+                    <span className="ml-1.5 inline-flex rounded bg-accent-600/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent-700 dark:text-accent-400">
                       BGM
                     </span>
                   ) : null}
@@ -244,16 +249,32 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
                 >
                   {formatSignedCount(b.netChange)}
                 </td>
-                {REPORT_PLATFORMS.map((p) => (
-                  <td key={p} className={TDR + ' text-zinc-500 dark:text-zinc-400'}>
-                    {b.byPlatform[p] === undefined ? '—' : formatCount(b.byPlatform[p])}
-                  </td>
-                ))}
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {BRAND_RANKING_PLATFORMS.map((p) => {
+                      const value = b.byPlatform[p];
+                      if (value === undefined) return null;
+                      const label = REPORT_PLATFORM_LABELS[p];
+                      const formatted = formatCount(value);
+                      return (
+                        <span
+                          key={p}
+                          title={label + ': ' + formatted}
+                          aria-label={label + ': ' + formatted}
+                          className="pb-num inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-medium text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                        >
+                          <PlatformIcon platform={p} className="h-3 w-3" />
+                          {formatted}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </td>
               </tr>
             ))}
             {computed.brands.length === 0 ? (
               <tr>
-                <td className={TD + ' text-zinc-500'} colSpan={4 + REPORT_PLATFORMS.length}>
+                <td className={TD + ' text-zinc-500'} colSpan={5}>
                   No brands in this landscape have audience data for the window.
                 </td>
               </tr>

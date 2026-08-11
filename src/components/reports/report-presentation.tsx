@@ -42,6 +42,7 @@ export function ReportPresentation({
   const searchSpecs = MANUAL_SECTIONS.filter((spec) => SEARCH_IDS.has(spec.id));
   const otherSpecs = MANUAL_SECTIONS.filter((spec) => !SEARCH_IDS.has(spec.id));
   const hasFigures = MANUAL_FIGURES.some((figure) => doc.manual.figures[figure.id]?.trim());
+  const isSharedReport = reportShareToken !== undefined;
   const hasVisualBrandMetrics = Boolean(doc.computed?.brands.some((brand) =>
     brand.isBgmOwned && brand.posts !== undefined && brand.engagementTotal !== undefined));
 
@@ -79,20 +80,20 @@ export function ReportPresentation({
 
         {doc.computed ? (
           <>
+            <PerformanceSection
+              computed={doc.computed}
+              showCoverageNotes={!isSharedReport}
+            />
             {hasVisualBrandMetrics ? (
               <PortfolioCharts computed={doc.computed} />
             ) : (
-              <>
-                <aside className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
-                  This saved report predates the visual brand scorecards. An editor can switch to Edit report and recompute it to add the new charts.
-                </aside>
-                <PerformanceSection computed={doc.computed} />
-              </>
+              <aside className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+                This saved report predates the visual brand scorecards. An editor can switch to Edit report and recompute it to add the new charts.
+              </aside>
             )}
             <TopPostsSection computed={doc.computed} reportShareToken={reportShareToken} />
-            {hasVisualBrandMetrics
-              ? <BrandScorecards computed={doc.computed} />
-              : <BrandsSection computed={doc.computed} />}
+            {hasVisualBrandMetrics ? <BrandScorecards computed={doc.computed} /> : null}
+            <BrandsSection computed={doc.computed} />
             <Narrative title="What changed across BGM brands" text={doc.narrative.brands} />
           </>
         ) : (
@@ -141,7 +142,7 @@ export function ReportPresentation({
           <>
             <CohortSection computed={doc.computed} />
             <Narrative title="Competitive context" text={doc.narrative.cohort} />
-            {!reportShareToken && doc.computed.caveats.length > 0 ? (
+            {!isSharedReport && doc.computed.caveats.length > 0 ? (
               <details className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <summary className="cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                   {'Measurement notes (' + doc.computed.caveats.length + ')'}
