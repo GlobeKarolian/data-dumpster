@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "find src -name '*.test.ts' -type f -exec tsx --test {} +",
     "db:generate": "drizzle-kit generate",
     "db:audit-channel-identities": "tsx scripts/audit-channel-identities.ts",
     "db:audit-owned-contamination": "tsx scripts/audit-owned-contamination.ts",
