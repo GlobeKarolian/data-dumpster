@@ -64,6 +64,13 @@ const nextConfig: NextConfig = {
         pathname: '/media/xLsaBMK6Mg8DK/**',
         search: '',
       },
+      {
+        protocol: 'https',
+        hostname: 'media.giphy.com',
+        port: '',
+        pathname: '/media/B7aksBgcJzFDO/**',
+        search: '',
+      },
     ],
   },
   async headers() {
