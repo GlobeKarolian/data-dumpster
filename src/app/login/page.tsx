@@ -67,10 +67,21 @@ export default async function LoginPage({
             Welcome back, trash panda.
           </h1>
           <p className="mt-2 mb-7 text-sm leading-relaxed text-zinc-600">
-            The data is messy. Your login shouldn’t be.
+            The data is messy.
           </p>
 
           <LoginForm action={authenticate} initialError={initialError} />
+
+          <p className="mt-5 text-center text-xs leading-relaxed text-zinc-600">
+            Email{' '}
+            <a
+              href="mailto:Matt.Karolian@globe.com"
+              className="font-medium text-zinc-900 underline decoration-zinc-400 underline-offset-2 hover:decoration-zinc-900"
+            >
+              Matt.Karolian@globe.com
+            </a>{' '}
+            for access credentials.
+          </p>
         </div>
       </section>
     </main>
