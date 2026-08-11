@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, Eye, Loader2, Pencil } from 'lucide-react';
+import { AlertTriangle, Eye, Loader2, Pencil, RefreshCw } from 'lucide-react';
 import { Button, ButtonGroup, ButtonGroupItem } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatRelative } from '@/components/ui/format';
@@ -85,6 +85,7 @@ export function ReportBuilder({
   const [save, setSave] = React.useState<SaveState>({ phase: 'clean', at: null });
   const [recomputing, setRecomputing] = React.useState(false);
   const [recomputeError, setRecomputeError] = React.useState<string | null>(null);
+  const [recomputeSuccessAt, setRecomputeSuccessAt] = React.useState<string | null>(null);
   const [searchSyncing, setSearchSyncing] = React.useState(false);
   const [searchSyncError, setSearchSyncError] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<'view' | 'edit'>('view');
@@ -163,10 +164,11 @@ export function ReportBuilder({
     )) return;
     setRecomputing(true);
     setRecomputeError(null);
+    setRecomputeSuccessAt(null);
     try {
       // Let any pending human edits settle before the server atomically replaces
       // the computed snapshot and invalidates its narrative.
-      await persist();
+      if (!(await persist())) throw new Error('Save the report before recomputing its data.');
       const res = await fetch('/api/reports/' + reportId + '/recompute', { method: 'POST' });
       const payload: unknown = await res.json().catch(() => null);
       if (!res.ok) {
@@ -180,6 +182,7 @@ export function ReportBuilder({
         : null;
       setComputed(next);
       setNarrative({});
+      setRecomputeSuccessAt(next?.generatedAt ?? new Date().toISOString());
     } catch (err) {
       setRecomputeError(err instanceof Error ? err.message : 'Recompute failed.');
     } finally {
@@ -272,6 +275,29 @@ export function ReportBuilder({
         ) : null}
       </ButtonGroup>
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {mode === 'view' && recomputeError ? (
+          <span role="alert" className="max-w-64 text-right text-[11px] text-red-600 dark:text-red-400">
+            {recomputeError}
+          </span>
+        ) : null}
+        {mode === 'view' && recomputeSuccessAt && !recomputeError ? (
+          <span role="status" className="pb-num text-[11px] text-emerald-700 dark:text-emerald-400">
+            {'Updated ' + formatRelative(recomputeSuccessAt)}
+          </span>
+        ) : null}
+        {canEdit && mode === 'view' ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => { void recompute(); }}
+            disabled={recomputing}
+          >
+            {recomputing
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              : <RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+            {recomputing ? 'Recomputing data' : 'Recompute data'}
+          </Button>
+        ) : null}
         {mode === 'view' ? (
           <ExportActions
             doc={doc}
