@@ -37,6 +37,52 @@ export function isAllowedInstagramMediaUrl(value: unknown): value is string {
   }
 }
 
+/**
+ * Reduce a stored Instagram post link to one public, SSRF-safe canonical URL.
+ * Profile links, arbitrary Instagram paths and lookalike hosts are rejected.
+ */
+export function canonicalInstagramPermalink(value: unknown): string | null {
+  const candidate = stringValue(value);
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate);
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.port
+      || (url.hostname.toLowerCase() !== 'www.instagram.com'
+        && url.hostname.toLowerCase() !== 'instagram.com')
+    ) return null;
+    const match = /^\/(p|reel|tv)\/([A-Za-z0-9_-]+)\/?$/.exec(url.pathname);
+    return match ? `https://www.instagram.com/${match[1]}/${match[2]}/` : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:39|x27);/gi, "'");
+}
+
+/** Extract only a validated Meta-CDN og:image from Instagram's public HTML. */
+export function instagramOgImageUrl(html: string): string | null {
+  for (const match of html.matchAll(/<meta\b[^>]{0,4096}>/gi)) {
+    const attributes = new Map<string, string>();
+    for (const attribute of match[0].matchAll(/([:\w-]+)\s*=\s*(["'])(.*?)\2/g)) {
+      attributes.set(attribute[1].toLowerCase(), decodeHtmlAttribute(attribute[3]));
+    }
+    if (attributes.get('property') !== 'og:image') continue;
+    const content = attributes.get('content');
+    if (isAllowedInstagramMediaUrl(content)) return content;
+  }
+  return null;
+}
+
 /** Resolve one upstream redirect without ever leaving the CDN allowlist. */
 export function allowedInstagramRedirect(
   currentUrl: string,

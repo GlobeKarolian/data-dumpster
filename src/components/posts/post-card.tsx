@@ -1,7 +1,5 @@
 import * as React from 'react';
-import {
-  ExternalLink, FileText, Flame, Heart, ImageOff, MessageCircle, Play, Repeat2,
-} from 'lucide-react';
+import { ExternalLink, Flame, Heart, MessageCircle, Play, Repeat2 } from 'lucide-react';
 import type { PostDto } from '@/lib/metrics/contract';
 import { postPosterUrl } from '@/lib/post-preview-url';
 import { platformMetricLabel } from '@/lib/platform-language';
@@ -118,54 +116,37 @@ export function PostCard({
         {outlier && post.outlierScore !== null ? <OutlierBadge score={post.outlierScore} /> : null}
       </div>
 
-      <div className="relative mt-2.5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded border border-zinc-800 bg-zinc-950 text-zinc-400">
-        {previewUrl ? (
-          <>
-          {previewFailed ? (
-            isMotion
-              ? <Play className="h-7 w-7 fill-current" aria-hidden />
-              : <ImageOff className="h-6 w-6" aria-hidden />
-          ) : (
-            <>
-              {/* A soft duplicate fills unused space without cropping the actual creative. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewUrl}
-                alt=""
-                aria-hidden
-                loading="lazy"
-                className="absolute inset-0 h-full w-full scale-110 object-cover opacity-35 blur-xl"
-              />
-              <span className="pointer-events-none absolute inset-0 bg-black/20" aria-hidden />
-              {/* Remote thumbnails come from arbitrary CDNs, so a plain img avoids
-                  needing every social platform in the image optimizer allowlist. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewUrl}
-                alt=""
-                loading="lazy"
-                className="relative z-10 h-full w-full object-contain"
-                onError={() => setPreviewFailed(true)}
-              />
-            </>
-          )}
-          {!previewFailed && isMotion ? (
+      {previewUrl && !previewFailed ? (
+        <div className="relative mt-2.5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded border border-zinc-800 bg-zinc-950 text-zinc-400">
+          {/* A soft duplicate fills unused space without cropping the actual creative. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-35 blur-xl"
+          />
+          <span className="pointer-events-none absolute inset-0 bg-black/20" aria-hidden />
+          {/* Remote thumbnails come from arbitrary CDNs, so a plain img avoids
+              needing every social platform in the image optimizer allowlist. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt=""
+            loading="lazy"
+            className="relative z-10 h-full w-full object-contain"
+            onError={() => setPreviewFailed(true)}
+          />
+          {isMotion ? (
             <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/10">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white shadow-lg">
                 <Play className="ml-0.5 h-4 w-4 fill-current" aria-hidden />
               </span>
             </span>
           ) : null}
-          </>
-        ) : (
-          <span className="flex flex-col items-center gap-2 px-6 text-center">
-            <FileText className="h-6 w-6 text-zinc-300 dark:text-zinc-600" aria-hidden />
-            <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-              No media preview available
-            </span>
-          </span>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <p className="mt-2.5 flex-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
         {post.text ? truncate(post.text, 180) : <span className="italic text-zinc-400">No caption</span>}

@@ -12,6 +12,8 @@ import {
 import {
   allowedInstagramRedirect,
   allowedTikTokRedirect,
+  canonicalInstagramPermalink,
+  instagramOgImageUrl,
   isAllowedTikTokMediaUrl,
   isAllowedTikTokPermalink,
   storedInstagramPreviewCandidates,
@@ -46,6 +48,7 @@ const POSTER_CONTENT_TYPES = new Set([
   'image/webp',
 ]);
 const MAX_POSTER_BYTES = 8 * 1024 * 1024;
+const MAX_INSTAGRAM_HTML_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const UPSTREAM_TIMEOUT_MS = 12_000;
 
@@ -134,6 +137,90 @@ async function freshTikTokPoster(
     if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
     const thumbnail = (body as Record<string, unknown>).thumbnail_url;
     return isAllowedTikTokMediaUrl(thumbnail) ? thumbnail : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readBoundedText(response: Response, maxBytes: number): Promise<string | null> {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await cancelBody(response);
+    return null;
+  }
+  if (!response.body) return null;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let body = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    body += decoder.decode();
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Instagram's stored CDN signatures expire long before historical posts leave
+ * the analytics window. Resolve a fresh public poster from the canonical post
+ * page; photo/carousel posts use the lightweight media redirect first, while
+ * reels fall back to the page's validated Open Graph image.
+ */
+async function freshInstagramPoster(
+  permalink: string | null,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const canonical = canonicalInstagramPermalink(permalink);
+  if (!canonical) return null;
+
+  if (new URL(canonical).pathname.startsWith('/p/')) {
+    const mediaUrl = canonical + 'media/?size=l';
+    try {
+      const mediaResponse = await fetch(mediaUrl, {
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; DataDumpsterPreview/1.0)' },
+        redirect: 'manual',
+        signal,
+        cache: 'force-cache',
+        next: { revalidate: 21_600 },
+      });
+      const fresh = REDIRECT_STATUSES.has(mediaResponse.status)
+        ? allowedInstagramRedirect(mediaUrl, mediaResponse.headers.get('location'))
+        : null;
+      await cancelBody(mediaResponse);
+      if (fresh) return fresh;
+    } catch {
+      // Fall through to the public page metadata path.
+    }
+  }
+
+  try {
+    const response = await fetch(canonical, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (compatible; DataDumpsterPreview/1.0)',
+        accept: 'text/html',
+      },
+      signal,
+      cache: 'force-cache',
+      next: { revalidate: 21_600 },
+    });
+    if (!response.ok || normalizedContentType(response.headers.get('content-type')) !== 'text/html') {
+      await cancelBody(response);
+      return null;
+    }
+    const html = await readBoundedText(response, MAX_INSTAGRAM_HTML_BYTES);
+    return html ? instagramOgImageUrl(html) : null;
   } catch {
     return null;
   }
@@ -289,7 +376,10 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
     const candidates = post.platform === 'instagram'
-      ? storedInstagramPreviewCandidates(post, kind).slice(0, kind === 'poster' ? 12 : 6)
+      ? [
+          kind === 'poster' ? await freshInstagramPoster(post.permalink, controller.signal) : null,
+          ...storedInstagramPreviewCandidates(post, kind).slice(0, kind === 'poster' ? 12 : 6),
+        ].filter((candidate): candidate is string => Boolean(candidate))
       : post.platform === 'threads'
         ? storedThreadsPreviewCandidates(post, kind).slice(0, kind === 'poster' ? 12 : 6)
         : [
@@ -354,7 +444,9 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
 
   throw new HttpError(
     502,
-    'The public preview could not be read from ' + (post.platform === 'instagram' ? 'Instagram' : 'TikTok') + '.',
+    'The public preview could not be read from '
+      + ({ instagram: 'Instagram', tiktok: 'TikTok', threads: 'Threads' } as const)[post.platform]
+      + '.',
     'preview_unavailable',
   );
 });

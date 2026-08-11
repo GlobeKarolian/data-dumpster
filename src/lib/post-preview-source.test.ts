@@ -6,6 +6,8 @@ import { PLATFORMS } from './types';
 import {
   allowedInstagramRedirect,
   allowedTikTokRedirect,
+  canonicalInstagramPermalink,
+  instagramOgImageUrl,
   isAllowedInstagramMediaUrl,
   isAllowedTikTokMediaUrl,
   isAllowedTikTokPermalink,
@@ -44,6 +46,32 @@ describe('Instagram preview source safety', () => {
     );
     assert.equal(allowedInstagramRedirect(current, 'https://example.com/image.jpg'), null);
     assert.equal(allowedInstagramRedirect(current, '//fbcdn.net.evil.example/image.jpg'), null);
+  });
+
+  it('accepts only canonical public Instagram post permalinks', () => {
+    assert.equal(
+      canonicalInstagramPermalink('https://instagram.com/reel/DaZTyfjK4Kr/?igsh=tracking'),
+      'https://www.instagram.com/reel/DaZTyfjK4Kr/',
+    );
+    assert.equal(
+      canonicalInstagramPermalink('https://www.instagram.com/p/Dbqkmp-k1D9/'),
+      'https://www.instagram.com/p/Dbqkmp-k1D9/',
+    );
+    assert.equal(canonicalInstagramPermalink('https://www.instagram.com/nesn/'), null);
+    assert.equal(canonicalInstagramPermalink('https://www.instagram.com.evil.test/p/example/'), null);
+  });
+
+  it('extracts only an allowlisted Open Graph poster from public post HTML', () => {
+    const poster = 'https://scontent-bos5-1.cdninstagram.com/fresh.jpg?x=1&amp;y=2';
+    assert.equal(
+      instagramOgImageUrl(`<meta content="${poster}" property="og:image" />`),
+      'https://scontent-bos5-1.cdninstagram.com/fresh.jpg?x=1&y=2',
+    );
+    assert.equal(
+      instagramOgImageUrl('<meta property="og:image" content="https://example.com/not-safe.jpg">'),
+      null,
+    );
+    assert.equal(instagramOgImageUrl('<meta property="og:title" content="No poster">'), null);
   });
 
   it('extracts and deduplicates known poster and video fields only', () => {

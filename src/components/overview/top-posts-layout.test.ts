@@ -42,4 +42,11 @@ describe('top-post gallery containment', () => {
     assert.match(card, /aspect-\[4\/3\]/);
     assert.match(card, /relative z-10 h-full w-full object-contain/);
   });
+
+  it('does not reserve a large black media box after a preview fails', () => {
+    const card = readFileSync(resolve(root, 'src/components/posts/post-card.tsx'), 'utf8');
+
+    assert.match(card, /previewUrl && !previewFailed/);
+    assert.doesNotMatch(card, /No media preview available/);
+  });
 });
