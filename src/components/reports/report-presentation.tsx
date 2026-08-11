@@ -141,7 +141,7 @@ export function ReportPresentation({
           <>
             <CohortSection computed={doc.computed} />
             <Narrative title="Competitive context" text={doc.narrative.cohort} />
-            {doc.computed.caveats.length > 0 ? (
+            {!reportShareToken && doc.computed.caveats.length > 0 ? (
               <details className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <summary className="cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                   {'Measurement notes (' + doc.computed.caveats.length + ')'}

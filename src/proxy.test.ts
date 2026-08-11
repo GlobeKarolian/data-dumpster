@@ -39,6 +39,14 @@ describe('request proxy', () => {
     assert.equal(response.headers.get('x-middleware-next'), '1');
   });
 
+  it('lets token-scoped report post details reach their snapshot authorization check', async () => {
+    const response = await proxy(new NextRequest(
+      'https://example.test/api/report-share/8WEZuCzDYEPNeCOzHygBR/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1',
+    ));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-middleware-next'), '1');
+  });
+
   it('keeps the same preview API private without a report capability token', async () => {
     const response = await proxy(new NextRequest(
       'https://example.test/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview',

@@ -15,6 +15,9 @@ export interface TooltipProps {
   align?: Align;
   /** Widen for definition copy; the default suits short labels. */
   wide?: boolean;
+  /** Let chart segments size the tooltip trigger wrapper inside a stacked bar. */
+  wrapperClassName?: string;
+  wrapperStyle?: React.CSSProperties;
 }
 
 /**
@@ -24,7 +27,15 @@ export interface TooltipProps {
  * carries are the product's honesty guarantee and a keyboard user is entitled to
  * exactly the same explanation a mouse user gets.
  */
-export function Tooltip({ content, children, side = 'top', align = 'center', wide }: TooltipProps) {
+export function Tooltip({
+  content,
+  children,
+  side = 'top',
+  align = 'center',
+  wide,
+  wrapperClassName,
+  wrapperStyle,
+}: TooltipProps) {
   const [open, setOpen] = React.useState(false);
   const id = React.useId();
 
@@ -44,7 +55,7 @@ export function Tooltip({ content, children, side = 'top', align = 'center', wid
   });
 
   return (
-    <span className="relative inline-flex">
+    <span className={cn('relative inline-flex', wrapperClassName)} style={wrapperStyle}>
       {trigger}
       {open ? (
         <span

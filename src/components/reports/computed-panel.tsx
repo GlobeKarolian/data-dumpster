@@ -5,6 +5,9 @@ import { ExternalLink, FileText, Loader2, Play, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDateTime, formatRelative } from '@/components/ui/format';
 import { PlatformIcon } from '@/components/ui/platform-icon';
+import { Tooltip } from '@/components/ui/tooltip';
+import { PostDetailDialog } from '@/components/posts/post-detail-dialog';
+import type { PostDetailDto, PostDto } from '@/lib/metrics/contract';
 import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/types';
 import { postPosterUrl } from '@/lib/post-preview-url';
 import { cn } from '@/lib/utils';
@@ -271,25 +274,117 @@ export function TopPostsSection({
 }) {
   const bgmPosts = computed.bgmTopPosts
     ?? computed.topPosts.filter((post) => post.isBgmOwned);
+  const [selectedPost, setSelectedPost] = React.useState<TopPost | null>(null);
+  const [detailAttempt, setDetailAttempt] = React.useState(0);
+  const detailRequestUrl = React.useMemo(() => {
+    if (!selectedPost) return '';
+    if (reportShareToken) {
+      return '/api/report-share/' + encodeURIComponent(reportShareToken)
+        + '/posts/' + encodeURIComponent(selectedPost.id);
+    }
+    const params = new URLSearchParams({
+      landscapeId: computed.landscape.id,
+      start: computed.period.start,
+      end: computed.period.end,
+    });
+    if (detailAttempt) params.set('detailAttempt', String(detailAttempt));
+    return '/api/posts/' + encodeURIComponent(selectedPost.id) + '?' + params.toString();
+  }, [computed.landscape.id, computed.period.end, computed.period.start, detailAttempt, reportShareToken, selectedPost]);
+  const [loadedDetail, setLoadedDetail] = React.useState<{
+    url: string;
+    data: PostDetailDto | null;
+    error: string | null;
+  }>({ url: '', data: null, error: null });
+  const detailLoading = detailRequestUrl !== '' && loadedDetail.url !== detailRequestUrl;
+  const detail = loadedDetail.url === detailRequestUrl ? loadedDetail.data : null;
+  const detailError = loadedDetail.url === detailRequestUrl ? loadedDetail.error : null;
+
+  React.useEffect(() => {
+    if (!detailRequestUrl) return;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    fetch(detailRequestUrl, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('The post detail service returned ' + response.status + '.');
+        return (await response.json()) as PostDetailDto;
+      })
+      .then((data) => {
+        if (!cancelled) setLoadedDetail({ url: detailRequestUrl, data, error: null });
+      })
+      .catch((reason: unknown) => {
+        if (cancelled || (reason instanceof DOMException && reason.name === 'AbortError')) return;
+        setLoadedDetail({
+          url: detailRequestUrl,
+          data: null,
+          error: reason instanceof Error ? reason.message : 'Could not load the full post record.',
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [detailRequestUrl]);
+
+  const summaryPost = selectedPost ? reportPostAsDto(selectedPost) : null;
   return (
-    <div className="space-y-4">
-      <TopPostGroup
-        title="Top Engaged Posts — Market"
-        description="The five most engaged posts from every brand in this landscape."
-        posts={computed.topPosts}
+    <>
+      <div className="space-y-4">
+        <TopPostGroup
+          title="Top Engaged Posts — Market"
+          description="The five most engaged posts from every brand in this landscape. Select a post to inspect its full card."
+          posts={computed.topPosts}
+          reportShareToken={reportShareToken}
+          onSelect={setSelectedPost}
+        />
+        <TopPostGroup
+          title="Top Engaged Posts — BGM"
+          description="The five most engaged posts from BGM-owned brands in the same window. Select a post to inspect its full card."
+          posts={bgmPosts}
+          reportShareToken={reportShareToken}
+          onSelect={setSelectedPost}
+          empty={computed.bgmTopPosts === undefined
+            ? 'Recompute this report to add the BGM-only ranking.'
+            : 'No BGM posts were recorded in this window.'}
+        />
+      </div>
+      <PostDetailDialog
+        post={detail ?? summaryPost}
+        detail={detail}
+        loading={detailLoading}
+        error={detailError}
+        onClose={() => setSelectedPost(null)}
+        onRetry={() => setDetailAttempt((attempt) => attempt + 1)}
         reportShareToken={reportShareToken}
       />
-      <TopPostGroup
-        title="Top Engaged Posts — BGM"
-        description="The five most engaged posts from BGM-owned brands in the same window."
-        posts={bgmPosts}
-        reportShareToken={reportShareToken}
-        empty={computed.bgmTopPosts === undefined
-          ? 'Recompute this report to add the BGM-only ranking.'
-          : 'No BGM posts were recorded in this window.'}
-      />
-    </div>
+    </>
   );
+}
+
+function reportPostAsDto(post: TopPost): PostDto {
+  return {
+    id: post.id,
+    company: { id: '', name: post.companyName, slug: '' },
+    platform: post.platform,
+    type: post.type ?? 'text',
+    postedAt: post.postedAt,
+    text: post.text,
+    permalink: post.permalink,
+    thumbnailUrl: post.thumbnailUrl ?? null,
+    applause: 0,
+    conversation: 0,
+    amplification: 0,
+    saves: 0,
+    views: 0,
+    engagementTotal: post.engagementTotal,
+    engagementRateByFollower: 0,
+    followersAtPost: null,
+    tags: [],
+    urls: [],
+    medianEngagement: null,
+    outlierScore: null,
+  };
 }
 
 function TopPostGroup({
@@ -297,19 +392,26 @@ function TopPostGroup({
   description,
   posts,
   reportShareToken,
+  onSelect,
   empty = 'No posts were recorded in this window.',
 }: {
   title: string;
   description: string;
   posts: TopPost[];
   reportShareToken?: string;
+  onSelect: (post: TopPost) => void;
   empty?: string;
 }) {
   return (
     <SectionCard title={title} kind="computed" description={description}>
       <ol className="space-y-3 p-3">
         {posts.map((post) => (
-          <ReportPostCard key={post.id} post={post} reportShareToken={reportShareToken} />
+          <ReportPostCard
+            key={post.id}
+            post={post}
+            reportShareToken={reportShareToken}
+            onSelect={onSelect}
+          />
         ))}
         {posts.length === 0 ? (
           <li className="rounded-md border border-dashed border-zinc-200 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-800">
@@ -324,9 +426,11 @@ function TopPostGroup({
 export function ReportPostCard({
   post,
   reportShareToken,
+  onSelect,
 }: {
   post: TopPost;
   reportShareToken?: string;
+  onSelect: (post: TopPost) => void;
 }) {
   const [previewFailed, setPreviewFailed] = React.useState(false);
   const previewUrl = postPosterUrl(
@@ -348,7 +452,19 @@ export function ReportPostCard({
         ? 'border-accent-600/35 shadow-[inset_3px_0_0_#C8102E] dark:border-accent-600/40'
         : 'border-zinc-200 dark:border-zinc-800',
     )}>
-      <article className="grid min-h-32 grid-cols-[8.5rem_1fr]">
+      <article
+        className="grid min-h-32 cursor-pointer grid-cols-[8.5rem_1fr] transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500 dark:hover:bg-zinc-900/60"
+        role="button"
+        tabIndex={0}
+        aria-label={'View post details for ' + post.companyName}
+        onClick={() => onSelect(post)}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onSelect(post);
+        }}
+      >
         <div className="relative flex min-h-32 items-center justify-center overflow-hidden bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600">
           {previewUrl && !previewFailed ? (
             <>
@@ -404,6 +520,7 @@ export function ReportPostCard({
               href={post.permalink}
               target="_blank"
               rel="noreferrer"
+              onClick={(event) => event.stopPropagation()}
               className="mt-auto inline-flex items-center gap-1 pt-2 text-[11px] font-medium text-zinc-500 transition-colors hover:text-accent-600"
             >
               Open original
@@ -424,10 +541,16 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
     ...brands.map((brand) => Object.values(brand.netChangeByPlatform ?? {})
       .reduce((total, value) => total + Math.abs(value), 0)),
   );
-  const largestRateSwing = Math.max(
-    0.01,
-    ...brands.map((brand) => Math.abs(brand.engagementRateChangePct ?? 0)),
+  const largestEngagementTotal = Math.max(
+    1,
+    ...brands.map((brand) => Math.max(0, brand.engagementTotal ?? 0)),
   );
+  const largestViewsTotal = Math.max(
+    1,
+    ...brands.map((brand) => Math.max(0, brand.viewsTotal ?? 0)),
+  );
+  const viewPlatforms = REPORT_PLATFORMS.filter((platform) =>
+    brands.some((brand) => (brand.viewsByPlatform?.[platform] ?? 0) > 0));
 
   return (
     <div className="space-y-4">
@@ -458,13 +581,14 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
                   <div className="flex justify-end overflow-hidden border-r border-zinc-300 dark:border-zinc-700">
                     <div className="flex h-3 self-center" style={{ width: negativeWidth + '%' }}>
                       {negative.map(([platform, value]) => (
-                        <span
+                        <ChartSegment
                           key={platform}
-                          title={REPORT_PLATFORM_LABELS[platform] + ': ' + formatSignedCount(value)}
-                          style={{
-                            backgroundColor: PLATFORM_COLORS[platform],
-                            width: Math.abs(value) / Math.max(1, Math.abs(negative.reduce((sum, [, part]) => sum + part, 0))) * 100 + '%',
-                          }}
+                          brandName={brand.name}
+                          platform={platform}
+                          value={value}
+                          brandTotal={brand.netChange}
+                          width={Math.abs(value) / Math.max(1, Math.abs(negative.reduce((sum, [, part]) => sum + part, 0))) * 100}
+                          signed
                         />
                       ))}
                     </div>
@@ -472,13 +596,14 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
                   <div className="flex overflow-hidden">
                     <div className="flex h-3 self-center" style={{ width: positiveWidth + '%' }}>
                       {positive.map(([platform, value]) => (
-                        <span
+                        <ChartSegment
                           key={platform}
-                          title={REPORT_PLATFORM_LABELS[platform] + ': ' + formatSignedCount(value)}
-                          style={{
-                            backgroundColor: PLATFORM_COLORS[platform],
-                            width: value / Math.max(1, positive.reduce((sum, [, part]) => sum + part, 0)) * 100 + '%',
-                          }}
+                          brandName={brand.name}
+                          platform={platform}
+                          value={value}
+                          brandTotal={brand.netChange}
+                          width={value / Math.max(1, positive.reduce((sum, [, part]) => sum + part, 0)) * 100}
+                          signed
                         />
                       ))}
                     </div>
@@ -504,45 +629,53 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
       </SectionCard>
 
       <SectionCard
-        title="Engagement Rate Change by BGM Brand"
+        title="Total Engagement by BGM Brand"
         kind="computed"
-        description="Week-over-week change in engagement rate by follower. Left is down; right is up."
+        description="Each bar is total engagement for the week, split by platform. Bar length compares brands; color shows where the engagement happened."
       >
         <div className="space-y-3 p-4">
-          <div className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] gap-3 border-b border-zinc-100 pb-2 text-[10px] uppercase tracking-wider text-zinc-400 dark:border-zinc-800">
-            <span>Brand</span><span className="text-center">Down ← 0 → Up</span><span className="text-right">WoW</span>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+            {REPORT_PLATFORMS.map((platform) => (
+              <span key={platform} className="inline-flex items-center gap-1.5 text-[10px] text-zinc-500">
+                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: PLATFORM_COLORS[platform] }} />
+                {REPORT_PLATFORM_LABELS[platform]}
+              </span>
+            ))}
           </div>
           {brands.map((brand) => {
-            const change = brand.engagementRateChangePct;
-            const width = change === null || change === undefined
-              ? 0
-              : Math.min(100, Math.abs(change) / largestRateSwing * 100);
+            const total = Math.max(0, brand.engagementTotal ?? 0);
+            const entries = (Object.entries(brand.engagementByPlatform ?? {}) as Array<[ReportPlatform, number]>)
+              .filter(([, value]) => value > 0);
+            const breakdownTotal = entries.reduce((sum, [, value]) => sum + value, 0);
+            const barWidth = total / largestEngagementTotal * 100;
             return (
               <div key={brand.companyId} className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] items-center gap-3">
                 <p className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{brand.name}</p>
-                <div className="relative grid h-5 grid-cols-2">
-                  <div className="flex justify-end border-r border-zinc-300 dark:border-zinc-700">
-                    {change !== null && change !== undefined && change < 0 ? (
-                      <span className="h-3 self-center bg-red-500/80" style={{ width: width + '%' }} />
-                    ) : null}
-                  </div>
-                  <div className="flex">
-                    {change !== null && change !== undefined && change >= 0 ? (
-                      <span className="h-3 self-center bg-emerald-500/80" style={{ width: width + '%' }} />
+                <div className="flex h-5 items-center rounded-sm bg-zinc-100/80 dark:bg-zinc-800/60">
+                  <div className="flex h-3" style={{ width: barWidth + '%' }}>
+                    {entries.length > 0 ? entries.map(([platform, value]) => (
+                      <ChartSegment
+                        key={platform}
+                        brandName={brand.name}
+                        platform={platform}
+                        value={value}
+                        brandTotal={total}
+                        width={value / Math.max(1, breakdownTotal) * 100}
+                      />
+                    )) : total > 0 ? (
+                      <ChartSegment
+                        brandName={brand.name}
+                        platform={null}
+                        value={total}
+                        brandTotal={total}
+                        width={100}
+                        note="Platform split will appear after this saved report is recomputed."
+                      />
                     ) : null}
                   </div>
                 </div>
-                <p className={cn(
-                  'pb-num text-right text-xs font-semibold',
-                  change === null || change === undefined
-                    ? 'text-zinc-400'
-                    : change > 0
-                      ? 'text-emerald-700 dark:text-emerald-400'
-                      : change < 0
-                        ? 'text-red-700 dark:text-red-400'
-                        : 'text-zinc-500',
-                )}>
-                  {change === null || change === undefined ? '—' : formatPct(change)}
+                <p className="pb-num text-right text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  {formatCount(brand.engagementTotal)}
                 </p>
               </div>
             );
@@ -550,7 +683,123 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
           {brands.length === 0 ? <EmptyChart /> : null}
         </div>
       </SectionCard>
+
+      <SectionCard
+        title="Video Views by BGM Brand"
+        kind="computed"
+        description="Captured views for the week, split by platform. Only platforms whose source returned view counts appear; unsupported metrics are not rendered as zero."
+      >
+        <div className="space-y-3 p-4">
+          {viewPlatforms.length > 0 ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+              {viewPlatforms.map((platform) => (
+                <span key={platform} className="inline-flex items-center gap-1.5 text-[10px] text-zinc-500">
+                  <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: PLATFORM_COLORS[platform] }} />
+                  {REPORT_PLATFORM_LABELS[platform]}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {brands.map((brand) => {
+            const total = Math.max(0, brand.viewsTotal ?? 0);
+            const entries = (Object.entries(brand.viewsByPlatform ?? {}) as Array<[ReportPlatform, number]>)
+              .filter(([, value]) => value > 0);
+            const breakdownTotal = entries.reduce((sum, [, value]) => sum + value, 0);
+            const barWidth = total / largestViewsTotal * 100;
+            return (
+              <div key={brand.companyId} className="grid grid-cols-[minmax(7rem,9rem)_1fr_4.5rem] items-center gap-3">
+                <p className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{brand.name}</p>
+                <div className="flex h-5 items-center rounded-sm bg-zinc-100/80 dark:bg-zinc-800/60">
+                  <div className="flex h-3" style={{ width: barWidth + '%' }}>
+                    {entries.map(([platform, value]) => (
+                      <ChartSegment
+                        key={platform}
+                        brandName={brand.name}
+                        platform={platform}
+                        value={value}
+                        brandTotal={total}
+                        width={value / Math.max(1, breakdownTotal) * 100}
+                        metricLabel="views"
+                      />
+                    ))}
+                  </div>
+                </div>
+                <p className="pb-num text-right text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  {formatCount(brand.viewsTotal)}
+                </p>
+              </div>
+            );
+          })}
+          {brands.length === 0 ? <EmptyChart /> : null}
+          {brands.length > 0 && brands.every((brand) => brand.viewsTotal === undefined) ? (
+            <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300">
+              Recompute this saved report to add its video-view breakdown.
+            </p>
+          ) : null}
+        </div>
+      </SectionCard>
     </div>
+  );
+}
+
+function ChartSegment({
+  brandName,
+  platform,
+  value,
+  brandTotal,
+  width,
+  signed = false,
+  note,
+  metricLabel = 'engagement',
+}: {
+  brandName: string;
+  platform: ReportPlatform | null;
+  value: number;
+  brandTotal: number | null;
+  width: number;
+  signed?: boolean;
+  note?: string;
+  metricLabel?: 'engagement' | 'views';
+}) {
+  const label = platform ? REPORT_PLATFORM_LABELS[platform] : 'Total engagement';
+  const formattedValue = signed ? formatSignedCount(value) : formatCount(value);
+  const formattedTotal = signed ? formatSignedCount(brandTotal) : formatCount(brandTotal);
+  const share = !signed && brandTotal && brandTotal > 0
+    ? (value / brandTotal).toLocaleString('en-US', { style: 'percent', maximumFractionDigits: 1 })
+    : null;
+  const color = platform ? PLATFORM_COLORS[platform] : '#a1a1aa';
+
+  return (
+    <Tooltip
+      side="top"
+      content={
+        <span className="block min-w-44">
+          <span className="block font-semibold text-zinc-950 dark:text-zinc-50">{brandName}</span>
+          <span className="mt-1.5 flex items-center justify-between gap-5">
+            <span className="inline-flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
+              <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
+              {label}
+            </span>
+            <span className="pb-num font-semibold text-zinc-950 dark:text-zinc-50">{formattedValue}</span>
+          </span>
+          <span className="pb-num mt-1 block text-[10px] text-zinc-500">
+            {share
+              ? share + ' of ' + formattedTotal + ' total ' + metricLabel
+              : 'Brand net: ' + formattedTotal}
+          </span>
+          {note ? <span className="mt-1 block text-[10px] text-amber-700 dark:text-amber-400">{note}</span> : null}
+        </span>
+      }
+      wrapperClassName="h-full min-w-px"
+      wrapperStyle={{ width: Math.max(0, Math.min(100, width)) + '%' }}
+    >
+      <button
+        type="button"
+        aria-label={brandName + ', ' + label + ': ' + formattedValue}
+        className="h-full w-full transition-[filter,outline] hover:brightness-110 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-600"
+        style={{ backgroundColor: color }}
+      />
+    </Tooltip>
   );
 }
 

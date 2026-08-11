@@ -83,4 +83,11 @@ describe('post preview URLs', () => {
     );
     assert.equal(postVideoUrl({ ...instagramReel, type: 'photo' }, null), null);
   });
+
+  it('scopes public report videos to the same report capability token', () => {
+    assert.equal(
+      postVideoUrl(instagramReel, null, { reportShareToken: '8WEZuCzDYEPNeCOzHygBR' }),
+      '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview?kind=video&share=8WEZuCzDYEPNeCOzHygBR',
+    );
+  });
 });

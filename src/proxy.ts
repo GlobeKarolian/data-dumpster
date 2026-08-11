@@ -38,9 +38,13 @@ import { getToken } from 'next-auth/jwt';
  *  /api/health     uptime probes have no credentials by design
  *  /share/*        published dashboards, authorized by an unguessable token
  *  /report-share/* published weekly reports, authorized the same way
+ *  /api/report-share/*
+ *                  post detail for a published weekly report, constrained by
+ *                  the same token and saved report snapshot inside the route
  */
 const PUBLIC_PREFIXES = [
   '/login', '/about', '/my-globe', '/invite', '/api/auth', '/api/cron', '/share', '/report-share',
+  '/api/report-share',
 ] as const;
 const PUBLIC_EXACT = ['/api/health', '/api/ingest/worker'] as const;
 

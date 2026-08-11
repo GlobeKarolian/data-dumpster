@@ -8,7 +8,7 @@ interface PostPreviewRef {
   thumbnailUrl: string | null;
 }
 
-type PostPreviewAccess = {
+export type PostPreviewAccess = {
   /** Revocable capability token for media embedded in a public weekly report. */
   reportShareToken?: string | null;
 };
@@ -42,12 +42,15 @@ export function postPosterUrl(post: PostPreviewRef, access?: PostPreviewAccess):
 export function postVideoUrl(
   post: Pick<PostPreviewRef, 'id' | 'platform' | 'type'>,
   storedMediaUrl: string | null,
+  access?: PostPreviewAccess,
 ): string | null {
   if (
     (post.platform === 'instagram' || post.platform === 'threads')
     && MOTION_TYPES.has(post.type)
   ) {
-    return '/api/posts/' + encodeURIComponent(post.id) + '/preview?kind=video';
+    const path = '/api/posts/' + encodeURIComponent(post.id) + '/preview?kind=video';
+    const shareToken = access?.reportShareToken?.trim();
+    return shareToken ? path + '&share=' + encodeURIComponent(shareToken) : path;
   }
   return storedMediaUrl;
 }

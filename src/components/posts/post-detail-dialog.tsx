@@ -42,6 +42,8 @@ export interface PostDetailDialogProps {
   error: string | null;
   onClose: () => void;
   onRetry: () => void;
+  /** Keeps expiring social media previews authorized on public report links. */
+  reportShareToken?: string;
 }
 
 function duration(value: number | null): string {
@@ -296,6 +298,7 @@ export function PostDetailDialog({
   error,
   onClose,
   onRetry,
+  reportShareToken,
 }: PostDetailDialogProps) {
   const titleId = React.useId();
   const descriptionId = React.useId();
@@ -309,8 +312,8 @@ export function PostDetailDialog({
   const tags = resolved?.tags ?? post.tags.map((tag) => ({ ...tag, source: null, confidence: null }));
   const urls = resolved?.urls
     ?? post.urls.map((url) => ({ ...url, canonicalUrl: null, title: null }));
-  const thumbnailUrl = postPosterUrl(post);
-  const mediaUrl = postVideoUrl(post, resolved?.mediaUrl ?? null);
+  const thumbnailUrl = postPosterUrl(post, { reportShareToken });
+  const mediaUrl = postVideoUrl(post, resolved?.mediaUrl ?? null, { reportShareToken });
   const hasThumbnail = Boolean(thumbnailUrl);
   const showThumbnail = hasThumbnail && failedImagePostId !== post.id;
   const isMotion = ['video', 'reel', 'short', 'live'].includes(post.type);
