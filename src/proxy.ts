@@ -30,6 +30,9 @@ import { getToken } from 'next-auth/jwt';
  *                  below does not exclude it -- it excludes only framework
  *                  internals and paths with a file extension -- so it has to be
  *                  named here.
+ *  /request-access public request form for people who do not have accounts yet
+ *  /api/access-requests
+ *                  submission endpoint for that public form
  *  /api/auth/*     Auth.js itself; gating it would deadlock sign-in
  *  /api/cron/*     called by Vercel Cron with a bearer secret, never a cookie
  *  /api/ingest/worker
@@ -43,7 +46,8 @@ import { getToken } from 'next-auth/jwt';
  *                  the same token and saved report snapshot inside the route
  */
 const PUBLIC_PREFIXES = [
-  '/login', '/about', '/my-globe', '/invite', '/api/auth', '/api/cron', '/share', '/report-share',
+  '/login', '/request-access', '/about', '/my-globe', '/invite', '/api/access-requests',
+  '/api/auth', '/api/cron', '/share', '/report-share',
   '/api/report-share',
 ] as const;
 const PUBLIC_EXACT = ['/api/health', '/api/ingest/worker'] as const;

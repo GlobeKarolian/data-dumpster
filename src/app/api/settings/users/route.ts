@@ -4,10 +4,9 @@
  * GET  members always; pending invitations only to an admin or owner.
  * POST create an invitation and return the link (admin or owner).
  *
- * The one thing this endpoint does not do is send anything. There is no email
- * provider configured for this deployment, so POST returns the accept URL in
- * the response body and the administrator delivers it themselves. The response
- * is honest about that and the UI says so in as many words.
+ * This endpoint is the manual fallback and does not send anything. POST returns
+ * the accept URL and the administrator delivers it themselves. Normal
+ * onboarding uses the access-request approval route, which does email the link.
  *
  * Pending invitations carry their token, and therefore their working link, so
  * an admin who lost the Slack message can copy it again rather than revoking

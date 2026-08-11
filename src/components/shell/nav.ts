@@ -94,7 +94,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/alerts': 'Alerts',
   '/dashboards': 'Dashboards',
   '/newsroom': 'Newsroom Screen',
-  '/settings/users': 'Users and Invitations',
+  '/settings/users': 'Users and Access',
   '/settings/models': 'Model Connections',
   '/settings/sources': 'Social Profiles',
   '/settings/companies': 'Companies and Social Profiles',

@@ -23,6 +23,8 @@ type MemberRow = {
   color: string | null;
 }
 
+type PendingAccessRow = { count: number | string };
+
 /**
  * The shell loads the whole landscape roster once, because the switcher has to
  * work without a round trip and because a newsroom's competitive sets number in
@@ -45,7 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login');
   }
 
-  const [landscapes, members] = await Promise.all([
+  const [landscapes, members, pendingAccess] = await Promise.all([
     query<LandscapeRow>(({ sql }) => sql`
       SELECT l.id, l.name, l.slug, l.focus_company_id,
              fc.name AS focus_company_name,
@@ -83,6 +85,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
          )
        ORDER BY lc.sort_order ASC, c.name ASC
     `),
+    role === 'admin' || role === 'owner'
+      ? query<PendingAccessRow>(({ sql }) => sql`
+          SELECT count(*) AS count
+            FROM access_requests
+           WHERE org_id = ${orgId}::uuid
+             AND status = 'pending'
+        `)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const byLandscape = new Map<string, { id: string; name: string; color: string | null }[]>();
@@ -107,6 +117,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       landscapes={shellLandscapes}
       role={role}
       manualRefreshAllowed={manualRefreshAllowed}
+      pendingAccessRequests={Number(pendingAccess.data[0]?.count ?? 0)}
     >
       {children}
     </AppShell>

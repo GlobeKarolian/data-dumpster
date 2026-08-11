@@ -26,6 +26,14 @@ describe('request proxy', () => {
     assert.equal(response.headers.get('x-middleware-next'), '1');
   });
 
+  it('lets people without accounts open and submit the access request flow', async () => {
+    for (const pathname of ['/request-access', '/api/access-requests']) {
+      const response = await proxy(new NextRequest('https://example.test' + pathname));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('x-middleware-next'), '1');
+    }
+  });
+
   it('lets capability-token report links render without a user session', async () => {
     const response = await proxy(new NextRequest('https://example.test/report-share/token-value'));
     assert.equal(response.status, 200);

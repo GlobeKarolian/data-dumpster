@@ -1,5 +1,5 @@
 /**
- * /settings/users -- membership and invitations.
+ * /settings/users -- membership, access requests and manual invitations.
  *
  * Read server side and rendered whole, because both tables are small by nature
  * (a newsroom has dozens of accounts, not thousands) and a settings screen that
@@ -12,16 +12,21 @@
  */
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
-import { KeyRound, Link2, ShieldCheck } from 'lucide-react';
+import { BellRing, KeyRound, ShieldCheck } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card';
 import { UsersTable, type MemberRecord } from '@/components/settings/users-table';
 import { PendingInvites, type InviteRecord } from '@/components/settings/pending-invites';
+import {
+  PendingAccessRequests,
+  type AccessRequestRecord,
+} from '@/components/settings/pending-access-requests';
 import { buildInviteUrl, listInvites, listOrgMembers, DEFAULT_INVITE_DAYS } from '@/lib/invites';
+import { listPendingAccessRequests } from '@/lib/access-requests';
 import { roleAtLeast } from '@/lib/roles';
 import { originFromHeaders } from '@/lib/origin';
 import { query, tryQuery } from '../../_lib/data';
 
-export const metadata: Metadata = { title: 'Users and Invitations' };
+export const metadata: Metadata = { title: 'Users and Access' };
 export const dynamic = 'force-dynamic';
 
 type LandscapeRow = { id: string; name: string };
@@ -29,14 +34,14 @@ type LandscapeGrantRow = { user_id: string; landscape_id: string };
 
 const PILLARS = [
   {
-    icon: Link2,
-    title: 'An invitation is a link, not an email',
-    body: 'No email provider is configured for this deployment and no budget decision has been made about one. Creating an invitation produces a URL and shows it to you once. Delivering it is your job: Slack, a message, a desk.',
+    icon: BellRing,
+    title: 'People request access themselves',
+    body: 'Send people to the public request page. Admins are alerted here and by email, so you no longer need to initiate every account invitation.',
   },
   {
     icon: KeyRound,
-    title: 'The link is the whole credential',
-    body: 'It carries 256 bits of randomness, expires after ' + DEFAULT_INVITE_DAYS + ' days, and works exactly once. Treat it like a password: send it in a private channel, and revoke it here if it goes somewhere it should not.',
+    title: 'Approval sends secure setup',
+    body: 'Approval creates a single-use account link, emails it automatically, and expires it after ' + DEFAULT_INVITE_DAYS + ' days. If email delivery is unavailable, the same link remains copyable.',
   },
   {
     icon: ShieldCheck,
@@ -52,8 +57,11 @@ export default async function UsersSettingsPage() {
 
   const origin = originFromHeaders(await headers());
 
-  const [members, invites, landscapes, grants] = await Promise.all([
+  const [members, accessRequests, invites, landscapes, grants] = await Promise.all([
     tryQuery(() => listOrgMembers(orgId), []),
+    canManage
+      ? tryQuery(() => listPendingAccessRequests(orgId), [])
+      : Promise.resolve({ data: [], error: null }),
     canManage ? tryQuery(() => listInvites(orgId), []) : Promise.resolve({ data: [], error: null }),
     query<LandscapeRow>(({ sql }) => sql`
       SELECT id, name
@@ -101,7 +109,16 @@ export default async function UsersSettingsPage() {
     acceptUrl: buildInviteUrl(origin, i.token),
   }));
 
-  const loadError = members.error ?? invites.error ?? landscapes.error ?? grants.error;
+  const accessRequestRecords: AccessRequestRecord[] = accessRequests.data.map((request) => ({
+    id: request.id,
+    email: request.email,
+    name: request.name,
+    team: request.team,
+    reason: request.reason,
+    createdAt: request.createdAt.toISOString(),
+  }));
+
+  const loadError = members.error ?? accessRequests.error ?? invites.error ?? landscapes.error ?? grants.error;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -110,9 +127,8 @@ export default async function UsersSettingsPage() {
           <div className="min-w-0">
             <CardTitle className="text-base">Who gets in, and how</CardTitle>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-              Data Dumpster holds a full competitive picture of the newsroom, so there is no
-              self-service sign-up. Every account starts as an invitation from someone already
-              inside, and the invitation is a link you hand over yourself.
+              People can ask to join without receiving an invitation first. Nothing is opened
+              until an administrator approves the request and chooses the account role.
             </p>
           </div>
         </CardHeader>
@@ -136,6 +152,12 @@ export default async function UsersSettingsPage() {
           {'This screen could not be read in full: ' + loadError}
         </p>
       ) : null}
+
+      <PendingAccessRequests
+        requests={accessRequestRecords}
+        canManage={canManage}
+        canGrantOwner={role === 'owner'}
+      />
 
       <UsersTable
         members={memberRecords}

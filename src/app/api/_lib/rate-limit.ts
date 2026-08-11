@@ -50,6 +50,8 @@ export const LIMITS = {
   ingest: { limit: 4, windowMs: 60_000 },
   /** Report and brief generation, which also bills inference. */
   generate: { limit: 10, windowMs: 60_000 },
+  /** Public access form. Enough for retries, low enough to blunt basic spam. */
+  accessRequest: { limit: 5, windowMs: 60 * 60_000 },
 } satisfies Record<string, RateLimit>;
 
 export type RateLimitResult =

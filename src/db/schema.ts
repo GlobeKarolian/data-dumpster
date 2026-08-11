@@ -81,11 +81,10 @@ export const sessions = pgTable('sessions', {
 /**
  * Pending invitations.
  *
- * No email provider is configured for this deployment and no budget decision has
- * been made about one, so an invitation is a link an administrator hands over in
- * Slack or in person. That constraint is the whole design: the token in this row
- * IS the credential. Hence 32 random bytes rather than a sequence, hence an
- * expiry, and hence the single-statement accept in lib/invites.ts.
+ * An invitation is a single-use credential whether it is delivered manually or
+ * emailed after an access request is approved. Hence 32 random bytes rather than
+ * a sequence, hence an expiry, and hence the single-statement accept in
+ * lib/invites.ts.
  *
  * Rows are kept after acceptance rather than deleted. Who let whom into a
  * newsroom tool, and when, is exactly the question that gets asked six months
@@ -107,6 +106,39 @@ export const invites = pgTable('invites', {
 }, (t) => [
   uniqueIndex('invites_token_uq').on(t.token),
   index('invites_org_email_idx').on(t.orgId, t.email),
+]);
+
+/**
+ * Public requests to join an organization.
+ *
+ * A request is not an account and grants no access. An admin must approve it,
+ * at which point the approval is tied to a normal single-use invitation. Rows
+ * are retained after a decision so the organization has an audit trail of who
+ * asked, who decided, and when.
+ */
+export const accessRequests = pgTable('access_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  name: text('name').notNull(),
+  team: text('team'),
+  reason: text('reason'),
+  status: text('status').notNull().default('pending'),
+  reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  inviteId: uuid('invite_id').references(() => invites.id, { onDelete: 'set null' }),
+  requestNotificationSentAt: timestamp('request_notification_sent_at', { withTimezone: true }),
+  requestNotificationError: text('request_notification_error'),
+  decisionNotificationSentAt: timestamp('decision_notification_sent_at', { withTimezone: true }),
+  decisionNotificationError: text('decision_notification_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('access_requests_org_email_pending_uq')
+    .on(t.orgId, t.email)
+    .where(sql`${t.status} = 'pending'`),
+  index('access_requests_org_status_created_idx').on(t.orgId, t.status, t.createdAt),
+  check('access_requests_status_ck', sql`${t.status} IN ('pending', 'approved', 'declined')`),
 ]);
 
 /* ----------------------------------------------------- entities measured */
@@ -673,6 +705,7 @@ export const refreshJobs = pgTable('refresh_jobs', {
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
   users: many(users), companies: many(companies), landscapes: many(landscapes),
+  accessRequests: many(accessRequests),
 }));
 
 export const companiesRelations = relations(companies, ({ one, many }) => ({

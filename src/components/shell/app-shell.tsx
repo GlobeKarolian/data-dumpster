@@ -24,11 +24,13 @@ export function AppShell({
   landscapes,
   role,
   manualRefreshAllowed,
+  pendingAccessRequests,
   children,
 }: {
   landscapes: ShellLandscape[];
   role: Role;
   manualRefreshAllowed: boolean;
+  pendingAccessRequests: number;
   children: React.ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
@@ -52,6 +54,7 @@ export function AppShell({
         activeLandscapeId={active?.id ?? null}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
+        pendingAccessRequests={pendingAccessRequests}
       />
       <div className="flex w-0 min-w-0 max-w-full flex-1 flex-col">
         <Topbar

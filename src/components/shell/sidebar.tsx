@@ -19,6 +19,7 @@ export interface SidebarProps {
   activeLandscapeId: string | null;
   mobileOpen: boolean;
   onMobileClose: () => void;
+  pendingAccessRequests: number;
 }
 
 export function Sidebar({
@@ -26,6 +27,7 @@ export function Sidebar({
   activeLandscapeId,
   mobileOpen,
   onMobileClose,
+  pendingAccessRequests,
 }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -128,6 +130,17 @@ export function Sidebar({
                         <PlatformIcon platform={item.platform} />
                       ) : null}
                       {compact ? <span className="sr-only">{item.label}</span> : <span className="truncate">{item.label}</span>}
+                      {item.href === '/settings/users' && pendingAccessRequests > 0 ? (
+                        <span
+                          className={cn(
+                            'ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-accent-600 px-1 text-[9px] font-semibold leading-4 text-white',
+                            compact && 'absolute translate-x-2 -translate-y-2',
+                          )}
+                          aria-label={pendingAccessRequests + ' access requests waiting'}
+                        >
+                          {pendingAccessRequests > 99 ? '99+' : pendingAccessRequests}
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 );

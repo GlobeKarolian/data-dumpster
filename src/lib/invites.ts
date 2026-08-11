@@ -20,10 +20,10 @@
  *
  * WHY NOTHING HERE SENDS EMAIL
  *
- * This deployment has no email provider and no budget decision about one. So an
- * invitation is a link, and delivering it is a human act: Slack, a meeting, a
- * corridor. Every function below is written on that assumption. None of them
- * sends anything, and none of them pretends to.
+ * This module only mints and accepts credentials; it does not deliver them.
+ * Manual invitations are handed over directly. The access-request workflow may
+ * email the link after approval, but that orchestration lives in
+ * lib/access-requests.ts so the token primitive remains transport-agnostic.
  *
  * THE TOKEN IS THE CREDENTIAL
  *

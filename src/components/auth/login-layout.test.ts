@@ -21,8 +21,8 @@ test('login uses the selected GIF as a full-viewport background', () => {
   assert.match(page, /bg-white\/90/);
   assert.match(config, /\/media\/xLsaBMK6Mg8DK\/\*\*/);
   assert.match(page, /The data is messy\./);
-  assert.match(page, /mailto:Matt\.Karolian@globe\.com/);
-  assert.match(page, /for access credentials\./);
+  assert.match(page, /href="\/request-access"/);
+  assert.match(page, /Request access/);
 
   assert.doesNotMatch(page, /Your login shouldn’t be/);
   assert.doesNotMatch(page, /The feed is on fire|dumpster has a bouncer/);

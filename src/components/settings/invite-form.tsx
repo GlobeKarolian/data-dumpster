@@ -19,12 +19,9 @@ export interface CreatedInviteLink {
 /**
  * Creating an invitation.
  *
- * The success state is the whole point of this component. There is no email
- * provider configured for this deployment, so the link this returns is the only
- * copy that will ever exist and handing it over is a human act. The panel says
- * that in plain words rather than showing a checkmark and letting the
- * administrator assume a message went out, which is the failure mode that ends
- * with a new hire waiting three days for an email nobody sent.
+ * The success state is explicit because this is the manual fallback. Unlike an
+ * approved access request, this route does not send email; the administrator
+ * copies and delivers the link directly.
  */
 export function InviteForm({
   canGrantOwner,
@@ -80,12 +77,11 @@ export function InviteForm({
           </span>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              Nothing was emailed. This link is the only way {created.email} gets in.
+              This manual invitation was not emailed.
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-              Data Dumpster has no email provider configured, so no message was sent and none will be.
-              Send this to them yourself. You can copy it again from the list below until it is used
-              or revoked.
+              Send this secure link to {created.email} yourself. You can copy it again from the list
+              below until it is used or revoked.
             </p>
           </div>
         </div>

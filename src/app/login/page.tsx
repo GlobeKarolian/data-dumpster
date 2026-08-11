@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { AuthError } from 'next-auth';
 import { signIn } from '@/auth';
 import { LoginForm, type LoginState } from '@/components/auth/login-form';
@@ -73,14 +74,14 @@ export default async function LoginPage({
           <LoginForm action={authenticate} initialError={initialError} />
 
           <p className="mt-5 text-center text-xs leading-relaxed text-zinc-600">
-            Email{' '}
-            <a
-              href="mailto:Matt.Karolian@globe.com"
+            Need an account?{' '}
+            <Link
+              href="/request-access"
               className="font-medium text-zinc-900 underline decoration-zinc-400 underline-offset-2 hover:decoration-zinc-900"
             >
-              Matt.Karolian@globe.com
-            </a>{' '}
-            for access credentials.
+              Request access
+            </Link>
+            .
           </p>
         </div>
       </section>

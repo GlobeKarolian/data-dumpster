@@ -150,14 +150,14 @@ export function PendingInvites({
         <div className="min-w-0">
           <CardTitle>Pending invitations</CardTitle>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Each of these is a live link. Nothing was emailed, so an invitation only works if
-            somebody hands the link over.
+            Manual fallback for adding someone directly. Each row is a live, single-use link
+            that you deliver yourself.
           </p>
         </div>
         {canManage ? (
           <Button size="sm" variant="primary" onClick={() => setAdding((v) => !v)}>
             <Plus className="h-3 w-3" aria-hidden />
-            Invite someone
+            Create manual invite
           </Button>
         ) : null}
       </CardHeader>
@@ -181,7 +181,7 @@ export function PendingInvites({
           title="No invitations outstanding"
           description={
             canManage
-              ? 'Invite someone and you will get a link to hand over. There is no email provider configured, so delivery is yours.'
+              ? 'Use the public request page for normal onboarding, or create a manual invite when you need to initiate access yourself.'
               : 'Only an admin or an owner can see or create invitations.'
           }
         />
