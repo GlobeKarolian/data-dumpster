@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { automaticRefreshWindowStart } from './automatic-refresh';
 import { collectionQueueTestHelpers } from './collection-queue';
 import { collectionOutcomeForFetch } from './runner';
 
@@ -76,6 +77,27 @@ describe('pooled landscape demand', () => {
       coverageSince: null,
       coverageUntil: null,
     }), false);
+  });
+
+  it('queues the noon window after a midnight worker starts one minute late', () => {
+    const now = new Date('2026-08-11T12:00:16.448Z');
+    assert.equal(demandRegistrationNeedsQueue({
+      force: false,
+      now,
+      staleBefore: automaticRefreshWindowStart(now),
+      status: 'partial',
+      outcome: 'terminal_source_limitation',
+      hasMore: false,
+      nextAttemptAt: null,
+      leaseUntil: null,
+      existingRequiredSince: narrowSince,
+      existingRequiredUntil: new Date('2026-08-11T00:01:24.461Z'),
+      demandedSince: narrowSince,
+      demandedUntil: now,
+      coverageSince: null,
+      coverageUntil: null,
+      attemptedUntil: new Date('2026-08-11T00:01:24.461Z'),
+    }), true);
   });
 
   it('queues one pooled crawl when certified coverage does not span wider history', () => {

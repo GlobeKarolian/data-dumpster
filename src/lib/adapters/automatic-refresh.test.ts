@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { AUTOMATIC_REFRESH_INTERVAL_MS } from './automatic-refresh';
+import {
+  AUTOMATIC_REFRESH_INTERVAL_MS,
+  automaticRefreshWindowStart,
+} from './automatic-refresh';
 
 interface CronEntry {
   path: string;
@@ -11,6 +14,17 @@ interface CronEntry {
 
 test('automatic profile freshness is limited to two normal windows per day', () => {
   assert.equal(AUTOMATIC_REFRESH_INTERVAL_MS, 12 * 60 * 60 * 1_000);
+});
+
+test('automatic freshness is aligned to midnight and noon instead of worker start time', () => {
+  assert.equal(
+    automaticRefreshWindowStart(new Date('2026-08-11T00:01:24.461Z')).toISOString(),
+    '2026-08-11T00:00:00.000Z',
+  );
+  assert.equal(
+    automaticRefreshWindowStart(new Date('2026-08-11T12:00:16.448Z')).toISOString(),
+    '2026-08-11T12:00:00.000Z',
+  );
 });
 
 test('production opens exactly two collection windows and recovery cannot enqueue fresh work', () => {

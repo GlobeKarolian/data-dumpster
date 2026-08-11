@@ -21,7 +21,10 @@ import {
   RateGate,
 } from './rate-gate';
 import { TokenFencedLeaseHeartbeat } from './lease-heartbeat';
-import { AUTOMATIC_REFRESH_INTERVAL_MS } from './automatic-refresh';
+import {
+  AUTOMATIC_REFRESH_INTERVAL_MS,
+  automaticRefreshWindowStart,
+} from './automatic-refresh';
 
 const DEFAULT_HISTORY_DAYS = 90;
 const DEFAULT_FRESH_MS = AUTOMATIC_REFRESH_INTERVAL_MS;
@@ -713,9 +716,12 @@ export async function enqueueTrackedProfiles(input: {
     .where(eq(channels.active, true));
 
   const demands = await writeDemands(rows, window);
+  const staleBefore = input.freshForMs === undefined
+    ? automaticRefreshWindowStart(now)
+    : new Date(now.getTime() - input.freshForMs);
   return enqueueDemandedChannels(poolDemandWindows(demands).map((target) => target.channelId), {
     force: false,
-    staleBefore: new Date(now.getTime() - (input.freshForMs ?? DEFAULT_FRESH_MS)),
+    staleBefore,
   });
 }
 

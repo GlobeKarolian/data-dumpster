@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: 'Newsroom Screen' };
 export const dynamic = 'force-dynamic';
 
 type FreshnessRow = {
-  last_ingested_at: string | null;
+  last_collected_at: string | null;
   profile_count: number | string;
   fresh_profile_count: number | string;
 };
@@ -63,14 +63,24 @@ export default async function NewsroomPage({
     }),
     loadTopPostsByPlatform({ ...base, perPlatform: 3 }),
     query<FreshnessRow>(({ sql }) => sql`
+      WITH latest_settled AS (
+        SELECT
+          ir.channel_id,
+          max(ir.finished_at) AS collected_at
+        FROM ingestion_runs ir
+        WHERE ir.status IN ('succeeded', 'partial')
+          AND ir.finished_at IS NOT NULL
+        GROUP BY ir.channel_id
+      )
       SELECT
-        to_char(max(ch.last_ingested_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_ingested_at,
+        to_char(max(ls.collected_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_collected_at,
         count(*) AS profile_count,
         count(*) FILTER (
-          WHERE ch.last_ingested_at >= now() - interval '14 hours'
+          WHERE ls.collected_at >= now() - interval '14 hours'
         ) AS fresh_profile_count
       FROM channels ch
       JOIN landscape_companies lc ON lc.company_id = ch.company_id
+      LEFT JOIN latest_settled ls ON ls.channel_id = ch.id
       WHERE lc.landscape_id = ${ctx.landscape!.id}::uuid
         AND ch.active
     `),
@@ -123,7 +133,7 @@ export default async function NewsroomPage({
       topPosts={topPosts.data}
       platforms={ctx.platforms.length > 0 ? ctx.platforms : NEWSROOM_PLATFORMS}
       freshness={{
-        lastIngestedAt: fresh?.last_ingested_at ?? null,
+        lastIngestedAt: fresh?.last_collected_at ?? null,
         profileCount: Number(fresh?.profile_count ?? 0),
         freshProfileCount: Number(fresh?.fresh_profile_count ?? 0),
       }}
