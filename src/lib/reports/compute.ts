@@ -34,6 +34,11 @@ import {
   type ReportPlatform,
   type TopPost,
 } from './types';
+import {
+  ownedMetricRows,
+  sumComparablePrevious,
+  sumMeasuredValues,
+} from './portfolio';
 
 /**
  * Parse a yyyy-mm-dd day into local time explicitly.
@@ -243,13 +248,26 @@ export async function computeWeeklyReport(
 
   /* ------------------------------------------------------------- portfolio */
 
-  const portfolioEngagement = movement(
+  // The competitive-landscape total remains distinct from the BGM portfolio.
+  // It powers the market cohort section and must never be relabelled as owned
+  // performance merely because both figures are totals.
+  const landscapeEngagement = movement(
     sumCompleteValues(engagementBoard),
     sumCompletePrevious(engagementBoard),
   );
+
+  const bgmFollowerBoard = ownedMetricRows(followerBoard, bgmCompanyIdSet);
+  const bgmNetFollowerBoard = ownedMetricRows(netFollowerBoard, bgmCompanyIdSet);
+  const bgmEngagementBoard = ownedMetricRows(engagementBoard, bgmCompanyIdSet);
+  const bgmPostsBoard = ownedMetricRows(postsBoard, bgmCompanyIdSet);
+
+  const portfolioEngagement = movement(
+    sumMeasuredValues(bgmEngagementBoard),
+    sumComparablePrevious(bgmEngagementBoard),
+  );
   const portfolioPosts = movement(
-    sumCompleteValues(postsBoard),
-    sumCompletePrevious(postsBoard),
+    sumMeasuredValues(bgmPostsBoard),
+    sumComparablePrevious(bgmPostsBoard),
   );
   const portfolioPerPost = movement(
     perPost(portfolioEngagement.value, portfolioPosts.value),
@@ -344,11 +362,13 @@ export async function computeWeeklyReport(
     previousPeriod: { start: facts.previousRange.start, end: facts.previousRange.end },
     focus,
     portfolio: {
+      scope: 'bgm_owned',
       followers: movement(
-        sumCompleteValues(followerBoard),
-        sumCompletePrevious(followerBoard),
+        sumMeasuredValues(bgmFollowerBoard),
+        sumComparablePrevious(bgmFollowerBoard),
       ),
-      netFollowers: sumCompleteValues(netFollowerBoard),
+      netFollowers: sumMeasuredValues(bgmNetFollowerBoard),
+      previousNetFollowers: sumComparablePrevious(bgmNetFollowerBoard),
       engagementTotal: portfolioEngagement,
       posts: portfolioPosts,
       engagementPerPost: portfolioPerPost,
@@ -361,7 +381,7 @@ export async function computeWeeklyReport(
       focusCompanyName: focusCompany?.name ?? null,
       focusRank: cohortRows.find((r) => r.isFocus)?.rank ?? null,
       memberCount: cohortRows.length,
-      engagement: portfolioEngagement,
+      engagement: landscapeEngagement,
       rows: cohortRows,
       focusPostRank: focusPostIndex >= 0 ? focusPostIndex + 1 : null,
       focusPostPool: facts.topPostsOverall.length,

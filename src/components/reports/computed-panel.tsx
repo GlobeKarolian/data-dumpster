@@ -20,6 +20,7 @@ import {
   type TopPost,
 } from '@/lib/reports/types';
 import { formatCount, formatPct, formatRate, formatSignedCount } from '@/lib/reports/render';
+import { resolveBgmPortfolio } from '@/lib/reports/portfolio';
 import { Figure, HeaderWithDefinition, SectionCard } from './ui';
 
 const TH = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-zinc-500 '
@@ -93,16 +94,17 @@ export function PerformanceSection({
   computed: ComputedBlock;
   showCoverageNotes?: boolean;
 }) {
-  const f = computed.focus;
-  const brand = f.companyName ?? 'Focus brand not set';
+  const f = resolveBgmPortfolio(computed.portfolio, computed.brands);
+  const previousNetFollowers = f.previousNetFollowers ?? null;
   const platformCoverageNotes = computed.caveats.filter((caveat) => /^\d+ of \d+ tracked /.test(caveat));
   const interpretiveNotes = computed.caveats.filter((caveat) => !/^\d+ of \d+ tracked /.test(caveat));
   return (
     <SectionCard
-      title="Performance"
+      title="BGM Portfolio Performance"
       kind="computed"
       description={
-        brand + ', ' + computed.period.start + ' to ' + computed.period.end
+        'Every measured BGM-owned brand in this report across all tracked platforms, '
+        + computed.period.start + ' to ' + computed.period.end
         + ', measured against ' + computed.previousPeriod.start + ' to ' + computed.previousPeriod.end + '.'
       }
     >
@@ -111,8 +113,8 @@ export function PerformanceSection({
           label="Net followers"
           hint={
             'Followers on the last day of the window minus followers on the first day, summed '
-            + 'across Facebook, Instagram, YouTube, X and TikTok. This is growth inside the week, '
-            + 'not the total audience.'
+            + 'across every tracked platform for every measured BGM-owned brand in this report. '
+            + 'This is growth inside the week, not the total audience.'
           }
           value={formatSignedCount(f.netFollowers)}
           tone={
@@ -120,9 +122,9 @@ export function PerformanceSection({
               ? 'neutral'
               : f.netFollowers > 0 ? 'up' : f.netFollowers < 0 ? 'down' : 'neutral'
           }
-          sub={f.previousNetFollowers === null
+          sub={previousNetFollowers === null
             ? 'no comparable prior week'
-            : formatSignedCount(f.previousNetFollowers) + ' the week before'}
+            : formatSignedCount(previousNetFollowers) + ' the week before'}
         />
         <Figure
           label="Total followers"

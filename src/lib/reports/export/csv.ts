@@ -14,6 +14,7 @@ import {
   type ComputedBlock,
 } from '@/lib/reports/types';
 import { reportManualRows } from '@/lib/reports/manual-rows';
+import { resolveBgmPortfolio } from '@/lib/reports/portfolio';
 import { executiveLines, type ReportDocument } from '@/lib/reports/render';
 
 export type CsvValue = string | number | boolean | null | undefined;
@@ -105,6 +106,7 @@ export function renderReportCsv(doc: ReportDocument): string {
 
   const computed = doc.computed;
   if (computed) {
+    const bgmPortfolio = resolveBgmPortfolio(computed.portfolio, computed.brands);
     csv.section('Focus performance', [
       'metric',
       'current_value',
@@ -149,7 +151,7 @@ export function renderReportCsv(doc: ReportDocument): string {
       ],
     ]);
 
-    csv.section('Portfolio performance', [
+    csv.section('BGM portfolio performance', [
       'metric',
       'current_value',
       'previous_value',
@@ -158,32 +160,38 @@ export function renderReportCsv(doc: ReportDocument): string {
     ], [
       [
         'followers',
-        computed.portfolio.followers.value,
-        computed.portfolio.followers.previousValue,
-        computed.portfolio.followers.changePct,
-        computed.portfolio.followers.direction,
+        bgmPortfolio.followers.value,
+        bgmPortfolio.followers.previousValue,
+        bgmPortfolio.followers.changePct,
+        bgmPortfolio.followers.direction,
       ],
-      ['net_followers', computed.portfolio.netFollowers, null, null, ''],
+      [
+        'net_followers',
+        bgmPortfolio.netFollowers,
+        bgmPortfolio.previousNetFollowers ?? null,
+        null,
+        '',
+      ],
       [
         'engagement_total',
-        computed.portfolio.engagementTotal.value,
-        computed.portfolio.engagementTotal.previousValue,
-        computed.portfolio.engagementTotal.changePct,
-        computed.portfolio.engagementTotal.direction,
+        bgmPortfolio.engagementTotal.value,
+        bgmPortfolio.engagementTotal.previousValue,
+        bgmPortfolio.engagementTotal.changePct,
+        bgmPortfolio.engagementTotal.direction,
       ],
       [
         'posts',
-        computed.portfolio.posts.value,
-        computed.portfolio.posts.previousValue,
-        computed.portfolio.posts.changePct,
-        computed.portfolio.posts.direction,
+        bgmPortfolio.posts.value,
+        bgmPortfolio.posts.previousValue,
+        bgmPortfolio.posts.changePct,
+        bgmPortfolio.posts.direction,
       ],
       [
         'engagement_per_post',
-        computed.portfolio.engagementPerPost.value,
-        computed.portfolio.engagementPerPost.previousValue,
-        computed.portfolio.engagementPerPost.changePct,
-        computed.portfolio.engagementPerPost.direction,
+        bgmPortfolio.engagementPerPost.value,
+        bgmPortfolio.engagementPerPost.previousValue,
+        bgmPortfolio.engagementPerPost.changePct,
+        bgmPortfolio.engagementPerPost.direction,
       ],
     ]);
 

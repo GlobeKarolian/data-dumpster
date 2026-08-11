@@ -68,6 +68,10 @@ describe('weekly report presentation', () => {
       resolve(root, 'src/components/reports/computed-panel.tsx'),
       'utf8',
     );
+    assert.match(panel, /const f = resolveBgmPortfolio\(computed\.portfolio, computed\.brands\)/);
+    assert.match(panel, /title="BGM Portfolio Performance"/);
+    assert.match(panel, /Every measured BGM-owned brand in this report across all tracked platforms/);
+    assert.doesNotMatch(panel, /const f = computed\.focus/);
     assert.match(panel, /Platform audience/);
     assert.match(panel, /aria-label=\{label \+ ': ' \+ formatted\}/);
     assert.match(panel, /<PlatformIcon platform=\{p\}/);

@@ -134,6 +134,21 @@ export type FocusPerformance = {
   engagementPerPost: Movement;
 };
 
+export type PortfolioPerformance = {
+  /**
+   * New report snapshots explicitly identify this as the BGM-owned portfolio.
+   * Older snapshots omitted the field and used the whole landscape, so the UI
+   * derives a safe BGM-only fallback from their saved brand rows.
+   */
+  scope?: 'bgm_owned';
+  followers: Movement;
+  netFollowers: number | null;
+  previousNetFollowers?: number | null;
+  engagementTotal: Movement;
+  posts: Movement;
+  engagementPerPost: Movement;
+};
+
 export type ComputedBlock = {
   version: 1;
   /** When this block was last derived. Rendered next to every computed figure. */
@@ -143,14 +158,8 @@ export type ComputedBlock = {
   previousPeriod: { start: string; end: string };
   /** The focus brand of the landscape, which is what the exec summary leads on. */
   focus: FocusPerformance;
-  /** Every brand in the landscape, added up. */
-  portfolio: {
-    followers: Movement;
-    netFollowers: number | null;
-    engagementTotal: Movement;
-    posts: Movement;
-    engagementPerPost: Movement;
-  };
+  /** Every measured BGM-owned brand in this landscape, added up. */
+  portfolio: PortfolioPerformance;
   brands: BrandRow[];
   topPosts: TopPost[];
   /** Highest-engagement posts restricted to BGM portfolio companies. */

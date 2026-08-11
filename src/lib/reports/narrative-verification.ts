@@ -20,6 +20,7 @@ import {
   type NarrativeSectionSpec,
 } from './types';
 import { reportManualRows } from './manual-rows';
+import { resolveBgmPortfolio } from './portfolio';
 import {
   describeDirection,
   formatCount,
@@ -32,6 +33,7 @@ import {
 function computedMaterial(doc: ReportDocument): string[] {
   const c = doc.computed;
   if (!c) return ['COMPUTED DATA: not yet computed for this report.'];
+  const bgmPortfolio = resolveBgmPortfolio(c.portfolio, c.brands);
 
   const lines: string[] = [];
   lines.push('COMPUTED DATA (window ' + periodLabel(c.period)
@@ -48,12 +50,12 @@ function computedMaterial(doc: ReportDocument): string[] {
   lines.push('Focus posts: ' + formatCount(c.focus.posts.value)
     + '. Engagement per post: ' + formatRate(c.focus.engagementPerPost.value)
     + ', ' + describeDirection(c.focus.engagementPerPost.changePct) + '.');
-  lines.push('Portfolio followers: ' + formatCount(c.portfolio.followers.value)
-    + (c.portfolio.netFollowers === null
+  lines.push('BGM portfolio followers: ' + formatCount(bgmPortfolio.followers.value)
+    + (bgmPortfolio.netFollowers === null
       ? ', net change unavailable this week.'
-      : ', net ' + formatSignedCount(c.portfolio.netFollowers) + ' this week.'));
-  lines.push('Portfolio engagement: ' + formatCount(c.portfolio.engagementTotal.value)
-    + ', ' + describeDirection(c.portfolio.engagementTotal.changePct) + '.');
+      : ', net ' + formatSignedCount(bgmPortfolio.netFollowers) + ' this week.'));
+  lines.push('BGM portfolio engagement: ' + formatCount(bgmPortfolio.engagementTotal.value)
+    + ', ' + describeDirection(bgmPortfolio.engagementTotal.changePct) + '.');
 
   lines.push('');
   lines.push('BRANDS BY TOTAL FOLLOWERS:');
