@@ -178,6 +178,13 @@ function CompaniesCard({
   const [error, setError] = React.useState<string | null>(null);
   const profileCompany = companies.find((company) => company.id === addingFor) ?? null;
 
+  React.useEffect(() => {
+    setOpen(false);
+    setExistingCompanyId('');
+    setError(null);
+    setAddMode(selectedLandscapeId && reusableCompanies.length > 0 ? 'existing' : 'new');
+  }, [selectedLandscapeId, reusableCompanies.length]);
+
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
