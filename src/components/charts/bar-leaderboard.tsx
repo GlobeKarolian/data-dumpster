@@ -10,6 +10,7 @@ import {
 } from '@/lib/types';
 import { compactNumber, formatChange } from '@/lib/utils';
 import { measuredCompetitorAverage } from '@/lib/metrics/availability';
+import { sortByMetricDescending } from '@/lib/metrics/ranking';
 import { formatMetric } from '@/components/ui/format';
 import { PlatformIcon } from '@/components/ui/platform-icon';
 import { ChartFrame, ChartTooltipCard } from './chart-frame';
@@ -83,7 +84,11 @@ export function BarLeaderboard({
 }: BarLeaderboardProps) {
   const [expanded, setExpanded] = React.useState(false);
   const measuredRows = React.useMemo(
-    () => rows.filter((row) => row.available),
+    () => sortByMetricDescending(
+      rows.filter((row) => row.available),
+      (row) => row.value,
+      (row) => row.company.name,
+    ),
     [rows],
   );
   const visibleRowLimit = expanded ? measuredRows.length : maxRows;

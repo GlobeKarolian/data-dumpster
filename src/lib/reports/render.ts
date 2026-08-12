@@ -25,6 +25,7 @@ import {
   type Period,
 } from './types';
 import { reportManualRows } from './manual-rows';
+import { sortByMetricDescending } from '@/lib/metrics/ranking';
 
 export type ReportDocument = {
   title: string;
@@ -173,7 +174,11 @@ function brandTable(computed: ComputedBlock): TableModel {
       { label: 'Net Change', numeric: true },
       ...REPORT_PLATFORMS.map((p) => ({ label: REPORT_PLATFORM_LABELS[p], numeric: true })),
     ],
-    rows: computed.brands.map((b) => {
+    rows: sortByMetricDescending(
+      computed.brands,
+      (brand) => brand.totalFollowers,
+      (brand) => brand.name,
+    ).map((b) => {
       const cells: Cell[] = [
         { text: b.name + (b.isBgmOwned ? ' (BGM)' : '') },
         { text: formatCount(b.totalFollowers), numeric: true },
@@ -196,7 +201,11 @@ function cohortTable(computed: ComputedBlock): TableModel {
       { label: 'Engagement', numeric: true },
       { label: 'Week over Week', numeric: true },
     ],
-    rows: computed.cohort.rows.map((r) => {
+    rows: sortByMetricDescending(
+      computed.cohort.rows,
+      (row) => row.engagementTotal,
+      (row) => row.name,
+    ).map((r) => {
       const cells: Cell[] = [
         { text: String(r.rank), numeric: true },
         { text: r.name + (r.isBgmOwned ? ' (BGM)' : '') },

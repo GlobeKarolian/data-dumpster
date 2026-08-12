@@ -108,6 +108,7 @@ export function CompaniesManager({
   return (
     <div className="space-y-4">
       <CompaniesCard
+        key={selectedLandscapeId ?? 'all-companies'}
         companies={inLandscape}
         canEdit={canEdit}
         selectedLandscapeId={selectedLandscapeId}
@@ -177,13 +178,6 @@ function CompaniesCard({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const profileCompany = companies.find((company) => company.id === addingFor) ?? null;
-
-  React.useEffect(() => {
-    setOpen(false);
-    setExistingCompanyId('');
-    setError(null);
-    setAddMode(selectedLandscapeId && reusableCompanies.length > 0 ? 'existing' : 'new');
-  }, [selectedLandscapeId, reusableCompanies.length]);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();

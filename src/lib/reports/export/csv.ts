@@ -15,6 +15,7 @@ import {
 } from '@/lib/reports/types';
 import { reportManualRows } from '@/lib/reports/manual-rows';
 import { resolveBgmPortfolio } from '@/lib/reports/portfolio';
+import { sortByMetricDescending } from '@/lib/metrics/ranking';
 import { executiveLines, type ReportDocument } from '@/lib/reports/render';
 
 export type CsvValue = string | number | boolean | null | undefined;
@@ -207,7 +208,11 @@ export function renderReportCsv(doc: ReportDocument): string {
       ...REPORT_PLATFORMS.map((platform) => (
         REPORT_PLATFORM_LABELS[platform].toLowerCase() + '_followers'
       )),
-    ], computed.brands.map((brand) => [
+    ], sortByMetricDescending(
+      computed.brands,
+      (brand) => brand.totalFollowers,
+      (brand) => brand.name,
+    ).map((brand) => [
       brand.rank,
       brand.companyId,
       brand.name,
@@ -265,7 +270,11 @@ export function renderReportCsv(doc: ReportDocument): string {
       'change_pct_fraction',
       'is_focus',
       'is_bgm_owned',
-    ], computed.cohort.rows.map((company) => [
+    ], sortByMetricDescending(
+      computed.cohort.rows,
+      (company) => company.engagementTotal,
+      (company) => company.name,
+    ).map((company) => [
       company.rank,
       company.companyId,
       company.name,

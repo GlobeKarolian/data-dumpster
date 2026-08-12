@@ -17,6 +17,7 @@ import {
   type ReportPlatform,
 } from '@/lib/reports/types';
 import { reportManualRows } from '@/lib/reports/manual-rows';
+import { sortByMetricDescending } from '@/lib/metrics/ranking';
 import {
   executiveLines,
   formatCount,
@@ -608,10 +609,15 @@ function addBrandSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: number)
   ];
   const PAGE_SIZE = 12;
   let page = startPage;
-  const chunks = computed.brands.length > 0
+  const rankedBrands = sortByMetricDescending(
+    computed.brands,
+    (brand) => brand.totalFollowers,
+    (brand) => brand.name,
+  );
+  const chunks = rankedBrands.length > 0
     ? Array.from(
-      { length: Math.ceil(computed.brands.length / PAGE_SIZE) },
-      (_, index) => computed.brands.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE),
+      { length: Math.ceil(rankedBrands.length / PAGE_SIZE) },
+      (_, index) => rankedBrands.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE),
     )
     : [[]];
 
@@ -784,10 +790,15 @@ function addCohortSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: number
   const cohort = computed.cohort;
   const FIRST_PAGE_SIZE = 9;
   const NEXT_PAGE_SIZE = 13;
+  const rankedRows = sortByMetricDescending(
+    cohort.rows,
+    (row) => row.engagementTotal,
+    (row) => row.name,
+  );
   const chunks: typeof cohort.rows[] = [];
-  chunks.push(cohort.rows.slice(0, FIRST_PAGE_SIZE));
-  for (let offset = FIRST_PAGE_SIZE; offset < cohort.rows.length; offset += NEXT_PAGE_SIZE) {
-    chunks.push(cohort.rows.slice(offset, offset + NEXT_PAGE_SIZE));
+  chunks.push(rankedRows.slice(0, FIRST_PAGE_SIZE));
+  for (let offset = FIRST_PAGE_SIZE; offset < rankedRows.length; offset += NEXT_PAGE_SIZE) {
+    chunks.push(rankedRows.slice(offset, offset + NEXT_PAGE_SIZE));
   }
   let page = startPage;
 

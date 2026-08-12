@@ -10,6 +10,7 @@ import { PostDetailDialog } from '@/components/posts/post-detail-dialog';
 import type { PostDetailDto, PostDto } from '@/lib/metrics/contract';
 import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/types';
 import { postPosterUrl } from '@/lib/post-preview-url';
+import { sortByMetricDescending } from '@/lib/metrics/ranking';
 import { cn } from '@/lib/utils';
 import {
   REPORT_PLATFORMS,
@@ -193,6 +194,11 @@ export function PerformanceSection({
 }
 
 export function BrandsSection({ computed }: { computed: ComputedBlock }) {
+  const brands = sortByMetricDescending(
+    computed.brands,
+    (brand) => brand.totalFollowers,
+    (brand) => brand.name,
+  );
   return (
     <SectionCard
       title="Owned Brands Key Metrics"
@@ -218,7 +224,7 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-            {computed.brands.map((b) => (
+            {brands.map((b) => (
               <tr
                 key={b.companyId}
                 className={b.isBgmOwned ? 'bg-accent-600/5 dark:bg-accent-600/10' : undefined}
@@ -558,22 +564,37 @@ export function ReportPostCard({
 
 /** Portfolio charts requested for the leadership-first report view. */
 export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
-  const brands = computed.brands.filter((brand) => brand.isBgmOwned);
+  const ownedBrands = computed.brands.filter((brand) => brand.isBgmOwned);
+  const followerBrands = sortByMetricDescending(
+    ownedBrands,
+    (brand) => brand.netChange,
+    (brand) => brand.name,
+  );
+  const engagementBrands = sortByMetricDescending(
+    ownedBrands,
+    (brand) => brand.engagementTotal,
+    (brand) => brand.name,
+  );
+  const viewBrands = sortByMetricDescending(
+    ownedBrands,
+    (brand) => brand.viewsTotal,
+    (brand) => brand.name,
+  );
   const largestFollowerSwing = Math.max(
     1,
-    ...brands.map((brand) => Object.values(brand.netChangeByPlatform ?? {})
+    ...followerBrands.map((brand) => Object.values(brand.netChangeByPlatform ?? {})
       .reduce((total, value) => total + Math.abs(value), 0)),
   );
   const largestEngagementTotal = Math.max(
     1,
-    ...brands.map((brand) => Math.max(0, brand.engagementTotal ?? 0)),
+    ...engagementBrands.map((brand) => Math.max(0, brand.engagementTotal ?? 0)),
   );
   const largestViewsTotal = Math.max(
     1,
-    ...brands.map((brand) => Math.max(0, brand.viewsTotal ?? 0)),
+    ...viewBrands.map((brand) => Math.max(0, brand.viewsTotal ?? 0)),
   );
   const viewPlatforms = REPORT_PLATFORMS.filter((platform) =>
-    brands.some((brand) => (brand.viewsByPlatform?.[platform] ?? 0) > 0));
+    viewBrands.some((brand) => (brand.viewsByPlatform?.[platform] ?? 0) > 0));
 
   return (
     <div className="space-y-4">
@@ -591,7 +612,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               </span>
             ))}
           </div>
-          {brands.map((brand) => {
+          {followerBrands.map((brand) => {
             const entries = Object.entries(brand.netChangeByPlatform ?? {}) as Array<[ReportPlatform, number]>;
             const positive = entries.filter(([, value]) => value > 0);
             const negative = entries.filter(([, value]) => value < 0);
@@ -647,7 +668,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               </div>
             );
           })}
-          {brands.length === 0 ? <EmptyChart /> : null}
+          {followerBrands.length === 0 ? <EmptyChart /> : null}
         </div>
       </SectionCard>
 
@@ -665,7 +686,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               </span>
             ))}
           </div>
-          {brands.map((brand) => {
+          {engagementBrands.map((brand) => {
             const total = Math.max(0, brand.engagementTotal ?? 0);
             const entries = (Object.entries(brand.engagementByPlatform ?? {}) as Array<[ReportPlatform, number]>)
               .filter(([, value]) => value > 0);
@@ -703,7 +724,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               </div>
             );
           })}
-          {brands.length === 0 ? <EmptyChart /> : null}
+          {engagementBrands.length === 0 ? <EmptyChart /> : null}
         </div>
       </SectionCard>
 
@@ -723,7 +744,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               ))}
             </div>
           ) : null}
-          {brands.map((brand) => {
+          {viewBrands.map((brand) => {
             const total = Math.max(0, brand.viewsTotal ?? 0);
             const entries = (Object.entries(brand.viewsByPlatform ?? {}) as Array<[ReportPlatform, number]>)
               .filter(([, value]) => value > 0);
@@ -753,8 +774,8 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
               </div>
             );
           })}
-          {brands.length === 0 ? <EmptyChart /> : null}
-          {brands.length > 0 && brands.every((brand) => brand.viewsTotal === undefined) ? (
+          {viewBrands.length === 0 ? <EmptyChart /> : null}
+          {viewBrands.length > 0 && viewBrands.every((brand) => brand.viewsTotal === undefined) ? (
             <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300">
               Recompute this saved report to add its video-view breakdown.
             </p>
@@ -831,12 +852,16 @@ function EmptyChart() {
 }
 
 export function BrandScorecards({ computed }: { computed: ComputedBlock }) {
-  const brands = computed.brands.filter((brand) => brand.isBgmOwned);
+  const brands = sortByMetricDescending(
+    computed.brands.filter((brand) => brand.isBgmOwned),
+    (brand) => brand.engagementTotal,
+    (brand) => brand.name,
+  );
   return (
     <SectionCard
       title="BGM Brand Scorecards"
       kind="computed"
-      description="The same four measures for every owned brand, so leadership can scan the portfolio without reading a wide table."
+      description="The same four measures for every owned brand, ranked by total engagement so leadership can scan the portfolio without reading a wide table."
     >
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {brands.map((brand) => (
@@ -886,6 +911,11 @@ function BrandMetric({ label, value, change }: { label: string; value: string; c
 
 export function CohortSection({ computed }: { computed: ComputedBlock }) {
   const cohort = computed.cohort;
+  const rows = sortByMetricDescending(
+    cohort.rows,
+    (row) => row.engagementTotal,
+    (row) => row.name,
+  );
   return (
     <SectionCard
       title="Boston News Landscape"
@@ -936,7 +966,7 @@ export function CohortSection({ computed }: { computed: ComputedBlock }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-            {cohort.rows.map((r) => (
+            {rows.map((r) => (
               <tr
                 key={r.companyId}
                 className={r.isBgmOwned ? 'bg-accent-600/5 dark:bg-accent-600/10' : undefined}
