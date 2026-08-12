@@ -78,12 +78,14 @@ export function CompaniesManager({
   landscapes,
   canEdit,
   canDeleteCompanies,
+  selectedLandscapeId,
   landscapeName,
 }: {
   companies: CompanyRecord[];
   landscapes: LandscapeRecordFull[];
   canEdit: boolean;
   canDeleteCompanies: boolean;
+  selectedLandscapeId: string | null;
   landscapeName: string | null;
 }) {
   /*
@@ -108,9 +110,12 @@ export function CompaniesManager({
       <CompaniesCard
         companies={inLandscape}
         canEdit={canEdit}
+        selectedLandscapeId={selectedLandscapeId}
+        reusableCompanies={others}
+        landscapeName={landscapeName}
         title={landscapeName ? 'Companies in ' + landscapeName : 'Companies'}
         emptyHint={landscapeName
-          ? 'This landscape has no companies yet. Add one below, or create a new one.'
+          ? 'This landscape has no companies yet. Reuse an existing company or create a new one.'
           : undefined}
       />
       {others.length > 0 ? (
@@ -119,10 +124,10 @@ export function CompaniesManager({
           canEdit={canEdit}
           title={'Other companies in your workspace (' + others.length + ')'}
           subtitle={landscapeName
-            ? 'Tracked elsewhere, or not yet in any landscape. Add them to '
-              + landscapeName + ' from the landscape card below.'
+            ? 'Tracked elsewhere, or not yet in this landscape. Use Add company above to reuse one here.'
             : undefined}
           startCollapsed
+          showAddCompany={false}
         />
       ) : null}
       <LandscapesCard
@@ -142,6 +147,10 @@ function CompaniesCard({
   subtitle,
   emptyHint,
   startCollapsed = false,
+  selectedLandscapeId = null,
+  reusableCompanies = [],
+  landscapeName = null,
+  showAddCompany = true,
 }: {
   companies: CompanyRecord[];
   canEdit: boolean;
@@ -149,9 +158,17 @@ function CompaniesCard({
   subtitle?: string;
   emptyHint?: string;
   startCollapsed?: boolean;
+  selectedLandscapeId?: string | null;
+  reusableCompanies?: CompanyRecord[];
+  landscapeName?: string | null;
+  showAddCompany?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(!startCollapsed && companies.length === 0);
+  const [addMode, setAddMode] = React.useState<'existing' | 'new'>(
+    selectedLandscapeId && reusableCompanies.length > 0 ? 'existing' : 'new',
+  );
+  const [existingCompanyId, setExistingCompanyId] = React.useState('');
   const [addingFor, setAddingFor] = React.useState<string | null>(null);
   const [name, setName] = React.useState('');
   const [website, setWebsite] = React.useState('');
@@ -167,12 +184,17 @@ function CompaniesCard({
     setBusy(true);
     setError(null);
     try {
-      await send('/api/companies', 'POST', {
+      const created = await send<{ id: string }>('/api/companies', 'POST', {
         name: name.trim(),
         website: website.trim() || null,
         segment: segment.trim() || null,
         color,
       });
+      if (selectedLandscapeId) {
+        await send('/api/landscapes/' + selectedLandscapeId + '/companies', 'POST', {
+          companyId: created.id,
+        });
+      }
       setName('');
       setWebsite('');
       setSegment('');
@@ -180,6 +202,25 @@ function CompaniesCard({
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the company.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addExisting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLandscapeId || !existingCompanyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await send('/api/landscapes/' + selectedLandscapeId + '/companies', 'POST', {
+        companyId: existingCompanyId,
+      });
+      setExistingCompanyId('');
+      setOpen(false);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the company to this landscape.');
     } finally {
       setBusy(false);
     }
@@ -196,8 +237,15 @@ function CompaniesCard({
                 ?? 'Add each brand once, then connect every social profile Data Dumpster should measure.'}
             </p>
           </div>
-          {canEdit ? (
-            <Button size="sm" variant="primary" onClick={() => setOpen((v) => !v)}>
+          {canEdit && showAddCompany ? (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                setError(null);
+                setOpen((v) => !v);
+              }}
+            >
               <Plus className="h-3 w-3" aria-hidden />
               Add company
             </Button>
@@ -210,8 +258,73 @@ function CompaniesCard({
           </p>
         ) : null}
 
-        {open && canEdit ? (
-          <form onSubmit={create} className="space-y-3 border-b border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+        {open && canEdit && showAddCompany ? (
+          <div className="space-y-3 border-b border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+          {selectedLandscapeId ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  {landscapeName ? 'Add to ' + landscapeName : 'Add to this landscape'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">
+                  Reusing a company keeps its profiles, history, and membership in every other landscape.
+                </p>
+              </div>
+              <ButtonGroup aria-label="Company source">
+                <ButtonGroupItem
+                  active={addMode === 'existing'}
+                  disabled={reusableCompanies.length === 0}
+                  onClick={() => {
+                    setError(null);
+                    setAddMode('existing');
+                  }}
+                >
+                  Use existing
+                </ButtonGroupItem>
+                <ButtonGroupItem
+                  active={addMode === 'new'}
+                  onClick={() => {
+                    setError(null);
+                    setAddMode('new');
+                  }}
+                >
+                  Create new
+                </ButtonGroupItem>
+              </ButtonGroup>
+            </div>
+          ) : null}
+
+          {selectedLandscapeId && addMode === 'existing' ? (
+            <form onSubmit={addExisting} className="space-y-3">
+              <Field
+                label="Existing company"
+                htmlFor="existing-company"
+                hint="Companies already tracked in another landscape are available here."
+              >
+                <Select
+                  id="existing-company"
+                  value={existingCompanyId}
+                  onChange={(e) => setExistingCompanyId(e.target.value)}
+                  placeholder="Choose a company"
+                  options={reusableCompanies.map((company) => ({
+                    value: company.id,
+                    label: company.name,
+                  }))}
+                  required
+                />
+              </Field>
+              <div className="flex items-center gap-2">
+                <Button type="submit" variant="primary" size="sm" disabled={busy || !existingCompanyId}>
+                  {busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+                  Add to landscape
+                </Button>
+                <Button type="button" size="sm" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+          <form onSubmit={create} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Name" htmlFor="company-name">
               <Input
@@ -246,13 +359,15 @@ function CompaniesCard({
           <div className="flex items-center gap-2">
             <Button type="submit" variant="primary" size="sm" disabled={busy}>
               {busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-              Create company
+              {selectedLandscapeId ? 'Create and add to landscape' : 'Create company'}
             </Button>
             <Button type="button" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
           </div>
           </form>
+          )}
+          </div>
         ) : null}
 
         {companies.length === 0 && !open ? (

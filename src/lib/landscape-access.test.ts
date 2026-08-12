@@ -39,4 +39,17 @@ describe('landscape access policy', () => {
     assert.match(ui, /Create landscape and company/);
     assert.match(ui, /variant="primary"\s+onClick=\{\(\) => setOpen\(\(v\) => !v\)\}/);
   });
+
+  it('reuses a pooled company in another landscape without replacing membership', () => {
+    const route = source('src/app/api/landscapes/[id]/companies/route.ts');
+    const ui = source('src/components/settings/companies-manager.tsx');
+
+    assert.match(route, /INSERT INTO landscape_companies/);
+    assert.match(route, /ON CONFLICT \(landscape_id, company_id\) DO NOTHING/);
+    assert.doesNotMatch(route, /DELETE FROM landscape_companies/);
+    assert.match(route, /enqueueLandscapeCollection/);
+    assert.match(ui, /Use existing/);
+    assert.match(ui, /Reusing a company keeps its profiles, history, and membership in every other landscape/);
+    assert.match(ui, /Add to landscape/);
+  });
 });

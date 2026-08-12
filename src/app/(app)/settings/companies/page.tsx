@@ -176,6 +176,7 @@ export default async function CompaniesSettingsPage({
 
       <CompaniesManager
         companies={companyRecords}
+        selectedLandscapeId={selectedLandscapeId}
         landscapeName={ctx.landscape?.name ?? null}
         landscapes={landscapeRecords}
         canEdit={roleAtLeast(role, 'editor')}
