@@ -164,9 +164,6 @@ export function ElectionCenter({ races, canEdit }: { races: ElectionRaceSummary[
         </CardBody>
       </Card>
 
-      <Link href="/elections/2028" className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 px-5 py-4 text-sm hover:border-red-300 hover:bg-red-50/40 dark:border-zinc-700 dark:hover:border-red-900 dark:hover:bg-red-950/10">
-        <span><strong className="block text-zinc-900 dark:text-zinc-100">Explore the 2028 presidential concept</strong><span className="mt-0.5 block text-xs text-zinc-500">Sample-data preview for testing future national-race views.</span></span><ArrowRight className="h-4 w-4" />
-      </Link>
       <CreateRaceDialog open={creating} onOpenChange={setCreating} />
     </div>
   );

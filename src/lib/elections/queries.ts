@@ -106,6 +106,7 @@ type CandidateRow = {
   website: string | null;
   logo_url: string | null;
   color: string | null;
+  segment: string | null;
   party: string | null;
   candidate_status: string;
   incumbent: boolean | null;
@@ -138,7 +139,7 @@ export async function getElectionRaceBySlug(
   const drizzle = await import('drizzle-orm');
   const [candidateResult, sourceResult] = await Promise.all([
     db.execute<CandidateRow>(drizzle.sql`
-      SELECT ec.id, ec.company_id, c.name, c.website, c.logo_url, c.color,
+      SELECT ec.id, ec.company_id, c.name, c.website, c.logo_url, c.color, c.segment,
              ec.party, ec.candidate_status, ec.incumbent
         FROM election_candidates ec
         JOIN companies c ON c.id = ec.company_id
@@ -219,6 +220,7 @@ export async function getElectionRaceBySlug(
     website: row.website,
     logoUrl: row.logo_url,
     color: row.color,
+    currentRole: row.segment,
     party: row.party,
     status: row.candidate_status as ElectionCandidateRecord['status'],
     incumbent: row.incumbent,

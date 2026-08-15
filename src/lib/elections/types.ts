@@ -55,6 +55,7 @@ export interface ElectionCandidateRecord {
   website: string | null;
   logoUrl: string | null;
   color: string | null;
+  currentRole: string | null;
   party: string | null;
   status: ElectionCandidateStatus;
   incumbent: boolean | null;

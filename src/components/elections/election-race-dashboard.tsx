@@ -103,8 +103,10 @@ function OverviewView({ race, analytics }: { race: ElectionRaceDetail; analytics
   const ranking = analytics.engagementTotal.filter((row) => row.available);
   const peak = Math.max(1, ...ranking.map((row) => row.value));
   const shareRows = analytics.shareOfEngagement.filter((row) => row.available && row.value > 0);
+  const rankedCompanyIds = new Set(ranking.slice(0, 10).map((row) => row.company.id));
   const lineCompanies = analytics.engagementSeries.companies
-    .filter((company) => race.candidates.some((candidate) => candidate.companyId === company.id));
+    .filter((company) => race.candidates.some((candidate) => candidate.companyId === company.id))
+    .filter((company) => ranking.length <= 10 || rankedCompanyIds.has(company.id));
 
   return (
     <div className="space-y-4">
@@ -142,7 +144,7 @@ function OverviewView({ race, analytics }: { race: ElectionRaceDetail; analytics
         </Card>
 
         <Card>
-          <CardHeader><div><CardTitle>Engagement momentum</CardTitle><CardDescription className="mt-1">Daily interactions across each candidate&apos;s collected campaign accounts.</CardDescription></div><Badge tone="outline">Daily</Badge></CardHeader>
+          <CardHeader><div><CardTitle>Engagement momentum</CardTitle><CardDescription className="mt-1">Daily interactions across each candidate&apos;s collected public accounts{ranking.length > 10 ? '; the ten engagement leaders are shown' : ''}.</CardDescription></div><Badge tone="outline">Daily</Badge></CardHeader>
           <CardBody>
             <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2">{lineCompanies.map((company) => {
               const candidate = race.candidates.find((item) => item.companyId === company.id);
@@ -182,9 +184,9 @@ function CandidateProfiles({ race, analytics }: { race: ElectionRaceDetail; anal
   const platforms = PLATFORM_ORDER.filter((platform) => (engagement?.breakdown?.[platform] ?? 0) > 0);
   return (
     <div className="grid gap-4 xl:grid-cols-[17rem_minmax(0,1fr)]">
-      <Card className="self-start"><CardHeader><CardTitle>Candidate field</CardTitle><Badge tone="neutral">{ordered.length}</Badge></CardHeader><div className="divide-y divide-zinc-100 dark:divide-zinc-800/60">{ordered.map((item) => { const row = rowFor(analytics.engagementTotal, item.companyId); return <button key={item.id} type="button" onClick={() => setCandidateId(item.id)} className={cn('flex w-full items-center gap-2.5 px-3 py-3 text-left transition-colors', item.id === candidate.id ? 'bg-accent-50 dark:bg-accent-950/20' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40')}><CandidateMark candidate={item} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{item.name}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{[item.party, item.incumbent ? 'Incumbent' : null].filter(Boolean).join(' · ') || 'Candidate'}</span></span><span className="pb-num text-xs font-semibold">{row?.available ? compactNumber(row.value) : '—'}</span></button>; })}</div></Card>
+      <Card className="self-start"><CardHeader><CardTitle>Candidate field</CardTitle><Badge tone="neutral">{ordered.length}</Badge></CardHeader><div className="max-h-[48rem] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800/60">{ordered.map((item) => { const row = rowFor(analytics.engagementTotal, item.companyId); return <button key={item.id} type="button" onClick={() => setCandidateId(item.id)} className={cn('flex w-full items-center gap-2.5 px-3 py-3 text-left transition-colors', item.id === candidate.id ? 'bg-accent-50 dark:bg-accent-950/20' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40')}><CandidateMark candidate={item} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{item.name}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{[item.party, item.currentRole].filter(Boolean).join(' · ') || 'Candidate'}</span></span><span className="pb-num text-xs font-semibold">{row?.available ? compactNumber(row.value) : '—'}</span></button>; })}</div></Card>
       <div className="space-y-4">
-        <Card><CardBody className="flex flex-wrap items-start justify-between gap-5"><div className="flex items-center gap-3"><CandidateMark candidate={candidate} size="lg" /><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight">{candidate.name}</h3><Badge tone="outline">{candidate.status}</Badge></div><p className="mt-1 text-xs text-zinc-500">{[candidate.party, candidate.incumbent ? 'Incumbent' : null].filter(Boolean).join(' · ') || 'Candidate'}</p></div></div><div className="text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500">Engagement rank</p><p className="pb-num mt-1 text-4xl font-semibold tracking-tight">{engagement?.rank ? '#' + engagement.rank : '—'}</p></div></CardBody></Card>
+        <Card><CardBody className="flex flex-wrap items-start justify-between gap-5"><div className="flex items-center gap-3"><CandidateMark candidate={candidate} size="lg" /><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight">{candidate.name}</h3><Badge tone="outline">{candidate.status}</Badge></div><p className="mt-1 text-xs text-zinc-500">{[candidate.party, candidate.currentRole, candidate.incumbent ? 'Incumbent in this race' : null].filter(Boolean).join(' · ') || 'Candidate'}</p></div></div><div className="text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500">Engagement rank</p><p className="pb-num mt-1 text-4xl font-semibold tracking-tight">{engagement?.rank ? '#' + engagement.rank : '—'}</p></div></CardBody></Card>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[
           { label: 'Total audience', row: audience, value: audience?.available ? compactNumber(audience.value) : '—' },
           { label: 'Audience added', row: audienceChange, value: audienceChange?.available ? (audienceChange.value > 0 ? '+' : '') + compactNumber(audienceChange.value) : '—' },
