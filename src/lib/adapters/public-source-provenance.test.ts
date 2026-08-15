@@ -25,6 +25,10 @@ describe('pooled public-source provenance', () => {
     assert.equal(publicSourceKeyForFetch('instagram', fetched('brightdata')), 'brightdata');
     assert.equal(publicSourceKeyForFetch('threads', fetched('brightdata')), 'brightdata');
     assert.equal(publicSourceKeyForFetch('linkedin', fetched('brightdata')), 'brightdata');
+    assert.equal(
+      publicSourceKeyForFetch('truth_social', fetched('apify-truth-social')),
+      'apify-truth-social',
+    );
   });
 
   it('accepts profile provenance when a vendor response has no cursor', () => {

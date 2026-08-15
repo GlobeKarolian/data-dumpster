@@ -47,6 +47,7 @@ function titleFor(pathname: string): string {
   if (first && PLATFORM_SET.has(first)) return PLATFORM_LABELS[first as Platform];
   if (pathname.startsWith('/briefs/')) return 'Brief';
   if (pathname.startsWith('/dashboards/')) return 'Dashboard';
+  if (pathname.startsWith('/elections/')) return 'Election Center';
   return 'Data Dumpster';
 }
 

@@ -1,7 +1,7 @@
 # Data access: what Data Dumpster can actually see, what it costs, and what to do about it
 
 **Audience:** CTO, CPO, and whoever signs the data contracts.
-**Status:** current as of 4 August 2026. Every figure is dated and sourced. Where I
+**Status:** current as of 14 August 2026. Every figure is dated and sourced. Where I
 am not confident, I say so in the line itself rather than in a footnote.
 
 The short version: **the competitive social data market got materially worse
@@ -45,6 +45,15 @@ do not control. That distinction is the entire story.
 | **LinkedIn** | Official owned analytics can include impressions, clicks, shares and demographics, but admin credentials are excluded from pooled rows | **Bright Data company and company-post datasets:** follower stock, posts, likes and comments | Current pooled source: Bright Data. Official Marketing and Community Management APIs remain owned-only | Purchased-source units | Legal/procurement approval; owned support also requires organization-private storage and verified bindings | No public shares, saves, views, reach or impressions. The cursorless source has no exhaustion marker, so history is always source-limited |
 | **Threads** | The official API is owned-only and owner credentials are excluded from pooled rows | **Bright Data when configured; EnsembleData only when Bright Data is absent.** Public posts, engagement and audience | Current pooled source: Bright Data or no-Bright EnsembleData fallback | Purchased-source units | Legal/procurement approval | A started or failed Bright stage never changes vendor |
 | **Reddit** | **Public publisher-user submissions**: score, comments and crossposts. No trustworthy user follower stock, views or saves | The same publisher-user feed; retained legacy subreddit rows remain readable but new sources are user accounts | EnsembleData `/reddit/user/posts` | Purchased vendor units; user-page cost has not been measured | **Legal/vendor-contract review.** Reddit's current terms require permission and a contract for commercial use; a third-party vendor does not make that question disappear | The user feed is cursor-paginated; observed pages contained 25 rows, so do not assume a fixed page size |
+| **Truth Social** | Public profile and post fields are identical for any public profile through the configured source | Public follower stock, posts, favourites, replies, reblogs and media. Public views and saves are unavailable | Apify `tri_angle/truth-scraper` actor | **$1.15 per 1,000 results as listed on 14 August 2026** | Legal/procurement and platform-terms review still required; technical availability is not policy approval | Adapter caps one read at 500 rows, applies exact date bounds locally, and never blindly retries a paid request |
+
+Truth Social collection was validated against the actor's real response before
+the mapper was written. The profile result exposes stable account id, username,
+follower stock and profile media. Post results expose timestamps, content,
+permalinks, favourites, replies, reblogs and media attachments. The adapter
+maps those fields directly and marks views and saves unsupported. The Apify
+credential is deployment-scoped and sensitive; it is never stored in pooled
+rows, committed files or race configuration.
 
 Reddit publisher-user collection is implemented through EnsembleData rather than
 Reddit's first-party Data API. Before production collection, confirm in writing

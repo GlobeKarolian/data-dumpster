@@ -48,6 +48,15 @@ function LinkedInMark({ className }: { className?: string }) {
   );
 }
 
+function TruthSocialMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <rect width="24" height="24" rx="5" fill="currentColor" />
+      <path d="M6 6.25h12v3.15h-4.25v8.35h-3.5V9.4H6z" fill="white" />
+    </svg>
+  );
+}
+
 export function PlatformIcon({
   platform,
   className,
@@ -72,6 +81,14 @@ export function PlatformIcon({
     return (
       <span {...accessibility} className="inline-flex" style={{ color: PLATFORM_COLORS.linkedin }}>
         <LinkedInMark className={common} />
+      </span>
+    );
+  }
+
+  if (platform === 'truth_social') {
+    return (
+      <span {...accessibility} className="inline-flex" style={{ color: PLATFORM_COLORS.truth_social }}>
+        <TruthSocialMark className={common} />
       </span>
     );
   }

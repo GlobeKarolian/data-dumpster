@@ -24,6 +24,7 @@ import { threadsAdapter } from './threads';
 import { tiktokAdapter } from './tiktok';
 import { linkedinAdapter } from './linkedin';
 import { redditAdapter } from './reddit';
+import { truthSocialAdapter } from './truth-social';
 import {
   ADAPTER_SUPPORTED_PLATFORMS,
   type AdapterSupportedPlatform,
@@ -39,6 +40,7 @@ const IMPLEMENTED_ADAPTERS = {
   linkedin: linkedinAdapter,
   bluesky: blueskyAdapter,
   reddit: redditAdapter,
+  truth_social: truthSocialAdapter,
 } satisfies Record<AdapterSupportedPlatform, ChannelAdapter>;
 
 export const ADAPTERS: Partial<Record<Platform, ChannelAdapter>> = IMPLEMENTED_ADAPTERS;

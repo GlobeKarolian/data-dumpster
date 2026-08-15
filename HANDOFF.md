@@ -169,6 +169,10 @@ policy is:
   always source-limited. Reddit publisher-user collection remains on
   EnsembleData until a like-for-like Bright Data account feed is verified and
   remains gated on confirmation that commercial use is covered.
+- Truth Social public profiles and posts use Apify's maintained
+  `tri_angle/truth-scraper` actor when `APIFY_API_TOKEN` is configured.
+  Followers, favourites, replies, reblogs and media are collected; views and
+  saves are unavailable. A paid actor request is not retried inside the adapter.
 - Purchased or scraped collection is a Legal and procurement decision, not a
   developer default. RSS is retired and must not be reintroduced.
 
@@ -185,13 +189,22 @@ bring-your-own-model configuration, Weekly Reports, PowerPoint and sectioned CSV
 exports, email and tenant-bound Slack delivery, run-now, schedules and a delivery
 audit. Report delivery is implemented; only its dispatcher schedule is inactive.
 
+Election Center is also implemented as an authenticated multi-race workspace.
+Each race owns a private backing landscape while reusing pooled companies,
+channels, posts and collection history. The production seed starts with the
+Massachusetts U.S. Senate Democratic primary on 1 September 2026, with Ed
+Markey and Seth Moulton and the campaign-account roster supplied by the user.
+The profile roster is auditable: supplied URLs remain pending until they pass
+the normal shared-channel identity confirmation, and temporarily unsupported
+Facebook onboarding remains visibly paused rather than silently omitted.
+
 ## Priority order
 
 1. Complete the remaining phases of `docs/OWNED-DATA-ISOLATION.md`. This is a
    release gate, not a later hardening task.
 2. Validate the full foundation, run the pooled-identity audit, apply
    every committed migration from `drizzle/0000_collection_outcome.sql` through
-   `drizzle/0008_small_clint_barton.sql` via `npm run db:migrate`, deploy
+   `drizzle/0012_unusual_rachel_grey.sql` via `npm run db:migrate`, deploy
    the matching application, then inspect health and collection outcomes in
    production. Never reverse that migration-before-code order.
 3. Choose a chronological X source or accept an explicitly limited X product.

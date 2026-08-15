@@ -39,6 +39,8 @@ export function isPostMetricReported(
       return true;
     case 'twitter':
       return metric === 'applause' || metric === 'conversation' || metric === 'amplification';
+    case 'truth_social':
+      return metric === 'applause' || metric === 'conversation' || metric === 'amplification';
     case 'youtube':
       return metric === 'applause' || metric === 'conversation' || metric === 'views';
     case 'linkedin':

@@ -8,6 +8,7 @@ const configuredEnvironment: Record<string, string> = {
   YOUTUBE_API_KEY: 'youtube-public-key',
   ENSEMBLEDATA_TOKEN: 'ensemble-vendor-token',
   BRIGHTDATA_API_KEY: 'bright-vendor-key',
+  APIFY_API_TOKEN: 'apify-public-vendor-token',
   BLUESKY_IDENTIFIER: 'public.bsky.social',
   BLUESKY_APP_PASSWORD: 'bluesky-app-password',
   META_ACCESS_TOKEN: 'forbidden-meta-token',
@@ -50,6 +51,9 @@ describe('pooled collection source containment', () => {
       brightDataApiKey: 'bright-vendor-key',
     });
     assert.deepEqual(publicSourceCredentials('bluesky', configuredEnvironment), {});
+    assert.deepEqual(publicSourceCredentials('truth_social', configuredEnvironment), {
+      apifyApiToken: 'apify-public-vendor-token',
+    });
     assert.deepEqual(publicSourceCredentials('rss', configuredEnvironment), {});
   });
 

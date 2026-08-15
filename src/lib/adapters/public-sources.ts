@@ -60,6 +60,9 @@ export function publicSourceCredentials(
     case 'linkedin':
       pick(out, 'brightDataApiKey', brightDataKey);
       break;
+    case 'truth_social':
+      pick(out, 'apifyApiToken', environment.APIFY_API_TOKEN);
+      break;
     // Bluesky reads the public appview without authentication, so its account
     // identifier and app password are deliberately excluded.
     case 'bluesky':

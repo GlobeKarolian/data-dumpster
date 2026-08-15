@@ -8,7 +8,7 @@ import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
 /** Platforms that get their own overview screen, in the order newsrooms use them. */
 export const NAV_PLATFORMS: Platform[] = [
-  'facebook', 'instagram', 'linkedin', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky', 'reddit',
+  'facebook', 'instagram', 'linkedin', 'threads', 'twitter', 'youtube', 'tiktok', 'bluesky', 'reddit', 'truth_social',
 ];
 
 export interface NavItem {
@@ -55,7 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'intelligence',
     label: 'Intelligence',
     items: [
-      { href: '/elections/2028', label: 'Election Tracker', icon: Vote, matchPrefix: true },
+      { href: '/elections', label: 'Election Center', icon: Vote, matchPrefix: true },
       { href: '/reports', label: 'Weekly Report', icon: FileSpreadsheet, matchPrefix: true },
       { href: '/briefs', label: 'Briefs', icon: Sparkles, matchPrefix: true },
       { href: '/ask', label: 'Ask', icon: MessageSquare },
@@ -96,6 +96,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/alerts': 'Alerts',
   '/dashboards': 'Dashboards',
   '/newsroom': 'Newsroom Screen',
+  '/elections': 'Election Center',
   '/elections/2028': 'Election Tracker · 2028 Preview',
   '/settings/users': 'Users and Access',
   '/settings/models': 'Model Connections',

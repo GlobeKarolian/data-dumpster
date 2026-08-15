@@ -22,7 +22,7 @@ import { COLLECTION_OUTCOMES } from '@/lib/adapters/types';
 
 export const platformEnum = pgEnum('platform', [
   'facebook', 'instagram', 'twitter', 'youtube', 'tiktok',
-  'linkedin', 'bluesky', 'threads', 'reddit', 'rss',
+  'linkedin', 'bluesky', 'threads', 'reddit', 'truth_social', 'rss',
 ]);
 
 export const postTypeEnum = pgEnum('post_type', [
@@ -271,6 +271,90 @@ export const userLandscapeAccess = pgTable('user_landscape_access', {
 }, (t) => [
   primaryKey({ columns: [t.userId, t.landscapeId] }),
   index('user_landscape_access_landscape_idx').on(t.landscapeId),
+]);
+
+/* ---------------------------------------------------------- elections */
+
+/**
+ * A newsroom-defined race inside Election Center.
+ *
+ * The backing landscape is an internal collection scope. It lets election
+ * candidates reuse the same pooled companies, channels, posts and scheduler as
+ * every other Data Dumpster surface without forcing a race into the ordinary
+ * landscape switcher. The race stays organization-private; public observations
+ * remain pooled and are never purchased twice for two races.
+ */
+export const electionRaces = pgTable('election_races', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').notNull().references(() => landscapes.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull(),
+  office: text('office').notNull(),
+  jurisdiction: text('jurisdiction').notNull(),
+  electionDate: date('election_date'),
+  status: text('status').notNull().default('setup'),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('election_races_org_slug_uq').on(t.orgId, t.slug),
+  uniqueIndex('election_races_landscape_uq').on(t.landscapeId),
+  index('election_races_org_status_idx').on(t.orgId, t.status, t.electionDate),
+  check('election_races_status_ck', sql`${t.status} IN ('setup', 'active', 'archived')`),
+]);
+
+/**
+ * A candidate is a race-specific reference to one pooled company row.
+ *
+ * Candidate metadata such as party and ballot status belongs to the race. The
+ * candidate's public social profiles and observations stay on the shared
+ * company/channel tables so the same person can appear in several races or
+ * landscapes without duplicating collection.
+ */
+export const electionCandidates = pgTable('election_candidates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  raceId: uuid('race_id').notNull().references(() => electionRaces.id, { onDelete: 'cascade' }),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'restrict' }),
+  party: text('party'),
+  candidateStatus: text('candidate_status').notNull().default('tracking'),
+  incumbent: boolean('incumbent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('election_candidates_race_company_uq').on(t.raceId, t.companyId),
+  index('election_candidates_race_status_idx').on(t.raceId, t.candidateStatus),
+  check(
+    'election_candidates_status_ck',
+    sql`${t.candidateStatus} IN ('tracking', 'declared', 'filed', 'withdrawn')`,
+  ),
+]);
+
+/**
+ * A candidate profile URL supplied by an editor before it becomes a channel.
+ *
+ * Source intake is intentionally separate from the pooled channel table. A URL
+ * from a spreadsheet is a claim; the platform adapter must resolve it before
+ * the system creates a shared identity and begins collection. Once connected,
+ * the optional channel id records which pooled account satisfied the request.
+ */
+export const electionProfileSources = pgTable('election_profile_sources', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  candidateId: uuid('candidate_id').notNull().references(() => electionCandidates.id, { onDelete: 'cascade' }),
+  platform: platformEnum('platform').notNull(),
+  url: text('url').notNull(),
+  status: text('status').notNull().default('pending'),
+  channelId: uuid('channel_id').references(() => channels.id, { onDelete: 'set null' }),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('election_profile_sources_candidate_platform_uq').on(t.candidateId, t.platform),
+  index('election_profile_sources_status_idx').on(t.status, t.platform),
+  check(
+    'election_profile_sources_status_ck',
+    sql`${t.status} IN ('pending', 'connected', 'paused', 'skipped', 'error')`,
+  ),
 ]);
 
 /**
@@ -705,12 +789,12 @@ export const refreshJobs = pgTable('refresh_jobs', {
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
   users: many(users), companies: many(companies), landscapes: many(landscapes),
-  accessRequests: many(accessRequests),
+  accessRequests: many(accessRequests), electionRaces: many(electionRaces),
 }));
 
 export const companiesRelations = relations(companies, ({ one, many }) => ({
   org: one(orgs, { fields: [companies.orgId], references: [orgs.id] }),
-  channels: many(channels), posts: many(posts),
+  channels: many(channels), posts: many(posts), electionCandidates: many(electionCandidates),
 }));
 
 export const channelsRelations = relations(channels, ({ one, many }) => ({
@@ -723,11 +807,47 @@ export const landscapesRelations = relations(landscapes, ({ one, many }) => ({
   org: one(orgs, { fields: [landscapes.orgId], references: [orgs.id] }),
   focusCompany: one(companies, { fields: [landscapes.focusCompanyId], references: [companies.id] }),
   members: many(landscapeCompanies), demands: many(landscapeChannelDemands),
+  electionRace: one(electionRaces, {
+    fields: [landscapes.id],
+    references: [electionRaces.landscapeId],
+  }),
 }));
 
 export const landscapeCompaniesRelations = relations(landscapeCompanies, ({ one }) => ({
   landscape: one(landscapes, { fields: [landscapeCompanies.landscapeId], references: [landscapes.id] }),
   company: one(companies, { fields: [landscapeCompanies.companyId], references: [companies.id] }),
+}));
+
+export const electionRacesRelations = relations(electionRaces, ({ one, many }) => ({
+  org: one(orgs, { fields: [electionRaces.orgId], references: [orgs.id] }),
+  landscape: one(landscapes, {
+    fields: [electionRaces.landscapeId],
+    references: [landscapes.id],
+  }),
+  candidates: many(electionCandidates),
+}));
+
+export const electionCandidatesRelations = relations(electionCandidates, ({ one, many }) => ({
+  race: one(electionRaces, {
+    fields: [electionCandidates.raceId],
+    references: [electionRaces.id],
+  }),
+  company: one(companies, {
+    fields: [electionCandidates.companyId],
+    references: [companies.id],
+  }),
+  profileSources: many(electionProfileSources),
+}));
+
+export const electionProfileSourcesRelations = relations(electionProfileSources, ({ one }) => ({
+  candidate: one(electionCandidates, {
+    fields: [electionProfileSources.candidateId],
+    references: [electionCandidates.id],
+  }),
+  channel: one(channels, {
+    fields: [electionProfileSources.channelId],
+    references: [channels.id],
+  }),
 }));
 
 export const landscapeChannelDemandsRelations = relations(landscapeChannelDemands, ({ one }) => ({

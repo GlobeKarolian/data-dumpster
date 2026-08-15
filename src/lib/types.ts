@@ -2,7 +2,7 @@
 
 export const PLATFORMS = [
   'facebook', 'instagram', 'twitter', 'youtube', 'tiktok',
-  'linkedin', 'bluesky', 'threads', 'reddit', 'rss',
+  'linkedin', 'bluesky', 'threads', 'reddit', 'truth_social', 'rss',
 ] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
@@ -15,14 +15,16 @@ export type PostType = (typeof POST_TYPES)[number];
 export const PLATFORM_LABELS: Record<Platform, string> = {
   facebook: 'Facebook', instagram: 'Instagram', twitter: 'X / Twitter',
   youtube: 'YouTube', tiktok: 'TikTok', linkedin: 'LinkedIn',
-  bluesky: 'Bluesky', threads: 'Threads', reddit: 'Reddit', rss: 'RSS',
+  bluesky: 'Bluesky', threads: 'Threads', reddit: 'Reddit',
+  truth_social: 'Truth Social', rss: 'RSS',
 };
 
 /** Brand colors, used consistently across every chart and badge. */
 export const PLATFORM_COLORS: Record<Platform, string> = {
   facebook: '#1877F2', instagram: '#E1306C', twitter: '#0F1419',
   youtube: '#FF0000', tiktok: '#00F2EA', linkedin: '#0A66C2',
-  bluesky: '#0085FF', threads: '#000000', reddit: '#FF4500', rss: '#F26522',
+  bluesky: '#0085FF', threads: '#000000', reddit: '#FF4500',
+  truth_social: '#5448EE', rss: '#F26522',
 };
 
 /**

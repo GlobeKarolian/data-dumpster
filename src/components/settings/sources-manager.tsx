@@ -835,10 +835,18 @@ interface AddChannelFormProps {
   existing: Platform[];
   onDone: () => void;
   onCancel: () => void;
+  /** Election Center can open the shared verifier on a supplied roster row. */
+  preferredPlatform?: Platform;
+  initialInput?: string;
 }
 
 export function AddChannelForm(props: AddChannelFormProps) {
-  const initialPlatform = nextAddablePublicPlatform(props.existing);
+  const preferredAvailable = props.preferredPlatform
+    && ADDABLE_PUBLIC_PROFILE_PLATFORMS.includes(props.preferredPlatform as never)
+    && !props.existing.includes(props.preferredPlatform)
+    ? props.preferredPlatform
+    : null;
+  const initialPlatform = preferredAvailable ?? nextAddablePublicPlatform(props.existing);
   if (!initialPlatform) {
     return (
       <div className="space-y-3 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
@@ -865,12 +873,13 @@ function AddChannelFormFields({
   onDone,
   onCancel,
   initialPlatform,
+  initialInput,
 }: AddChannelFormProps & { initialPlatform: Platform }) {
   const availablePlatforms = ADDABLE_PUBLIC_PROFILE_PLATFORMS.filter(
     (candidate) => !existing.includes(candidate),
   );
   const [platform, setPlatform] = React.useState<Platform>(initialPlatform);
-  const [input, setInput] = React.useState('');
+  const [input, setInput] = React.useState(initialInput ?? '');
   const [checking, setChecking] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [found, setFound] = React.useState<VerifyResult | null>(null);

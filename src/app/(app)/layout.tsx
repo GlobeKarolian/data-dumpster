@@ -56,6 +56,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         LEFT JOIN companies fc ON fc.id = l.focus_company_id
         LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
        WHERE l.org_id = ${orgId}::uuid
+         AND NOT EXISTS (
+           SELECT 1 FROM election_races er WHERE er.landscape_id = l.id
+         )
          AND (
            ${role === 'admin' || role === 'owner'}
            OR EXISTS (
@@ -74,6 +77,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         JOIN companies c ON c.id = lc.company_id
         JOIN landscapes l ON l.id = lc.landscape_id
        WHERE l.org_id = ${orgId}::uuid
+         AND NOT EXISTS (
+           SELECT 1 FROM election_races er WHERE er.landscape_id = l.id
+         )
          AND (
            ${role === 'admin' || role === 'owner'}
            OR EXISTS (

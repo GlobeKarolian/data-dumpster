@@ -3,7 +3,7 @@
 **Audience:** the engineer maintaining the product and the executive deciding
 whether its numbers are trustworthy.
 
-**Shape:** Next.js 16 and React 19 on Vercel, Neon Postgres through Drizzle, nine
+**Shape:** Next.js 16 and React 19 on Vercel, Neon Postgres through Drizzle, ten
 platform adapters behind one explicit fetch contract, a durable database queue,
 a contained metric layer, and bring-your-own-model inference that cannot put a
 number in front of a user without deterministic verification.
@@ -36,7 +36,7 @@ src/lib/adapters/*                 fetch, normalize, declare completeness
         |
         v
 platform APIs and purchased sources
-  Bluesky | YouTube | Facebook | Instagram | TikTok | X | Threads | Reddit | LinkedIn
+  Bluesky | YouTube | Facebook | Instagram | TikTok | X | Threads | Reddit | LinkedIn | Truth Social
         |
         v
 src/lib/adapters/runner.ts            stable-id gate, ordered writes and audit
@@ -127,6 +127,14 @@ dashboards, briefs, reports and alert configuration are organization-private.
 `companies.orgId` records attribution for a pooled company and is not a tenancy
 filter; landscape membership plus the session organization is the analytical
 scope.
+
+Election Center uses the same trust boundary rather than creating a second
+social-data silo. `election_races`, `election_candidates` and
+`election_profile_sources` are organization-private product configuration. Each
+race has a private backing landscape, while candidates point at pooled company
+rows and confirmed campaign profiles point at pooled channel rows. A candidate
+who appears in another race or landscape therefore reuses collected history and
+freshness instead of triggering a duplicate crawl.
 
 Landscape visibility adds a second private boundary inside an organization.
 Owners and admins are universal. Editors and viewers require a matching

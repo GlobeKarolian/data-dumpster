@@ -10,12 +10,14 @@ import {
 test('channel pickers expose implemented adapters only', () => {
   assert.ok(ADAPTER_SUPPORTED_PLATFORMS.includes('youtube'));
   assert.ok(ADAPTER_SUPPORTED_PLATFORMS.includes('reddit'));
+  assert.ok(ADAPTER_SUPPORTED_PLATFORMS.includes('truth_social'));
   assert.equal(ADAPTER_SUPPORTED_PLATFORMS.includes('rss' as never), false);
 });
 
 test('add-profile picker exposes public-comparable sources only', () => {
   assert.ok(ADDABLE_PUBLIC_PROFILE_PLATFORMS.includes('instagram'));
   assert.ok(ADDABLE_PUBLIC_PROFILE_PLATFORMS.includes('linkedin'));
+  assert.ok(ADDABLE_PUBLIC_PROFILE_PLATFORMS.includes('truth_social'));
   assert.equal(ADDABLE_PUBLIC_PROFILE_PLATFORMS.includes('facebook' as never), false);
   assert.equal(ADDABLE_PUBLIC_PROFILE_PLATFORMS.includes('rss' as never), false);
 });

@@ -281,6 +281,7 @@ const POOLED_POST_RAW_SANITIZERS = {
   // Keep only the bounded, validated preview candidates—not the vendor record.
   threads: sanitizeInstagramRaw,
   reddit: DROP_RAW,
+  truth_social: DROP_RAW,
   rss: DROP_RAW,
 } satisfies Record<Platform, RawSanitizer>;
 

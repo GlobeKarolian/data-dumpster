@@ -30,6 +30,7 @@ import type { Platform, PostType } from '@/lib/types';
  */
 export const REPORT_PLATFORMS = [
   'facebook', 'instagram', 'linkedin', 'youtube', 'twitter', 'tiktok', 'threads', 'bluesky', 'reddit',
+  'truth_social',
 ] as const;
 export type ReportPlatform = (typeof REPORT_PLATFORMS)[number];
 
@@ -43,6 +44,7 @@ export const REPORT_PLATFORM_LABELS: Record<ReportPlatform, string> = {
   threads: 'Threads',
   bluesky: 'Bluesky',
   reddit: 'Reddit',
+  truth_social: 'Truth Social',
 };
 
 /** Which way a figure moved. 'unknown' when there was no comparable baseline. */

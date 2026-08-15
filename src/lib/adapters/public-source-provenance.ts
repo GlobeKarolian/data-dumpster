@@ -5,12 +5,13 @@ export const PUBLIC_SOURCE_KEYS = [
   'bluesky-public-appview',
   'brightdata',
   'ensembledata',
+  'apify-truth-social',
   'youtube-data-api-v3',
 ] as const;
 
 export type PublicSourceKey = typeof PUBLIC_SOURCE_KEYS[number];
 
-const VENDOR_SOURCES = new Set<PublicSourceKey>(['brightdata', 'ensembledata']);
+const VENDOR_SOURCES = new Set<PublicSourceKey>(['brightdata', 'ensembledata', 'apify-truth-social']);
 
 /**
  * Truthful placeholder for an attempt that has not reached a source yet.
@@ -101,6 +102,8 @@ export function publicSourceKeyForFetch(
       return requireVendor(platform, fetched, VENDOR_SOURCES);
     case 'linkedin':
       return requireVendor(platform, fetched, new Set<PublicSourceKey>(['brightdata']));
+    case 'truth_social':
+      return requireVendor(platform, fetched, new Set<PublicSourceKey>(['apify-truth-social']));
     case 'rss':
       throw new Error('RSS ingestion is retired. No pooled observations were written.');
   }
