@@ -31,6 +31,22 @@ async function handle(req: NextRequest): Promise<Response> {
       }
     });
   }
+  // This sweep never calls a paid social vendor. It preserves a small batch of
+  // the highest-engagement posters before their signed CDN references expire.
+  after(async () => {
+    try {
+      const media = await import('@/lib/post-thumbnail-archive');
+      const result = await media.archiveFacebookPostThumbnails({ limit: 4, concurrency: 2 });
+      if (!result.skipped && (result.archived > 0 || result.unavailable > 0)) {
+        console.info('[data-dumpster:cron/refresh] thumbnail archive sweep', result);
+      }
+    } catch (error) {
+      // Refresh recovery remains independent from media retention.
+      console.error('[data-dumpster:cron/refresh] thumbnail archive sweep failed', {
+        error: error instanceof Error ? error.message : 'Unknown archive failure.',
+      });
+    }
+  });
   return cronJson({ accepted: jobId ? 1 : 0 }, 202);
 }
 

@@ -21,6 +21,11 @@ import {
   storedTikTokPosterCandidates,
   type PostPreviewKind,
 } from '@/lib/post-preview-source';
+import {
+  persistPostThumbnail,
+  readArchivedPostThumbnail,
+  resolveFacebookPostThumbnail,
+} from '@/lib/post-thumbnail-archive';
 import { sharedReportContainsPost } from '@/lib/reports/share-preview';
 import {
   apiHandler,
@@ -53,11 +58,13 @@ const MAX_REDIRECTS = 3;
 const UPSTREAM_TIMEOUT_MS = 12_000;
 
 interface PreviewRecord {
-  platform: 'instagram' | 'tiktok' | 'threads';
+  id: string;
+  platform: 'facebook' | 'instagram' | 'tiktok' | 'threads';
   thumbnailUrl: string | null;
   mediaUrl: string | null;
   permalink: string | null;
   raw: Record<string, unknown> | null;
+  archivedThumbnailUrl: string | null;
 }
 
 function normalizedContentType(value: string | null): string {
@@ -83,7 +90,7 @@ async function cancelBody(response: Response): Promise<void> {
 
 async function fetchWithValidatedRedirects(
   source: string,
-  platform: PreviewRecord['platform'],
+  platform: Exclude<PreviewRecord['platform'], 'facebook'>,
   kind: PostPreviewKind,
   range: string | null,
   signal: AbortSignal,
@@ -280,11 +287,13 @@ function baseResponseHeaders(kind: PostPreviewKind, contentType: string): Header
 async function visiblePreviewPost(postId: string, ctx: OrgContext): Promise<PreviewRecord | null> {
   const [row] = await db
     .select({
+      id: posts.id,
       platform: posts.platform,
       thumbnailUrl: posts.thumbnailUrl,
       mediaUrl: posts.mediaUrl,
       permalink: posts.permalink,
       raw: posts.raw,
+      archivedThumbnailUrl: posts.archivedThumbnailUrl,
     })
     .from(posts)
     .innerJoin(landscapeCompanies, eq(landscapeCompanies.companyId, posts.companyId))
@@ -299,6 +308,7 @@ async function visiblePreviewPost(postId: string, ctx: OrgContext): Promise<Prev
     .where(and(
       eq(posts.id, postId),
       or(
+        eq(posts.platform, 'facebook'),
         eq(posts.platform, 'instagram'),
         eq(posts.platform, 'tiktok'),
         eq(posts.platform, 'threads'),
@@ -310,7 +320,8 @@ async function visiblePreviewPost(postId: string, ctx: OrgContext): Promise<Prev
     ))
     .limit(1);
 
-  return row?.platform === 'instagram'
+  return row?.platform === 'facebook'
+    || row?.platform === 'instagram'
     || row?.platform === 'tiktok'
     || row?.platform === 'threads'
     ? row as PreviewRecord
@@ -328,16 +339,19 @@ async function sharedPreviewPost(postId: string, shareToken: string): Promise<Pr
 
   const [row] = await db
     .select({
+      id: posts.id,
       platform: posts.platform,
       thumbnailUrl: posts.thumbnailUrl,
       mediaUrl: posts.mediaUrl,
       permalink: posts.permalink,
       raw: posts.raw,
+      archivedThumbnailUrl: posts.archivedThumbnailUrl,
     })
     .from(posts)
     .where(and(
       eq(posts.id, postId),
       or(
+        eq(posts.platform, 'facebook'),
         eq(posts.platform, 'instagram'),
         eq(posts.platform, 'tiktok'),
         eq(posts.platform, 'threads'),
@@ -345,7 +359,8 @@ async function sharedPreviewPost(postId: string, shareToken: string): Promise<Pr
     ))
     .limit(1);
 
-  return row?.platform === 'instagram'
+  return row?.platform === 'facebook'
+    || row?.platform === 'instagram'
     || row?.platform === 'tiktok'
     || row?.platform === 'threads'
     ? row as PreviewRecord
@@ -368,13 +383,50 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
     throw new AuthError('not_found', 'That post does not exist in this workspace.');
   }
 
-  if (kind === 'video' && post.platform === 'tiktok') {
+  if (kind === 'poster' && post.archivedThumbnailUrl) {
+    const archived = await readArchivedPostThumbnail(post.archivedThumbnailUrl);
+    if (archived) {
+      const headers = baseResponseHeaders(kind, archived.contentType);
+      headers.set('content-length', String(archived.contentLength));
+      headers.set('etag', archived.etag);
+      headers.set('x-data-dumpster-media', 'archived');
+      return new Response(archived.stream, { status: 200, headers });
+    }
+  }
+
+  if (kind === 'video' && (post.platform === 'facebook' || post.platform === 'tiktok')) {
     throw new AuthError('not_found', 'No proxied video preview is available for that post.');
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
+    if (post.platform === 'facebook') {
+      const resolved = await resolveFacebookPostThumbnail(post, controller.signal);
+      if (!resolved) {
+        throw new HttpError(
+          502,
+          'The public preview could not be recovered from Facebook.',
+          'preview_unavailable',
+        );
+      }
+      try {
+        await persistPostThumbnail(post.id, resolved);
+      } catch (error) {
+        // The recovered image is still useful for this request. Storage errors
+        // remain visible in logs and the background archive sweep will retry.
+        console.error('[data-dumpster:post-preview] thumbnail archive failed', {
+          postId: post.id,
+          platform: post.platform,
+          error: error instanceof Error ? error.message : 'Unknown archive failure.',
+        });
+      }
+      const headers = baseResponseHeaders(kind, resolved.contentType);
+      headers.set('content-length', String(resolved.body.byteLength));
+      headers.set('x-data-dumpster-media', 'recovered');
+      return new Response(resolved.body, { status: 200, headers });
+    }
+
     const candidates = post.platform === 'instagram'
       ? [
           kind === 'poster' ? await freshInstagramPoster(post.permalink, controller.signal) : null,
@@ -408,6 +460,16 @@ export const GET = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
         }
         const body = await readPoster(upstream);
         if (!body) continue;
+
+        try {
+          await persistPostThumbnail(post.id, { body, contentType });
+        } catch (error) {
+          console.error('[data-dumpster:post-preview] thumbnail archive failed', {
+            postId: post.id,
+            platform: post.platform,
+            error: error instanceof Error ? error.message : 'Unknown archive failure.',
+          });
+        }
 
         const headers = baseResponseHeaders(kind, contentType);
         headers.set('content-length', String(body.byteLength));

@@ -16,13 +16,18 @@ export type PostPreviewAccess = {
 const MOTION_TYPES = new Set<PostType>(['video', 'reel', 'short', 'live']);
 
 /**
- * Instagram and TikTok both issue signed, expiring media URLs. Browser-facing
- * posters therefore go through the access-controlled post-id proxy, which can
- * resolve a fresh public preview without exposing an arbitrary media URL.
+ * Meta and TikTok issue signed, expiring media URLs. Browser-facing posters
+ * therefore go through the access-controlled post-id proxy, which can resolve
+ * a fresh public preview and serve the retained private copy on later reads.
  */
 export function postPosterUrl(post: PostPreviewRef, access?: PostPreviewAccess): string | null {
   if (
-    (post.platform === 'instagram' || post.platform === 'tiktok' || post.platform === 'threads')
+    (
+      post.platform === 'facebook'
+      || post.platform === 'instagram'
+      || post.platform === 'tiktok'
+      || post.platform === 'threads'
+    )
     && (post.thumbnailUrl || post.permalink)
   ) {
     const path = '/api/posts/' + encodeURIComponent(post.id) + '/preview';

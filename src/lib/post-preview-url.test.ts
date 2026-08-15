@@ -59,12 +59,12 @@ describe('post preview URLs', () => {
     );
   });
 
-  it('keeps other platform thumbnails direct and leaves truly empty posts blank', () => {
+  it('routes Facebook posters through durable recovery and leaves truly empty posts blank', () => {
     assert.equal(postPosterUrl({
       ...instagramReel,
       platform: 'facebook',
       thumbnailUrl: 'https://facebook.example/post.jpg',
-    }), 'https://facebook.example/post.jpg');
+    }), '/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview');
     assert.equal(postPosterUrl({
       ...instagramReel,
       permalink: null,

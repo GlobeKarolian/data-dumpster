@@ -429,6 +429,18 @@ export const posts = pgTable('posts', {
   permalink: text('permalink'),
   mediaUrl: text('media_url'),
   thumbnailUrl: text('thumbnail_url'),
+  /**
+   * Private object-storage copy of the display poster. Social-network CDN URLs
+   * are references, not durable assets; several providers expire them within
+   * days. Browser-facing reads stay behind the authenticated preview route.
+   */
+  archivedThumbnailUrl: text('archived_thumbnail_url'),
+  archivedThumbnailContentType: text('archived_thumbnail_content_type'),
+  archivedThumbnailBytes: integer('archived_thumbnail_bytes'),
+  archivedThumbnailAt: timestamp('archived_thumbnail_at', { withTimezone: true }),
+  thumbnailArchiveAttemptedAt: timestamp('thumbnail_archive_attempted_at', { withTimezone: true }),
+  thumbnailArchiveError: text('thumbnail_archive_error'),
+  thumbnailArchiveAttempts: integer('thumbnail_archive_attempts').notNull().default(0),
   durationSec: integer('duration_sec'),
   language: text('language'),
   hashtags: jsonb('hashtags').$type<string[]>().notNull().default([]),
@@ -458,6 +470,9 @@ export const posts = pgTable('posts', {
   index('posts_company_posted_idx').on(t.companyId, t.postedAt),
   index('posts_platform_posted_idx').on(t.platform, t.postedAt),
   index('posts_engagement_idx').on(t.postedAt, t.engagementTotal),
+  index('posts_thumbnail_archive_queue_idx')
+    .on(t.thumbnailArchiveAttemptedAt, t.postedAt)
+    .where(sql`${t.archivedThumbnailUrl} IS NULL AND (${t.thumbnailUrl} IS NOT NULL OR ${t.permalink} IS NOT NULL)`),
 ]);
 
 export const postMetricSnapshots = pgTable('post_metric_snapshots', {

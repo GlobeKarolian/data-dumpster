@@ -106,6 +106,13 @@
       "when": 1786810000000,
       "tag": "0014_2028_presidential_watchlist",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786892400000,
+      "tag": "0015_durable_post_thumbnails",
+      "breakpoints": true
     }
   ]
 }

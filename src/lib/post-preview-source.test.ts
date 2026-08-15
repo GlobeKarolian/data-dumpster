@@ -4,18 +4,61 @@ import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { PLATFORMS } from './types';
 import {
+  allowedFacebookRedirect,
   allowedInstagramRedirect,
   allowedTikTokRedirect,
+  canonicalFacebookPermalink,
   canonicalInstagramPermalink,
+  facebookOgImageUrl,
   instagramOgImageUrl,
+  isAllowedFacebookMediaUrl,
   isAllowedInstagramMediaUrl,
   isAllowedTikTokMediaUrl,
   isAllowedTikTokPermalink,
   sanitizePooledPostRaw,
+  storedFacebookPosterCandidates,
   storedInstagramPreviewCandidates,
   storedThreadsPreviewCandidates,
   storedTikTokPosterCandidates,
 } from './post-preview-source';
+
+describe('Facebook preview source safety', () => {
+  const poster = 'https://scontent-bos5-1.xx.fbcdn.net/v/image.jpg?sig=1';
+
+  it('accepts only HTTPS Meta CDN images and safe Facebook permalinks', () => {
+    assert.equal(isAllowedFacebookMediaUrl(poster), true);
+    assert.equal(isAllowedFacebookMediaUrl('https://fbcdn.net/image.jpg'), false);
+    assert.equal(isAllowedFacebookMediaUrl('https://fbcdn.net.evil.example/image.jpg'), false);
+    assert.equal(
+      canonicalFacebookPermalink('https://m.facebook.com/bostonmassachusetts/posts/123?tracking=1#x'),
+      'https://www.facebook.com/bostonmassachusetts/posts/123?tracking=1',
+    );
+    assert.equal(canonicalFacebookPermalink('https://facebook.com.evil.example/post/123'), null);
+    assert.equal(canonicalFacebookPermalink('https://www.facebook.com/'), null);
+  });
+
+  it('extracts, redirects and stores only allowlisted Facebook posters', () => {
+    assert.equal(
+      facebookOgImageUrl(`<meta property="og:image" content="${poster.replace('&', '&amp;')}">`),
+      poster,
+    );
+    assert.equal(
+      facebookOgImageUrl('<meta property="og:image" content="https://example.com/no.jpg">'),
+      null,
+    );
+    assert.equal(
+      allowedFacebookRedirect(poster, '/fresh.jpg'),
+      'https://scontent-bos5-1.xx.fbcdn.net/fresh.jpg',
+    );
+    assert.equal(allowedFacebookRedirect(poster, 'https://example.com/no.jpg'), null);
+    assert.deepEqual(storedFacebookPosterCandidates({
+      platform: 'facebook',
+      thumbnailUrl: poster,
+      mediaUrl: poster,
+      raw: null,
+    }), [poster]);
+  });
+});
 
 describe('Instagram preview source safety', () => {
   it('accepts only HTTPS Meta CDN subdomains', () => {

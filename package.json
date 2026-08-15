@@ -22,6 +22,7 @@
     "@icons-pack/react-simple-icons": "^13.13.0",
     "@neondatabase/serverless": "^1.1.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

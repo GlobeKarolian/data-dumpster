@@ -45,13 +45,17 @@ Do not retain by default:
 
 - arbitrary vendor response payloads;
 - access tokens, administrator-only fields, or owner analytics in pooled rows;
-- image or video binaries; or
+- full-resolution image or video binaries; or
 - repeated metric snapshots whose measured values did not change.
 
-The normalized row is the durable fact. Public media URLs are references, not
-archived media. If leadership requires previews that survive an expiring CDN
-URL, archive deduplicated thumbnails to approved object storage with a legal
-retention decision. Do not archive full social videos by default.
+The normalized row is the durable fact. Public media URLs remain source
+references, but the product also retains one bounded display thumbnail for a
+post in private Vercel Blob storage after it has been recovered. The existing
+authenticated/report-capability preview route serves that copy; storage URLs
+are never handed to the browser. A small engagement-first sweep protects recent
+Facebook posts before signed Meta CDN references expire, while Instagram,
+Threads and TikTok posters are retained when their preview proxy resolves them.
+Do not archive full social videos by default.
 
 ## Source state and receipts
 

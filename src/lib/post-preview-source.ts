@@ -69,6 +69,87 @@ function decodeHtmlAttribute(value: string): string {
     .replace(/&#(?:39|x27);/gi, "'");
 }
 
+/** Facebook post images use signed URLs from Meta's fbcdn.net estate. */
+export function isAllowedFacebookMediaUrl(value: unknown): value is string {
+  const candidate = stringValue(value);
+  if (!candidate) return false;
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
+    const host = url.hostname.toLowerCase();
+    return host.endsWith('.fbcdn.net') || host.endsWith('.cdninstagram.com');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reduce a stored Facebook link to a public, same-host URL before fetching its
+ * Open Graph metadata. The fixed host is the SSRF boundary; tracking query
+ * parameters are retained because older photo/story permalinks require them.
+ */
+export function canonicalFacebookPermalink(value: unknown): string | null {
+  const candidate = stringValue(value);
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate);
+    const host = url.hostname.toLowerCase();
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.port
+      || (host !== 'facebook.com' && host !== 'www.facebook.com' && host !== 'm.facebook.com')
+      || url.pathname === '/'
+    ) return null;
+    url.hostname = 'www.facebook.com';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/** Extract only a validated Meta-CDN og:image from Facebook's public HTML. */
+export function facebookOgImageUrl(html: string): string | null {
+  for (const match of html.matchAll(/<meta\b[^>]{0,4096}>/gi)) {
+    const attributes = new Map<string, string>();
+    for (const attribute of match[0].matchAll(/([:\w-]+)\s*=\s*(["'])(.*?)\2/g)) {
+      attributes.set(attribute[1].toLowerCase(), decodeHtmlAttribute(attribute[3]));
+    }
+    if (attributes.get('property') !== 'og:image') continue;
+    const content = attributes.get('content');
+    if (isAllowedFacebookMediaUrl(content)) return content;
+  }
+  return null;
+}
+
+/** Resolve one Facebook CDN redirect without allowing an arbitrary target. */
+export function allowedFacebookRedirect(
+  currentUrl: string,
+  location: string | null,
+): string | null {
+  if (!location) return null;
+  try {
+    const resolved = new URL(location, currentUrl).toString();
+    return isAllowedFacebookMediaUrl(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Expose only allowlisted stored Facebook image references to the proxy. */
+export function storedFacebookPosterCandidates(post: StoredPostPreviewSource): string[] {
+  if (post.platform !== 'facebook') return [];
+  const out: string[] = [];
+  for (const value of [post.thumbnailUrl, post.mediaUrl]) {
+    if (isAllowedFacebookMediaUrl(value) && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
 /** Extract only a validated Meta-CDN og:image from Instagram's public HTML. */
 export function instagramOgImageUrl(html: string): string | null {
   for (const match of html.matchAll(/<meta\b[^>]{0,4096}>/gi)) {
