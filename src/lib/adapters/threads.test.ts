@@ -157,6 +157,56 @@ describe('Threads public source identity', { concurrency: false }, () => {
     );
   });
 
+  it('retries a Bright Data false not-found when Threads resolves the public profile', async (t) => {
+    const calls: string[] = [];
+    t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes('api.brightdata.com/')) {
+        return json([{ error: 'User not found!' }]);
+      }
+      assert.equal(url, 'https://www.threads.com/@masslive');
+      return new Response(
+        '<meta property="og:title" content="MassLive (&#064;masslive) &#x2022; Threads, Say more">',
+        { status: 200, headers: { 'content-type': 'text/html' } },
+      );
+    });
+
+    await assert.rejects(
+      threadsAdapter.resolveProfile('masslive', { brightDataApiKey: 'bright-key' }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Threads resolves that account publicly/i);
+        assert.equal((error as { opts?: { retryable?: boolean } }).opts?.retryable, true);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 2);
+  });
+
+  it('stops retrying only when Threads confirms that the public profile is unavailable', async (t) => {
+    t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('api.brightdata.com/')) {
+        return json([{ error: 'User not found!' }]);
+      }
+      return new Response(
+        '<meta property="og:title" content="Threads &#x2022; Log in">',
+        { status: 200, headers: { 'content-type': 'text/html' } },
+      );
+    });
+
+    await assert.rejects(
+      threadsAdapter.resolveProfile('definitely_missing', { brightDataApiKey: 'bright-key' }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /confirmed that the public profile is unavailable/i);
+        assert.equal((error as { opts?: { retryable?: boolean } }).opts?.retryable, false);
+        return true;
+      },
+    );
+  });
+
   it('rejects an EnsembleData search result without a native profile id', async (t) => {
     t.mock.method(globalThis, 'fetch', async () => json({
       data: [{ node: { username: 'bostonglobe', full_name: 'The Boston Globe' } }],

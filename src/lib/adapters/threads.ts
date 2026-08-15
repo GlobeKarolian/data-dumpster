@@ -59,6 +59,64 @@ function profileUrl(handle: string): string {
   return 'https://www.threads.com/@' + handle;
 }
 
+type PublicProfileStatus = 'exists' | 'missing' | 'unknown';
+
+/**
+ * Bright Data occasionally returns a per-row "User not found!" response for
+ * public Threads accounts that resolve normally a few minutes later. That is
+ * a source failure, not evidence that an operator entered the wrong handle.
+ *
+ * Threads' public HTML exposes an account-specific Open Graph title even when
+ * the rest of the page is client rendered. Use that only to distinguish a
+ * vendor false negative from a genuinely missing profile; it is not a metric
+ * source and it cannot replace Bright Data's stable profile id.
+ */
+async function publicProfileStatus(
+  handle: string,
+  signal?: AbortSignal,
+  onApiCall?: () => void,
+): Promise<PublicProfileStatus> {
+  const timeout = new AbortController();
+  const cancel = setTimeout(() => timeout.abort(), 10_000);
+  const signals = signal ? [signal, timeout.signal] : [timeout.signal];
+
+  try {
+    onApiCall?.();
+    const response = await fetch(profileUrl(handle), {
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'DataDumpster/1.0 Threads profile verifier',
+      },
+      signal: signals.length > 1 ? AbortSignal.any(signals) : timeout.signal,
+    });
+    if (response.status === 404) return 'missing';
+    if (!response.ok) return 'unknown';
+
+    // Real profiles are currently about 500 KB. Bound the inspection because
+    // this fallback exists only to read the small Open Graph header.
+    const html = (await response.text()).slice(0, 1_000_000).toLowerCase();
+    const normalizedHandle = handle.toLowerCase();
+    if (
+      html.includes('(@' + normalizedHandle + ')')
+      || html.includes('&#064;' + normalizedHandle)
+      || html.includes('&#x40;' + normalizedHandle)
+    ) return 'exists';
+
+    if (
+      html.includes('property="og:title" content="threads &#x2022; log in')
+      || html.includes('property="og:title" content="threads • log in')
+    ) return 'missing';
+
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  } finally {
+    clearTimeout(cancel);
+  }
+}
+
 function requireVendorKey(credentials: Record<string, string>): string {
   const key = credentials.brightDataApiKey?.trim() || '';
   if (!key) {
@@ -88,8 +146,27 @@ async function readProfile(
   const row = rows.find((r) => isRecord(r) && !isErrorRow(r));
   if (!isRecord(row)) {
     const why = rows.length > 0 ? rowError(rows[0]) : undefined;
+    const publicStatus = await publicProfileStatus(handle, signal, onApiCall);
+    const sourceDetail = why ? ' Vendor detail: ' + why : '';
+    if (publicStatus === 'exists') {
+      throw new AdapterError(
+        'Bright Data temporarily returned no Threads profile for @' + handle
+          + ', but Threads resolves that account publicly. The same source will be retried; '
+          + 'no observations were accepted.' + sourceDetail,
+        { platform: PLATFORM, retryable: true },
+      );
+    }
+    if (publicStatus === 'unknown') {
+      throw new AdapterError(
+        'Bright Data temporarily returned no Threads profile for @' + handle
+          + '. The public profile could not be checked well enough to prove that it is missing, '
+          + 'so the same source will be retried; no observations were accepted.' + sourceDetail,
+        { platform: PLATFORM, retryable: true },
+      );
+    }
     throw new AdapterError(
-      'Bright Data returned no Threads profile for @' + handle + (why ? '. ' + why : ''),
+      'Bright Data returned no Threads profile for @' + handle
+        + ', and Threads confirmed that the public profile is unavailable.' + sourceDetail,
       { platform: PLATFORM, retryable: false },
     );
   }
