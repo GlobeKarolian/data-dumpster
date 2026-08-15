@@ -589,4 +589,42 @@ describe('X source routing and failover', { concurrency: false }, () => {
       );
     });
   });
+
+  it('reuses a verified pooled X id only when Bright Data rows match the requested handle', async () => {
+    await withMockFetch(async () => json([{
+      user_posted: 'BostonGlobe',
+      id: 'post-without-author-id',
+      date_posted: '2026-07-28T12:00:00Z',
+      description: 'A story',
+      followers: 100,
+    }]), async () => {
+      const result = await fetchTwitterBrightDataPosts('BostonGlobe', 'bright', {
+        since: new Date('2026-07-01T00:00:00Z'),
+        until: new Date('2026-07-29T23:59:59Z'),
+        limit: 10,
+        fallbackExternalId: '95431448',
+      });
+      assert.equal(result.profile?.externalId, '95431448');
+      assert.equal(result.posts.length, 1);
+    });
+  });
+
+  it('rejects a verified pooled X id when Bright Data rows belong to another handle', async () => {
+    await withMockFetch(async () => json([{
+      user_posted: 'SomeoneElse',
+      id: 'post-without-author-id',
+      date_posted: '2026-07-28T12:00:00Z',
+      description: 'A story',
+    }]), async () => {
+      await assert.rejects(
+        fetchTwitterBrightDataPosts('BostonGlobe', 'bright', {
+          since: new Date('2026-07-01T00:00:00Z'),
+          until: new Date('2026-07-29T23:59:59Z'),
+          limit: 10,
+          fallbackExternalId: '95431448',
+        }),
+        /without a stable platform id.*No observations were accepted/i,
+      );
+    });
+  });
 });

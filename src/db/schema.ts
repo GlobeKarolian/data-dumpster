@@ -349,7 +349,7 @@ export const electionProfileSources = pgTable('election_profile_sources', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex('election_profile_sources_candidate_platform_uq').on(t.candidateId, t.platform),
+  uniqueIndex('election_profile_sources_candidate_platform_url_uq').on(t.candidateId, t.platform, t.url),
   index('election_profile_sources_status_idx').on(t.status, t.platform),
   check(
     'election_profile_sources_status_ck',

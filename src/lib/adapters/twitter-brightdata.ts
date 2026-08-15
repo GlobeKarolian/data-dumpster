@@ -42,6 +42,8 @@ export async function fetchProfilePosts(
     onApiCall?: () => void;
     signal?: AbortSignal;
     resumeSnapshotId?: string;
+    /** A stable id already verified for this pooled channel. */
+    fallbackExternalId?: string | null;
   },
 ): Promise<TwitterVendorResult> {
   const profileUrl = 'https://x.com/' + handle.replace(/^@/, '');
@@ -69,6 +71,7 @@ export async function fetchProfilePosts(
   let profile: AdapterProfile | undefined;
   let sawErrorRow = false;
   let noPublicPosts = false;
+  const observedHandles = new Set<string>();
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
@@ -86,19 +89,24 @@ export async function fetchProfilePosts(
     }
 
     const f = num(pick(row, ['followers', 'followers_count']));
+    const observedHandle = str(pick(row, ['user_posted', 'username', 'screen_name']))
+      ?.replace(/^@/, '')
+      .toLowerCase();
+    if (observedHandle) observedHandles.add(observedHandle);
     if (f > followers) followers = f;
     if (!profile) {
       const externalId = str(pick(row, ['user_id', 'profile_id', 'author_id']));
-      if (!externalId) continue;
-      profile = {
-        externalId,
-        handle: str(pick(row, ['user_posted'])) ?? handle,
-        displayName: str(pick(row, ['name'])),
-        avatarUrl: str(pick(row, ['profile_image_link'])) ?? null,
-        profileUrl,
-        followers: f,
-        meta: { source: 'brightdata', isVerified: Boolean(row.is_verified) },
-      };
+      if (externalId) {
+        profile = {
+          externalId,
+          handle: str(pick(row, ['user_posted'])) ?? handle,
+          displayName: str(pick(row, ['name'])),
+          avatarUrl: str(pick(row, ['profile_image_link'])) ?? null,
+          profileUrl,
+          followers: f,
+          meta: { source: 'brightdata', isVerified: Boolean(row.is_verified) },
+        };
+      }
     }
 
     const postedAt = toDate(pick(row, ['date_posted', 'timestamp']));
@@ -149,6 +157,21 @@ export async function fetchProfilePosts(
 
   if (posts.length === 0 && rows.length > 0 && warnings.length === 0) {
     warnings.push('X for @' + handle + ': rows returned but none were original posts inside the window.');
+  }
+  if (!profile) {
+    const expectedHandle = handle.replace(/^@/, '').toLowerCase();
+    const responseMatchesRequestedAccount = observedHandles.size > 0
+      && [...observedHandles].every((observed) => observed === expectedHandle);
+    const fallbackExternalId = opts.fallbackExternalId?.trim();
+    if (fallbackExternalId && responseMatchesRequestedAccount) {
+      profile = {
+        externalId: fallbackExternalId,
+        handle: handle.replace(/^@/, ''),
+        profileUrl,
+        followers,
+        meta: { source: 'brightdata', identitySource: 'stored-verified-profile' },
+      };
+    }
   }
   if (!profile) {
     if (rows.length === 0 || noPublicPosts) {

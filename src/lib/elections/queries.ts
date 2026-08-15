@@ -75,8 +75,7 @@ async function summaryRows(ctx: OrgContext, slug?: string): Promise<RaceSummaryR
       LEFT JOIN election_candidates ec ON ec.race_id = er.id
       LEFT JOIN election_profile_sources eps ON eps.candidate_id = ec.id
       LEFT JOIN channels ch
-        ON ch.company_id = ec.company_id
-       AND ch.platform = eps.platform
+        ON ch.id = eps.channel_id
        AND ch.active = true
       WHERE er.org_id = ${ctx.orgId}::uuid
         AND (${slug ?? null}::text IS NULL OR er.slug = ${slug ?? null}::text)
@@ -166,18 +165,8 @@ export async function getElectionRaceBySlug(
         matched.last_ingested_at
       FROM election_profile_sources eps
       JOIN election_candidates ec ON ec.id = eps.candidate_id
-      LEFT JOIN LATERAL (
-        SELECT ch.id, ch.handle, ch.profile_url, ch.avatar_url, ch.active, ch.last_ingested_at
-          FROM channels ch
-         WHERE ch.company_id = ec.company_id
-           AND ch.platform = eps.platform
-         ORDER BY
-           (ch.id = eps.channel_id) DESC,
-           (lower(coalesce(ch.profile_url, '')) = lower(eps.url)) DESC,
-           ch.active DESC,
-           ch.created_at ASC
-         LIMIT 1
-      ) matched ON true
+      LEFT JOIN channels matched
+        ON matched.id = eps.channel_id
       WHERE ec.race_id = ${summary.id}::uuid
       ORDER BY eps.candidate_id, eps.created_at ASC
     `),

@@ -580,6 +580,7 @@ async function fetchViaBrightData(
     onApiCall: ctx.onApiCall,
     signal: ctx.signal,
     resumeSnapshotId,
+    fallbackExternalId: ctx.externalId,
   }));
   if (stage.kind === 'continuation') return stage.result;
   const result = stage.value;

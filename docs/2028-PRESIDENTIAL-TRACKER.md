@@ -12,13 +12,14 @@ The initial roster came from the newsroom-provided account audit dated
 Republicans. Inclusion is a watchlist decision, not evidence that someone has
 declared or will run.
 
-The import selects one curated primary account per candidate and supported
-platform. It imports 81 profiles across X, Instagram, Facebook, TikTok, YouTube,
-Bluesky, and Truth Social. Linktree, Substack, Twitch, and Rumble entries are not
-social-measurement sources in Data Dumpster and were not imported. Accounts
-marked `none_found` or `exists_unconfirmed` were also excluded. JD Vance's
-Bluesky mirror was excluded because the audit says it is not confirmed as an
-official candidate-controlled profile.
+The import contains 106 verified or likely candidate-controlled accounts across
+X, Instagram, Facebook, TikTok, YouTube, Bluesky, and Truth Social. It keeps
+multiple legitimate accounts on the same platform when the audit identifies a
+separate campaign and government or congressional presence. Linktree, Substack,
+Twitch, and Rumble entries are not social-measurement sources in Data Dumpster
+and were not imported. Accounts marked `none_found` or `exists_unconfirmed`
+were also excluded. JD Vance's Bluesky mirror was excluded because the audit
+says it is not confirmed as an official candidate-controlled profile.
 
 Government and congressional accounts are allowed in this watchlist only where
 the audit selected them as the person's primary active presence on that

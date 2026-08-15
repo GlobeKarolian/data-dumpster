@@ -15,8 +15,8 @@ export const POST = apiHandler<{ id: string }>(async (_req, ctx) => {
   await assertElectionRaceAccessible(raceId, session);
   const result = await connectPendingElectionSources({
     raceId,
-    limit: 20,
-    concurrency: 3,
+    limit: 100,
+    concurrency: 5,
   });
   return Response.json(result, { headers: { 'cache-control': 'no-store' } });
 });

@@ -33,7 +33,7 @@ function ProfileStatus({ source }: { source: ElectionCandidateSource }) {
 function CandidateCard({ candidate, canEdit }: { candidate: ElectionCandidateRecord; canEdit: boolean }) {
   const router = useRouter();
   const [selected, setSelected] = React.useState<ElectionCandidateSource | null>(null);
-  const connected = new Set(candidate.profiles.map((profile) => profile.platform));
+  const connected = candidate.profiles.length;
   return (
     <Card>
       <CardHeader className="items-start">
@@ -49,7 +49,7 @@ function CandidateCard({ candidate, canEdit }: { candidate: ElectionCandidateRec
       </CardHeader>
       <CardBody className="grid gap-2 sm:grid-cols-2">
         {candidate.sources.map((source) => {
-          const profile = candidate.profiles.find((item) => item.platform === source.platform);
+          const profile = candidate.profiles.find((item) => item.id === source.channelId);
           const needsReview = canEdit && !profile && (source.status === 'review' || source.status === 'error');
           return (
             <div key={source.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
@@ -68,7 +68,7 @@ function CandidateCard({ candidate, canEdit }: { candidate: ElectionCandidateRec
         })}
       </CardBody>
       <CardBody className="flex items-center justify-between border-t border-zinc-200 py-3 dark:border-zinc-800">
-        <span className="text-[11px] text-zinc-500">{connected.size + ' of ' + candidate.sources.length + ' supplied profiles connected'}</span>
+        <span className="text-[11px] text-zinc-500">{connected + ' of ' + candidate.sources.length + ' supplied profiles connected'}</span>
         {candidate.website ? <a href={candidate.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-zinc-600 hover:text-red-700">Candidate site <ExternalLink className="h-3.5 w-3.5" /></a> : null}
       </CardBody>
       <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null); }} labelledBy={'verify-' + candidate.id} className="max-w-3xl">
@@ -133,7 +133,7 @@ export function ElectionRaceWorkspace({ race, analytics, canEdit, manualRefreshA
         <div className="flex items-center gap-2"><Badge tone={reviewSources ? 'warning' : connected ? 'positive' : 'outline'}>{reviewSources ? 'Attention needed' : connected ? 'Collecting' : 'Connecting'}</Badge><ChevronDown className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" /></div>
       </summary>
       <div className="space-y-4 border-t border-zinc-200 p-4 dark:border-zinc-800">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/25 dark:text-blue-300">{isWatchlist ? <><strong>Curated primary accounts.</strong> The August 14 account audit selects one primary profile per candidate and platform. Official government or congressional accounts are included only where the audit identifies them as the candidate&apos;s primary active presence, and those rows are labeled below.</> : <><strong>Campaign accounts only.</strong> Data Dumpster connects supplied profiles and begins collection automatically. Official government accounts stay outside this race unless explicitly added.</>}</div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/25 dark:text-blue-300">{isWatchlist ? <><strong>Candidate-controlled accounts.</strong> The August 14 account audit includes verified or likely personal, campaign, government and congressional profiles—even when a candidate has more than one account on the same platform. Mirrors, squatters and independently controlled affiliated organizations stay excluded.</> : <><strong>Campaign accounts only.</strong> Data Dumpster connects supplied profiles and begins collection automatically. Official government accounts stay outside this race unless explicitly added.</>}</div>
         <div className="grid gap-4 xl:grid-cols-2">{race.candidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} canEdit={canEdit} />)}</div>
       </div>
     </details>
