@@ -487,6 +487,8 @@ export function selectedPublicSourceKey(
       return hasBrightData ? 'brightdata' : undefined;
     case 'reddit':
       return hasEnsemble ? 'ensembledata' : undefined;
+    case 'truth_social':
+      return credentials.apifyApiToken?.trim() ? 'apify-truth-social' : undefined;
     case 'instagram':
     case 'threads':
     case 'tiktok':
@@ -518,6 +520,9 @@ function explicitLegacySourceKey(
   if (platform === 'youtube' && (claimed === 'youtube' || claimed === 'youtube-data-api-v3')) {
     return 'youtube-data-api-v3';
   }
+  if (platform === 'truth_social' && claimed === 'apify-truth-social') {
+    return 'apify-truth-social';
+  }
   return undefined;
 }
 
@@ -542,6 +547,7 @@ export function legacyPublicSourceCursorState(input: {
     (input.platform === 'bluesky' && input.sourceKey === 'bluesky-public-appview')
     || (input.platform === 'youtube' && input.sourceKey === 'youtube-data-api-v3')
     || (input.platform === 'reddit' && input.sourceKey === 'ensembledata')
+    || (input.platform === 'truth_social' && input.sourceKey === 'apify-truth-social')
   );
   const compatible = explicit === input.sourceKey || sourceLessSingleSource;
 

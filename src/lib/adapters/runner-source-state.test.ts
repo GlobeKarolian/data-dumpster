@@ -27,6 +27,10 @@ describe('public source-specific runner state', () => {
     assert.equal(selectedPublicSourceKey('linkedin', {
       brightDataApiKey: 'bright',
     }), 'brightdata');
+    assert.equal(selectedPublicSourceKey('truth_social', {
+      apifyApiToken: 'apify',
+    }), 'apify-truth-social');
+    assert.equal(selectedPublicSourceKey('truth_social', {}), undefined);
   });
 
   it('does not seed a Bright Data cutover from an EnsembleData cursor or watermark', () => {
@@ -85,6 +89,17 @@ describe('public source-specific runner state', () => {
       sourceKey: 'ensembledata',
       cursor: {},
       lastIngestedAt: null,
+    });
+
+    assert.deepEqual(legacyPublicSourceCursorState({
+      platform: 'truth_social',
+      sourceKey: 'apify-truth-social',
+      cursor: { nextCursor: 'truth-page-2', __isOwned: true },
+      lastIngestedAt: previousSuccess,
+    }), {
+      sourceKey: 'apify-truth-social',
+      cursor: { nextCursor: 'truth-page-2' },
+      lastIngestedAt: previousSuccess,
     });
   });
 
