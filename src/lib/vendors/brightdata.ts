@@ -31,6 +31,7 @@ const BASE = 'https://api.brightdata.com/datasets/v3';
  * identifiers from Bright Data's documentation, not secrets.
  */
 export const DATASETS = {
+  facebookPagesAndProfiles: 'gd_mf124a0511bauquyow',
   tiktokProfile: 'gd_l1villgoiiidt09ci',
   tiktokPost: 'gd_lu702nij2f790tmv9h',
   tiktokPostsByProfile: 'gd_m7n5v2gq296pex2f5m',
@@ -301,6 +302,7 @@ export async function scrapeSync<T = Record<string, unknown>>(
     discoverBy?:
       | 'url'
       | 'profile_url'
+      | 'profiles_array'
       | 'profile'
       | 'company_url'
       | 'user_name'

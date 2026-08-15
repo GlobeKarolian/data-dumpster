@@ -155,6 +155,80 @@ export interface FacebookVendorResult {
   incompleteReason?: string;
 }
 
+export interface FacebookProfileVendorResult {
+  profile: AdapterProfile;
+  audience?: NormalizedAudience;
+  warnings: string[];
+}
+
+/**
+ * Resolve the stable Facebook identity before buying a posts crawl.
+ *
+ * Page-post rows normally carry `delegate_page_id` or `page_id`, but public
+ * profiles and some newer vanity URLs do not. Bright Data's combined Pages and
+ * Profiles dataset accepts either object type and returns the stable id as
+ * `id`. The profiles-only dataset rejects campaign Pages as bad input.
+ */
+export async function fetchFacebookProfile(
+  handle: string,
+  apiKey: string,
+  opts: {
+    onApiCall?: () => void;
+    signal?: AbortSignal;
+    resumeSnapshotId?: string;
+  } = {},
+): Promise<FacebookProfileVendorResult> {
+  const pageUrl = handle.includes('://') ? handle : 'https://www.facebook.com/' + handle;
+  const rows = await scrapeSync(
+    DATASETS.facebookPagesAndProfiles,
+    [{ url: pageUrl }],
+    {
+      apiKey,
+      platform: PLATFORM,
+      onApiCall: opts.onApiCall,
+      signal: opts.signal,
+      resumeSnapshotId: opts.resumeSnapshotId,
+    },
+  );
+  const row = rows.find((candidate) => isRecord(candidate) && !isErrorRow(candidate));
+  if (!isRecord(row)) {
+    const detail = rows.map(rowError).find(Boolean);
+    throw new AdapterError(
+      detail
+        ? 'Bright Data could not resolve Facebook profile ' + handle + ': ' + detail
+        : 'Bright Data returned no Facebook profile for ' + handle + '.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+
+  const externalId = str(pick(row, ['id', 'profile_id', 'page_id']));
+  if (!externalId) {
+    throw new AdapterError(
+      'Bright Data returned Facebook profile data for ' + handle
+        + ' without a stable profile id. No observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+  const followers = num(pick(row, ['followers', 'followers_count']));
+  const profile: AdapterProfile = {
+    externalId,
+    handle,
+    displayName: str(pick(row, ['page_name', 'name'])),
+    avatarUrl: str(pick(row, ['logo', 'profile_photo', 'profile_image', 'avatar_image_url'])) ?? null,
+    profileUrl: str(pick(row, ['url', 'profile_url'])) ?? pageUrl,
+    followers,
+    meta: {
+      source: 'brightdata',
+      isVerified: Boolean(row.is_verified),
+      profileType: str(pick(row, ['entity_type', 'profile_type'])) ?? null,
+    },
+  };
+  const audience = followers > 0
+    ? { day: toDayString(new Date()), followers, extra: {} }
+    : undefined;
+  return { profile, audience, warnings: [] };
+}
+
 /**
  * Bright Data represents an empty requested date range as an error row. The
  * observed production shape is `error_code: "dead_page"` with the much more
@@ -263,6 +337,16 @@ export async function fetchPagePosts(
         exhaustive: false,
         incompleteReason,
       };
+    }
+    if (errorRows > 0) {
+      const vendorFailure = warnings.find((warning) => warning.startsWith('Facebook row error'));
+      throw new AdapterError(
+        vendorFailure
+          ? 'Bright Data could not collect the Facebook Page ' + handle + ': '
+            + vendorFailure.replace(/^Facebook row error for [^:]+:\s*/, '')
+          : 'Bright Data returned only error rows for the Facebook Page ' + handle + '.',
+        { platform: PLATFORM, retryable: false },
+      );
     }
     throw new AdapterError(
       rows.length === 0

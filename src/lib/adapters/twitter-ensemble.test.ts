@@ -590,6 +590,53 @@ describe('X source routing and failover', { concurrency: false }, () => {
     });
   });
 
+  it('uses Bright Data\'s live profiles-array input contract', async () => {
+    let requestedUrl = '';
+    let requestedBody: unknown;
+    await withMockFetch(async (input, init) => {
+      requestedUrl = urlOf(input);
+      requestedBody = JSON.parse(String(init?.body));
+      return json([{
+        user_posted: 'BostonGlobe',
+        user_id: '95431448',
+        id: 'post-1',
+        date_posted: '2026-07-28T12:00:00Z',
+        description: 'A story',
+      }]);
+    }, async () => {
+      await fetchTwitterBrightDataPosts('BostonGlobe', 'bright', {
+        since: new Date('2026-07-01T00:00:00Z'),
+        until: new Date('2026-07-29T23:59:59Z'),
+        limit: 10,
+      });
+    });
+
+    const url = new URL(requestedUrl);
+    assert.equal(url.searchParams.get('discover_by'), 'profiles_array');
+    assert.deepEqual(requestedBody, [{
+      urls: ['https://x.com/BostonGlobe'],
+      start_date: '07-01-2026',
+      end_date: '07-29-2026',
+    }]);
+  });
+
+  it('surfaces Bright Data validation errors instead of calling them missing ids', async () => {
+    await withMockFetch(async () => json([{
+      error: 'Crawler error: URL validation error: urls is required',
+      error_code: 'bad_cmd_arg',
+    }]), async () => {
+      await assert.rejects(
+        fetchTwitterBrightDataPosts('BostonGlobe', 'bright', {
+          since: new Date('2026-07-01T00:00:00Z'),
+          until: new Date('2026-07-29T23:59:59Z'),
+          limit: 10,
+          fallbackExternalId: '95431448',
+        }),
+        /URL validation error: urls is required/i,
+      );
+    });
+  });
+
   it('reuses a verified pooled X id only when Bright Data rows match the requested handle', async () => {
     await withMockFetch(async () => json([{
       user_posted: 'BostonGlobe',

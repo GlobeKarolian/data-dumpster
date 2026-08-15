@@ -1072,6 +1072,7 @@ interface ChannelContext {
   channelId: string;
   platform: Platform;
   handle: string;
+  profileUrl: string | null;
   externalId: string | null;
   cursor: Record<string, unknown>;
   lastIngestedAt: Date | null;
@@ -1085,6 +1086,7 @@ const CHANNEL_SELECTION = {
   channelId: channels.id,
   platform: channels.platform,
   handle: channels.handle,
+  profileUrl: channels.profileUrl,
   externalId: channels.externalId,
   cursor: channels.cursor,
   lastIngestedAt: channels.lastIngestedAt,
@@ -1661,6 +1663,7 @@ export async function runChannelIngest(
   try {
     fetched = await adapter.fetch({
       handle: channel.handle,
+      profileUrl: channel.profileUrl,
       externalId: channel.externalId,
       // The row is pooled even when a legacy channels.is_owned bit is true.
       // Force the public path until owned insights have org-private storage.

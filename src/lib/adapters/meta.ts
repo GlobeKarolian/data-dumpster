@@ -603,6 +603,11 @@ export const facebookAdapter: ChannelAdapter = {
    * degrade to the other credential rather than fail a lookup we can serve.
    */
   async resolveProfile(handle: string, credentials: Record<string, string>): Promise<AdapterProfile> {
+    const vendorKey = credentials.brightDataApiKey?.trim() || '';
+    if (!credentials.accessToken && vendorKey) {
+      const { fetchFacebookProfile } = await import('./facebook-brightdata');
+      return (await fetchFacebookProfile(handle, vendorKey)).profile;
+    }
     const token = requireToken(credentials, FB);
     const read = async (withToken: string): Promise<AdapterProfile> => {
       const body = await graph<unknown>(handle, {
@@ -631,6 +636,17 @@ export const facebookAdapter: ChannelAdapter = {
     // orgs will have one long before App Review clears.
     const vendorKey = ctx.credentials.brightDataApiKey ?? process.env.BRIGHTDATA_API_KEY ?? '';
     const pendingStage = pendingBrightDataStage(ctx.cursor, FB, 'facebook-page-posts');
+    if (
+      pendingStage !== undefined
+      && pendingStage !== 'facebook-profile'
+      && pendingStage !== 'facebook-page-posts'
+    ) {
+      throw new AdapterError(
+        'Facebook has a Bright Data receipt for unknown stage "' + pendingStage
+          + '". Reconcile the receipt before starting another paid snapshot.',
+        { platform: FB, retryable: false },
+      );
+    }
     if (pendingStage && !vendorKey) {
       throw new AdapterError(
         'Facebook has a paid Bright Data snapshot waiting to resume, but the Bright Data API key '
@@ -639,28 +655,73 @@ export const facebookAdapter: ChannelAdapter = {
       );
     }
     if (!owned && vendorKey && (pendingStage !== undefined || !isPpcaApproved(ctx.credentials))) {
-      const { fetchPagePosts } = await import('./facebook-brightdata');
-      const stage = await runBrightDataStage(ctx, {
+      const { fetchFacebookProfile, fetchPagePosts } = await import('./facebook-brightdata');
+      let profile = pendingStage === 'facebook-page-posts'
+        ? profileFromBrightDataReceipt(ctx.cursor)
+          ?? (ctx.externalId?.trim()
+            ? {
+                externalId: ctx.externalId,
+                handle: ctx.handle,
+                meta: { source: 'stored-verified-profile' },
+              }
+            : undefined)
+        : undefined;
+      let audience: NormalizedAudience | undefined;
+      const warnings: string[] = [];
+
+      if (pendingStage === 'facebook-page-posts' && !profile) {
+        throw new AdapterError(
+          'Facebook post snapshot ' + String(ctx.cursor.pendingSnapshotId)
+            + ' has no bound profile identity. Refusing to apply paid rows to a pooled profile; '
+            + 'operator reconciliation is required.',
+          { platform: FB, retryable: false },
+        );
+      }
+
+      if (!ctx.externalId?.trim() && pendingStage !== 'facebook-page-posts') {
+        const profileStage = await runBrightDataStage(ctx, {
+          platform: FB,
+          stage: 'facebook-profile',
+          datasetId: DATASETS.facebookPagesAndProfiles,
+        }, async (resumeSnapshotId) => await fetchFacebookProfile(
+          ctx.profileUrl ?? ctx.handle,
+          vendorKey,
+          {
+          onApiCall: ctx.onApiCall,
+          signal: ctx.signal,
+          resumeSnapshotId,
+          },
+        ));
+        if (profileStage.kind === 'continuation') return profileStage.result;
+        ({ profile, audience } = profileStage.value);
+        warnings.push(...profileStage.value.warnings, ...profileStage.warnings);
+      }
+
+      const postsContext = pendingStage === 'facebook-profile'
+        ? { ...ctx, cursor: { ...ctx.cursor, ...clearBrightDataReceipt() } }
+        : ctx;
+      const stage = await runBrightDataStage(postsContext, {
         platform: FB,
         stage: 'facebook-page-posts',
         datasetId: DATASETS.facebookPagePosts,
         legacyStage: 'facebook-page-posts',
         legacyDatasetId: DATASETS.facebookPagePosts,
-      }, async (resumeSnapshotId) => await fetchPagePosts(ctx.handle, vendorKey, {
+      }, async (resumeSnapshotId) => await fetchPagePosts(ctx.profileUrl ?? ctx.handle, vendorKey, {
           since: ctx.since,
           until: ctx.until,
           limit: ctx.limit,
           onApiCall: ctx.onApiCall,
           signal: ctx.signal,
           resumeSnapshotId,
-      }));
+      }), profile, audience ? [audience] : []);
       if (stage.kind === 'continuation') return stage.result;
 
       const result = stage.value;
+      const resolvedProfile = profile ?? result.profile;
       return {
         posts: result.posts,
-        audience: result.audience ? [result.audience] : [],
-        profile: result.profile,
+        audience: audience ? [audience] : result.audience ? [result.audience] : [],
+        ...(resolvedProfile ? { profile: resolvedProfile } : {}),
         cursor: {
           source: 'brightdata',
           ...clearBrightDataReceipt(),
@@ -674,7 +735,7 @@ export const facebookAdapter: ChannelAdapter = {
               incompleteReason: result.incompleteReason
                 ?? 'Bright Data did not certify the requested Facebook window and exposed no continuation cursor.',
             }),
-        warnings: [...result.warnings, ...stage.warnings],
+        warnings: [...warnings, ...result.warnings, ...stage.warnings],
       };
     }
 

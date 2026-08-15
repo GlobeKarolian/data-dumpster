@@ -7,8 +7,10 @@
  * exists so an org that has already bought vendor access does not also have to
  * buy an X subscription to see the platform at all.
  *
- * The endpoint is Posts, in discover-by-profile-url mode. Every row carries the
- * author's follower count, so audience comes free.
+ * The endpoint is Posts, in discover-by-profiles-array mode. Despite the mode
+ * name, the live Bright Data input validator requires one `urls` array per
+ * input row. Every result carries the author's follower count, so audience
+ * comes free.
  *
  * X separates reposts from quote posts. Both are amplification under the metric
  * vocabulary and are summed, with the split preserved in raw. Bookmarks map to
@@ -51,14 +53,14 @@ export async function fetchProfilePosts(
   const rows = await scrapeSync(
     DATASETS.twitterPosts,
     [{
-      url: profileUrl,
+      urls: [profileUrl],
       start_date: vendorDate(opts.since),
       end_date: vendorDate(opts.until),
     }],
     {
       apiKey,
       platform: PLATFORM,
-      discoverBy: 'profile_url',
+      discoverBy: 'profiles_array',
       onApiCall: opts.onApiCall,
       signal: opts.signal,
       resumeSnapshotId: opts.resumeSnapshotId,
@@ -174,6 +176,16 @@ export async function fetchProfilePosts(
     }
   }
   if (!profile) {
+    if (sawErrorRow) {
+      const vendorFailure = warnings.find((warning) => warning.startsWith('X row error'));
+      throw new AdapterError(
+        vendorFailure
+          ? 'Bright Data could not collect X profile @' + handle + ': '
+            + vendorFailure.replace(/^X row error for @[^:]+:\s*/, '')
+          : 'Bright Data returned only error rows for X profile @' + handle + '.',
+        { platform: PLATFORM, retryable: false },
+      );
+    }
     if (rows.length === 0 || noPublicPosts) {
       const incompleteReason = noPublicPosts
         ? 'Bright Data found no public X posts for @' + handle

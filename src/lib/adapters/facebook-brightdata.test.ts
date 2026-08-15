@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   durableFacebookCreativeUrl,
+  fetchFacebookProfile,
   fetchPagePosts,
   mapFacebookVendorPost,
 } from './facebook-brightdata';
@@ -37,6 +38,41 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 }
 
 describe('Bright Data Facebook post creative', () => {
+  it('resolves a stable Facebook Page identity through the Pages and Profiles dataset', async (t) => {
+    let requestedUrl = '';
+    let requestedBody: unknown;
+    t.mock.method(globalThis, 'fetch', async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      requestedUrl = String(input);
+      requestedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify([{
+        id: '100070055152736',
+        url: 'https://www.facebook.com/p/JD-Vance-100070055152736/',
+        page_name: 'JD Vance',
+        entity_type: 'PAGE',
+        followers: 250000,
+        logo: 'https://cdn.example/jd.jpg',
+      }]), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    const result = await fetchFacebookProfile(
+      'https://www.facebook.com/p/JD-Vance-100070055152736/',
+      'test-key',
+    );
+
+    assert.equal(result.profile.externalId, '100070055152736');
+    assert.equal(result.profile.displayName, 'JD Vance');
+    assert.equal(result.profile.avatarUrl, 'https://cdn.example/jd.jpg');
+    assert.equal(result.profile.meta?.profileType, 'PAGE');
+    assert.equal(result.audience?.followers, 250000);
+    assert.equal(new URL(requestedUrl).searchParams.get('dataset_id'), 'gd_mf124a0511bauquyow');
+    assert.deepEqual(requestedBody, [{
+      url: 'https://www.facebook.com/p/JD-Vance-100070055152736/',
+    }]);
+  });
+
   it('uses the post attachment instead of the page cover image', () => {
     const post = mapFacebookVendorPost(row(), RANGE);
     assert.equal(post?.type, 'photo');
@@ -156,7 +192,7 @@ describe('Bright Data Facebook post creative', () => {
 
     await assert.rejects(
       fetchPagePosts('example', 'test-key', { ...RANGE, limit: 200 }),
-      /without a stable Page id.*No observations were accepted/i,
+      /could not collect the Facebook Page example.*requested Page is private/i,
     );
   });
 });

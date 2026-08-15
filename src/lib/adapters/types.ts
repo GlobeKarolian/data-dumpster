@@ -72,6 +72,8 @@ export interface AdapterProfile {
 export interface FetchContext {
   /** Handle or resolved platform id for the channel being read. */
   handle: string;
+  /** Exact stored profile URL. Prefer this over rebuilding URLs from handles. */
+  profileUrl?: string | null;
   externalId?: string | null;
   /** Opaque adapter state persisted on the channel row between runs. */
   cursor: Record<string, unknown>;
