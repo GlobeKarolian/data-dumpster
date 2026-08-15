@@ -309,7 +309,12 @@ function parseFacebookHandle(input: string): string {
     const idParam = url.searchParams.get('id');
     if (idParam && /^\d+$/.test(idParam)) return idParam;
     const segments = url.pathname.split('/').filter(Boolean);
-    const found = segments[0] === 'pg' ? segments[1] : segments[0];
+    // Meta's newer numeric-backed public-profile links use
+    // /p/<display-slug>-<numeric-id>/. Treating the literal `p` as the handle
+    // attached every one of those URLs to the same bogus pooled identity.
+    const found = segments[0] === 'pg' || segments[0] === 'p'
+      ? segments[1]
+      : segments[0];
     if (!found) throw new AdapterError(`No page in URL: ${input}`, { platform: FB, retryable: false });
     candidate = found;
   }

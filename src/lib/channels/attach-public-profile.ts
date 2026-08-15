@@ -126,6 +126,8 @@ export async function attachPublicProfile(input: {
   platform: Platform;
   profileInput: string;
   allowDeferredFacebookIdentity?: boolean;
+  /** Trusted profile already resolved from the same supplied URL in a paid batch. */
+  resolvedProfile?: AdapterProfile;
 }): Promise<AttachPublicProfileResult> {
   if (!hasAdapter(input.platform)) {
     const reason = UNIMPLEMENTED_REASONS[input.platform];
@@ -159,7 +161,18 @@ export async function attachPublicProfile(input: {
   }
 
   let profile: AdapterProfile;
-  if (deferFacebookIdentity) {
+  if (input.resolvedProfile) {
+    profile = input.resolvedProfile;
+    const suppliedIdentity = channelIdentityKey(input.platform, parsedHandle);
+    const resolvedIdentity = channelIdentityKey(input.platform, profile.handle);
+    if (!channelExternalIdentity(profile.externalId) || suppliedIdentity !== resolvedIdentity) {
+      throw new HttpError(
+        422,
+        'The pre-resolved profile does not match the supplied public profile URL.',
+        'resolved_profile_mismatch',
+      );
+    }
+  } else if (deferFacebookIdentity) {
     profile = {
       externalId: '',
       handle: parsedHandle,

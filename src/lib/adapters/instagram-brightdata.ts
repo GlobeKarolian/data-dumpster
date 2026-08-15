@@ -76,6 +76,56 @@ function profileUrl(handle: string): string {
   return 'https://www.instagram.com/' + handle;
 }
 
+/**
+ * Normalize one real Bright Data profile row.
+ *
+ * Kept separate from the transport so batched election onboarding can attach
+ * identities from one paid snapshot instead of purchasing the same profile
+ * once per supplied URL.
+ */
+export function mapInstagramProfileRow(
+  row: Record<string, unknown>,
+  fallbackHandle: string,
+): { profile: AdapterProfile; audience?: NormalizedAudience } {
+  const followers = num(pick(row, ['followers', 'followers_count']));
+  const resolved = str(pick(row, ['account', 'user_name', 'profile_name'])) ?? fallbackHandle;
+  const externalId = str(pick(row, ['id', 'fbid', 'pk']));
+  if (!externalId) {
+    throw new AdapterError(
+      'Bright Data returned an Instagram profile for @' + fallbackHandle
+        + ' without a stable platform id. No observations were accepted.',
+      { platform: PLATFORM, retryable: false },
+    );
+  }
+
+  const profile: AdapterProfile = {
+    externalId,
+    handle: resolved.replace(/^@/, ''),
+    displayName: str(pick(row, ['full_name', 'profile_name'])),
+    avatarUrl: str(pick(row, ['profile_image_link', 'profile_pic_url'])) ?? null,
+    profileUrl: str(pick(row, ['profile_url', 'url'])) ?? profileUrl(fallbackHandle),
+    followers,
+    meta: {
+      source: 'brightdata',
+      isVerified: Boolean(row.is_verified),
+      isPrivate: Boolean(row.is_private),
+      isBusiness: Boolean(row.is_business_account),
+      category: str(pick(row, ['category_name', 'business_category_name'])) ?? null,
+    },
+  };
+
+  const audience: NormalizedAudience | undefined = followers > 0
+    ? {
+      day: toDayString(new Date()),
+      followers,
+      following: num(pick(row, ['following'])) || null,
+      extra: { posts: num(pick(row, ['posts_count'])) },
+    }
+    : undefined;
+
+  return { profile, audience };
+}
+
 export async function fetchProfile(
   handle: string,
   apiKey: string,
@@ -98,41 +148,7 @@ export async function fetchProfile(
     );
   }
 
-  const followers = num(pick(row, ['followers', 'followers_count']));
-  const resolved = str(pick(row, ['account', 'user_name', 'profile_name'])) ?? handle;
-  const externalId = str(pick(row, ['id', 'fbid', 'pk']));
-  if (!externalId) {
-    throw new AdapterError(
-      'Bright Data returned an Instagram profile for @' + handle
-        + ' without a stable platform id. No observations were accepted.',
-      { platform: PLATFORM, retryable: false },
-    );
-  }
-
-  const profile: AdapterProfile = {
-    externalId,
-    handle: resolved.replace(/^@/, ''),
-    displayName: str(pick(row, ['full_name', 'profile_name'])),
-    avatarUrl: str(pick(row, ['profile_image_link', 'profile_pic_url'])) ?? null,
-    profileUrl: str(pick(row, ['profile_url', 'url'])) ?? profileUrl(handle),
-    followers,
-    meta: {
-      source: 'brightdata',
-      isVerified: Boolean(row.is_verified),
-      isPrivate: Boolean(row.is_private),
-      isBusiness: Boolean(row.is_business_account),
-      category: str(pick(row, ['category_name', 'business_category_name'])) ?? null,
-    },
-  };
-
-  const audience: NormalizedAudience | undefined = followers > 0
-    ? {
-      day: toDayString(new Date()),
-      followers,
-      following: num(pick(row, ['following'])) || null,
-      extra: { posts: num(pick(row, ['posts_count'])) },
-    }
-    : undefined;
+  const { profile, audience } = mapInstagramProfileRow(row, handle);
 
   return { profile, audience, raw: row };
 }

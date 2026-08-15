@@ -12,7 +12,7 @@ The initial roster came from the newsroom-provided account audit dated
 Republicans. Inclusion is a watchlist decision, not evidence that someone has
 declared or will run.
 
-The import contains 106 verified or likely candidate-controlled accounts across
+The import contains 107 verified or likely candidate-controlled accounts across
 X, Instagram, Facebook, TikTok, YouTube, Bluesky, and Truth Social. It keeps
 multiple legitimate accounts on the same platform when the audit identifies a
 separate campaign and government or congressional presence. Linktree, Substack,
