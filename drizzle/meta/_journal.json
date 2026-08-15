@@ -134,6 +134,13 @@
       "when": 1786982400000,
       "tag": "0018_pete_buttigieg_facebook_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786982401000,
+      "tag": "0019_presidential_verified_account_expansion",
+      "breakpoints": true
     }
   ]
 }
