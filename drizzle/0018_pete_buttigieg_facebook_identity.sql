@@ -4,8 +4,7 @@
 -- the account remains attached to the correct pooled identity while the
 -- vendor-specific availability issue is reported honestly.
 UPDATE "channels" ch
-   SET "external_id" = '1039701332716228',
-       "updated_at" = now()
+   SET "external_id" = '1039701332716228'
   FROM "companies" c
   JOIN "election_candidates" ec ON ec."company_id" = c."id"
   JOIN "election_races" er ON er."id" = ec."race_id"
