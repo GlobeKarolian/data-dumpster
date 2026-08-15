@@ -19,27 +19,17 @@
  * supported" with no explanation generates a support ticket every time.
  */
 import { z } from 'zod';
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { apiHandler, requireRole, AuthError, HttpError } from '@/lib/session';
 import { db } from '@/db';
-import {
-  channels,
-  companies,
-  landscapeCompanies,
-  landscapes,
-} from '@/db/schema';
-import { PLATFORMS, type Platform } from '@/lib/types';
-import { AdapterError } from '@/lib/adapters/types';
-import { getAdapter, hasAdapter, UNIMPLEMENTED_REASONS } from '@/lib/adapters/registry';
-import { publicProfileOnboardingUnavailableReason } from '@/lib/adapters/supported-platforms';
+import { channels } from '@/db/schema';
+import { PLATFORMS } from '@/lib/types';
 import {
   assertCompanyInOrg,
   assertCompaniesVisibleToUser,
   assertCompanyNotSharedWithOtherOrgs,
 } from '../../../_lib/org-scope';
-import { publicSourceCredentials } from '@/lib/adapters/public-sources';
-import { channelExternalIdentity, channelIdentityKey } from '@/lib/channel-identity';
-import { mergePublicChannelMeta, sanitizePublicProfileMeta } from '@/lib/channel-profile-meta';
+import { attachPublicProfile } from '@/lib/channels/attach-public-profile';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,104 +68,6 @@ async function readChannelRequest<T>(req: Request, schema: z.ZodType<T>): Promis
   return schema.parse(raw);
 }
 
-function unsupported(platform: Platform): never {
-  const reason = UNIMPLEMENTED_REASONS[platform];
-  throw new HttpError(
-    422,
-    'Data Dumpster cannot read ' + platform + ' yet.'
-      + (reason ? ' ' + reason : '')
-      + ' Add another supported public social channel instead.',
-    'no_adapter',
-  );
-}
-
-interface CanonicalChannelCandidate {
-  id: string;
-  companyId: string;
-  companyName: string;
-  identityKey: string;
-  externalId: string | null;
-  meta: Record<string, unknown>;
-}
-
-async function canonicalCandidates(input: {
-  platform: Platform;
-  identityKey: string;
-  externalId: string | null;
-}): Promise<CanonicalChannelCandidate[]> {
-  return db
-    .select({
-      id: channels.id,
-      companyId: channels.companyId,
-      companyName: companies.name,
-      identityKey: channels.identityKey,
-      externalId: channels.externalId,
-      meta: channels.meta,
-    })
-    .from(channels)
-    .innerJoin(companies, eq(companies.id, channels.companyId))
-    .where(and(
-      eq(channels.platform, input.platform),
-      or(
-        eq(channels.identityKey, input.identityKey),
-        input.externalId ? eq(channels.externalId, input.externalId) : undefined,
-      ),
-    ));
-}
-
-async function trackingOrgIdsForCompany(companyId: string): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ orgId: landscapes.orgId })
-    .from(landscapeCompanies)
-    .innerJoin(landscapes, eq(landscapes.id, landscapeCompanies.landscapeId))
-    .where(eq(landscapeCompanies.companyId, companyId));
-  return rows.map((row) => row.orgId).sort();
-}
-
-function chooseCanonicalChannel(
-  candidates: readonly CanonicalChannelCandidate[],
-  input: { companyId: string; identityKey: string; externalId: string | null },
-): CanonicalChannelCandidate | null {
-  const externalMatch = input.externalId
-    ? candidates.find((candidate) => candidate.externalId === input.externalId)
-    : undefined;
-  const handleMatch = candidates.find((candidate) => candidate.identityKey === input.identityKey);
-
-  if (externalMatch && handleMatch && externalMatch.id !== handleMatch.id) {
-    throw new HttpError(
-      409,
-      'The verified platform id and normalized handle point to different pooled profiles. '
-        + 'An operator must reconcile those records before this account can be attached.',
-      'pooled_account_identity_conflict',
-    );
-  }
-
-  const canonical = externalMatch ?? handleMatch ?? null;
-  if (!canonical) return null;
-  if (canonical.companyId !== input.companyId) {
-    throw new HttpError(
-      409,
-      'That public account is already attached to ' + canonical.companyName
-        + '. Move the pooled profile instead of collecting it a second time.',
-      'pooled_account_conflict',
-    );
-  }
-  if (
-    handleMatch
-    && input.externalId
-    && handleMatch.externalId
-    && handleMatch.externalId !== input.externalId
-  ) {
-    throw new HttpError(
-      409,
-      'That handle now resolves to a different platform account. An operator must review the '
-        + 'existing pooled profile before its stable id can change.',
-      'reassigned_handle',
-    );
-  }
-  return canonical;
-}
-
 export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
   const session = await requireRole('editor');
   const { orgId } = session;
@@ -184,122 +76,19 @@ export const POST = apiHandler<{ id: string }>(async (req, ctx) => {
   await assertCompaniesVisibleToUser([companyId], session);
 
   const body = await readChannelRequest(req, addChannelSchema);
-  if (!hasAdapter(body.platform)) unsupported(body.platform);
-  const onboardingUnavailable = publicProfileOnboardingUnavailableReason(body.platform);
-  if (onboardingUnavailable) {
-    throw new HttpError(422, onboardingUnavailable, 'public_profile_onboarding_unavailable');
-  }
-
-  const adapter = getAdapter(body.platform);
-
-  let handle: string;
-  try {
-    handle = adapter.parseHandle(body.input);
-  } catch (err) {
-    throw new HttpError(
-      422,
-      err instanceof AdapterError
-        ? err.message
-        : 'That does not look like a ' + adapter.displayName + ' handle or profile URL.',
-      'unparseable_handle',
-    );
-  }
-
-  // Profile identity lands in a globally pooled row, so resolving it with an
-  // org owner/admin token would leak private metadata before ingestion even
-  // starts. Use the exact same public-source allowlist as the runner.
-  const credentials = publicSourceCredentials(body.platform);
-
-  let profile;
-  try {
-    profile = await adapter.resolveProfile(handle, credentials);
-  } catch (err) {
-    if (err instanceof AdapterError) {
-      // Retryable means the platform is rate-limiting or down: that is a 503,
-      // not the caller's fault. Anything else is a bad handle or bad key.
-      throw new HttpError(
-        err.opts.retryable ? 503 : 422,
-        err.message,
-        err.opts.retryable ? 'platform_unavailable' : 'unresolvable_handle',
-      );
-    }
-    throw err;
-  }
-
-  const externalId = channelExternalIdentity(profile.externalId);
-  const identityKey = channelIdentityKey(body.platform, profile.handle);
-  const identity = { platform: body.platform, identityKey, externalId };
-  let canonical = chooseCanonicalChannel(await canonicalCandidates(identity), {
+  const result = await attachPublicProfile({
     companyId,
-    identityKey,
-    externalId,
+    orgId,
+    platform: body.platform,
+    profileInput: body.input,
   });
-
-  if (!canonical) {
-    // Both global unique indexes participate, so a target-less conflict clause
-    // is intentional. A concurrent writer wins and is re-read below.
-    const [inserted] = await db.insert(channels).values({
-      companyId,
-      platform: body.platform,
-      handle: profile.handle,
-      identityKey,
-      externalId,
-      profileUrl: profile.profileUrl ?? null,
-      avatarUrl: profile.avatarUrl ?? null,
-      // Public rows are the only safe shared representation until private
-      // owned insights have their own org-scoped tables.
-      isOwned: false,
-      active: true,
-      meta: sanitizePublicProfileMeta(profile.meta ?? {}),
-    }).onConflictDoNothing().returning({ id: channels.id });
-    canonical = inserted
-      ? {
-          id: inserted.id,
-          companyId,
-          companyName: '',
-          identityKey,
-          externalId,
-          meta: sanitizePublicProfileMeta(profile.meta ?? {}),
-        }
-      : chooseCanonicalChannel(await canonicalCandidates(identity), {
-          companyId,
-          identityKey,
-          externalId,
-        });
-  }
-  if (!canonical) throw new Error('Canonical channel insert did not return a pooled profile.');
-
-  const [saved] = await db.update(channels).set({
-    handle: profile.handle,
-    identityKey,
-    externalId,
-    profileUrl: profile.profileUrl ?? null,
-    avatarUrl: profile.avatarUrl ?? null,
-    // Public metadata is safe to refresh. Global quarantine state and ownership
-    // classification are operator controls and remain untouched here.
-    meta: mergePublicChannelMeta(canonical.meta, sanitizePublicProfileMeta(profile.meta ?? {})),
-  }).where(eq(channels.id, canonical.id)).returning();
-
-  const { enqueueChannelCollection } = await import('@/lib/adapters/collection-queue');
-  // A channel belongs to the pooled company, not only to the workspace that
-  // discovered it. Register it immediately for every landscape already tracking
-  // that company so foreign workspaces do not wait for a later global sweep.
-  const trackingOrgIds = await trackingOrgIdsForCompany(companyId);
-  const orderedOrgIds = [orgId, ...trackingOrgIds.filter((id) => id !== orgId)];
-  let collectionQueued = 0;
-  for (const trackingOrgId of orderedOrgIds) {
-    collectionQueued = Math.max(
-      collectionQueued,
-      await enqueueChannelCollection({ channelId: saved.id, orgId: trackingOrgId }),
-    );
-  }
 
   return Response.json(
     {
-      ...saved,
-      displayName: profile.displayName ?? null,
-      followers: profile.followers ?? null,
-      collectionQueued: collectionQueued > 0,
+      ...result.channel,
+      displayName: result.profile.displayName ?? null,
+      followers: result.profile.followers ?? null,
+      collectionQueued: result.collectionQueued,
     },
     { status: 201 },
   );

@@ -1,0 +1,2 @@
+ALTER TABLE "election_profile_sources" DROP CONSTRAINT "election_profile_sources_status_ck";--> statement-breakpoint
+ALTER TABLE "election_profile_sources" ADD CONSTRAINT "election_profile_sources_status_ck" CHECK ("election_profile_sources"."status" IN ('pending', 'connecting', 'connected', 'review', 'paused', 'skipped', 'error'));

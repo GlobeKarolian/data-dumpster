@@ -136,6 +136,14 @@ rows and confirmed campaign profiles point at pooled channel rows. A candidate
 who appears in another race or landscape therefore reuses collected history and
 freshness instead of triggering a duplicate crawl.
 
+Supplied campaign profile URLs are connected automatically by a durable source
+lease before the normal collection queue runs. Public adapters resolve stable
+identity and reuse an existing pooled channel when one already exists. Facebook
+is the one deliberate exception to preflight resolution: Election Center stages
+the exact supplied URL and lets the first paid Bright Data collection claim the
+stable page id at the runner's existing pre-write gate, avoiding a second paid
+crawl. Only a true pooled-identity conflict becomes a manual review item.
+
 Landscape visibility adds a second private boundary inside an organization.
 Owners and admins are universal. Editors and viewers require a matching
 `user_landscape_access` row, and the same check is applied to the shell,

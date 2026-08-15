@@ -29,7 +29,14 @@ export interface ElectionCandidateProfile {
   lastIngestedAt: string | null;
 }
 
-export type ElectionProfileSourceStatus = 'pending' | 'connected' | 'paused' | 'skipped' | 'error';
+export type ElectionProfileSourceStatus =
+  | 'pending'
+  | 'connecting'
+  | 'connected'
+  | 'review'
+  | 'paused'
+  | 'skipped'
+  | 'error';
 
 export interface ElectionCandidateSource {
   id: string;

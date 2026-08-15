@@ -353,7 +353,7 @@ export const electionProfileSources = pgTable('election_profile_sources', {
   index('election_profile_sources_status_idx').on(t.status, t.platform),
   check(
     'election_profile_sources_status_ck',
-    sql`${t.status} IN ('pending', 'connected', 'paused', 'skipped', 'error')`,
+    sql`${t.status} IN ('pending', 'connecting', 'connected', 'review', 'paused', 'skipped', 'error')`,
   ),
 ]);
 

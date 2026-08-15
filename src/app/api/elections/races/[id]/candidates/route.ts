@@ -113,7 +113,7 @@ export const POST = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => 
       candidateId: candidate.id,
       platform: source.platform,
       url: source.url,
-      status: source.platform === 'facebook' ? 'paused' : 'pending',
+      status: 'pending',
       note: source.note ?? null,
     }))).onConflictDoNothing();
   }

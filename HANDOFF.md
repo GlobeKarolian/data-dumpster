@@ -194,9 +194,11 @@ Each race owns a private backing landscape while reusing pooled companies,
 channels, posts and collection history. The production seed starts with the
 Massachusetts U.S. Senate Democratic primary on 1 September 2026, with Ed
 Markey and Seth Moulton and the campaign-account roster supplied by the user.
-The profile roster is auditable: supplied URLs remain pending until they pass
-the normal shared-channel identity confirmation, and temporarily unsupported
-Facebook onboarding remains visibly paused rather than silently omitted.
+Supplied URLs resolve, deduplicate and enter the durable collection queue
+automatically. Facebook campaign URLs skip a duplicate paid verification crawl;
+their first real Bright Data collection must claim the stable platform id before
+any observation can land. Only a genuine pooled-identity conflict is sent to a
+person for review.
 
 ## Priority order
 
@@ -204,7 +206,7 @@ Facebook onboarding remains visibly paused rather than silently omitted.
    release gate, not a later hardening task.
 2. Validate the full foundation, run the pooled-identity audit, apply
    every committed migration from `drizzle/0000_collection_outcome.sql` through
-   `drizzle/0012_unusual_rachel_grey.sql` via `npm run db:migrate`, deploy
+   `drizzle/0013_condemned_guardian.sql` via `npm run db:migrate`, deploy
    the matching application, then inspect health and collection outcomes in
    production. Never reverse that migration-before-code order.
 3. Choose a chronological X source or accept an explicitly limited X product.

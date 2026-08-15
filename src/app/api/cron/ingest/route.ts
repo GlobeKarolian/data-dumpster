@@ -106,6 +106,17 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const startedAt = Date.now();
+  let electionSources: unknown = null;
+  if (mode === 'scheduled') {
+    try {
+      const elections = await import('@/lib/elections/source-connection');
+      electionSources = await elections.connectPendingElectionSources({ limit: 20, concurrency: 3 });
+    } catch (err) {
+      // A newly supplied race URL must not prevent already-queued collection
+      // from running. Leave the source durable and retry it next scheduled pass.
+      console.error('[pressbox:cron/ingest] election source connection failed', err);
+    }
+  }
   // Recovery ticks are deliberately incapable of opening a new freshness
   // window. They only claim continuations, paid snapshot receipts and retries
   // that a twice-daily scheduled pass already placed in the durable queue.
@@ -137,6 +148,7 @@ async function handle(req: NextRequest): Promise<Response> {
     mode,
     limit,
     postLimit,
+    electionSources,
     queued,
     automaticCoordinators,
     refreshJobsReconciled,
