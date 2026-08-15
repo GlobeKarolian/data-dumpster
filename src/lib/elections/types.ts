@@ -80,5 +80,7 @@ export interface ElectionRaceAnalytics {
   posts: MetricRow[];
   views: MetricRow[];
   engagementSeries: TimeSeriesResult;
+  postSeries: TimeSeriesResult;
+  viewSeries: TimeSeriesResult;
   topPosts: PostDto[];
 }

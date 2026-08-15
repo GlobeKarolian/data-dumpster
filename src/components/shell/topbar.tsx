@@ -80,6 +80,7 @@ export function Topbar({
 }) {
   const pathname = usePathname();
   const first = pathname.split('/').filter(Boolean)[0];
+  const isElectionDetail = pathname.startsWith('/elections/');
   const isPlatform = Boolean(first && PLATFORM_SET.has(first));
   const showCompanyFilter = POST_EXPORT_ROUTES.has(pathname)
     || isPlatform
@@ -138,7 +139,7 @@ export function Topbar({
           {landscapeId && (pathname === '/cross-channel' || pathname === '/leaderboard' || isPlatform) ? (
           <NewsroomDisplayLink landscapeId={landscapeId} platform={fixedPlatform} />
           ) : null}
-          {(roleAtLeast(role, 'editor') || manualRefreshAllowed) && landscapeId ? (
+          {(roleAtLeast(role, 'editor') || manualRefreshAllowed) && landscapeId && !isElectionDetail ? (
           <RefreshButton
             landscapeId={landscapeId}
             platforms={fixedPlatform ? [fixedPlatform] : undefined}

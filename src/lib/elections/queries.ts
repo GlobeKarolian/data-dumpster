@@ -15,8 +15,9 @@ import type {
   ElectionRaceSummary,
 } from './types';
 import type { Platform } from '@/lib/types';
+import type { DateRange } from '@/lib/types';
 import { getLeaderboard, getTimeSeries, getTopPostsByPlatform } from '@/lib/metrics/queries';
-import { daysIn, presetRange, toDayString } from '@/lib/dates';
+import { autoGranularity, daysIn, presetRange, toDayString } from '@/lib/dates';
 
 type RaceSummaryRow = {
   id: string;
@@ -231,9 +232,8 @@ export async function getElectionRaceBySlug(
 export async function getElectionRaceAnalytics(
   race: ElectionRaceDetail,
   ctx: OrgContext,
-  now = new Date(),
+  range: DateRange = presetRange(28, new Date()),
 ): Promise<ElectionRaceAnalytics> {
-  const range = presetRange(28, now);
   const companyIds = race.candidates.map((candidate) => candidate.companyId);
   if (companyIds.length === 0) {
     return {
@@ -249,6 +249,8 @@ export async function getElectionRaceAnalytics(
       posts: [],
       views: [],
       engagementSeries: { series: [], companies: [], granularity: 'day' },
+      postSeries: { series: [], companies: [], granularity: 'day' },
+      viewSeries: { series: [], companies: [], granularity: 'day' },
       topPosts: [],
     };
   }
@@ -267,6 +269,8 @@ export async function getElectionRaceAnalytics(
     posts,
     views,
     engagementSeries,
+    postSeries,
+    viewSeries,
     topPosts,
   ] = await Promise.all([
     getLeaderboard({ ...base, metric: 'audience', compare: true }),
@@ -275,7 +279,9 @@ export async function getElectionRaceAnalytics(
     getLeaderboard({ ...base, metric: 'shareOfEngagement', compare: true }),
     getLeaderboard({ ...base, metric: 'posts', compare: true }),
     getLeaderboard({ ...base, metric: 'views', compare: true }),
-    getTimeSeries({ ...base, metric: 'engagementTotal', granularity: 'day' }),
+    getTimeSeries({ ...base, metric: 'engagementTotal', granularity: autoGranularity(range) }),
+    getTimeSeries({ ...base, metric: 'posts', granularity: autoGranularity(range) }),
+    getTimeSeries({ ...base, metric: 'views', granularity: autoGranularity(range) }),
     getTopPostsByPlatform({ ...base, perPlatform: 3 }),
   ]);
   return {
@@ -291,6 +297,8 @@ export async function getElectionRaceAnalytics(
     posts,
     views,
     engagementSeries,
+    postSeries,
+    viewSeries,
     topPosts,
   };
 }
