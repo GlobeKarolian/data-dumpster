@@ -10,10 +10,13 @@ import type {
   ElectionCandidateSource,
   ElectionProfileSourceStatus,
   ElectionRaceDetail,
+  ElectionRaceAnalytics,
   ElectionRaceStatus,
   ElectionRaceSummary,
 } from './types';
 import type { Platform } from '@/lib/types';
+import { getLeaderboard, getTimeSeries, getTopPostsByPlatform } from '@/lib/metrics/queries';
+import { daysIn, presetRange, toDayString } from '@/lib/dates';
 
 type RaceSummaryRow = {
   id: string;
@@ -224,6 +227,81 @@ export async function getElectionRaceBySlug(
   }));
 
   return { ...summary, candidates };
+}
+
+/**
+ * The real-data counterpart to the 2028 concept view.
+ *
+ * A race is backed by a private landscape, while its candidate company ids
+ * point into the pooled public dataset. Reusing the normal metric layer keeps
+ * audience stocks, missing-data rules, platform splits and post enrichment
+ * identical to the rest of Data Dumpster.
+ */
+export async function getElectionRaceAnalytics(
+  race: ElectionRaceDetail,
+  ctx: OrgContext,
+  now = new Date(),
+): Promise<ElectionRaceAnalytics> {
+  const range = presetRange(28, now);
+  const companyIds = race.candidates.map((candidate) => candidate.companyId);
+  if (companyIds.length === 0) {
+    return {
+      range: {
+        start: toDayString(range.start),
+        end: toDayString(range.end),
+        days: daysIn(range),
+      },
+      audience: [],
+      audienceNetChange: [],
+      engagementTotal: [],
+      shareOfEngagement: [],
+      posts: [],
+      views: [],
+      engagementSeries: { series: [], companies: [], granularity: 'day' },
+      topPosts: [],
+    };
+  }
+  const base = {
+    orgId: ctx.orgId,
+    landscapeId: race.landscapeId,
+    companyIds,
+    start: range.start,
+    end: range.end,
+  };
+  const [
+    audience,
+    audienceNetChange,
+    engagementTotal,
+    shareOfEngagement,
+    posts,
+    views,
+    engagementSeries,
+    topPosts,
+  ] = await Promise.all([
+    getLeaderboard({ ...base, metric: 'audience', compare: true }),
+    getLeaderboard({ ...base, metric: 'audienceNetChange', compare: true }),
+    getLeaderboard({ ...base, metric: 'engagementTotal', compare: true }),
+    getLeaderboard({ ...base, metric: 'shareOfEngagement', compare: true }),
+    getLeaderboard({ ...base, metric: 'posts', compare: true }),
+    getLeaderboard({ ...base, metric: 'views', compare: true }),
+    getTimeSeries({ ...base, metric: 'engagementTotal', granularity: 'day' }),
+    getTopPostsByPlatform({ ...base, perPlatform: 3 }),
+  ]);
+  return {
+    range: {
+      start: toDayString(range.start),
+      end: toDayString(range.end),
+      days: daysIn(range),
+    },
+    audience,
+    audienceNetChange,
+    engagementTotal,
+    shareOfEngagement,
+    posts,
+    views,
+    engagementSeries,
+    topPosts,
+  };
 }
 
 /** Internal helper for an API that starts from a human-readable race URL. */

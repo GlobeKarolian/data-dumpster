@@ -1,4 +1,5 @@
-import type { Platform } from '@/lib/types';
+import type { MetricRow, Platform } from '@/lib/types';
+import type { PostDto, TimeSeriesResult } from '@/lib/metrics/contract';
 
 export type ElectionRaceStatus = 'setup' | 'active' | 'archived';
 export type ElectionCandidateStatus = 'tracking' | 'declared' | 'filed' | 'withdrawn';
@@ -63,4 +64,20 @@ export interface ElectionCandidateRecord {
 
 export interface ElectionRaceDetail extends ElectionRaceSummary {
   candidates: ElectionCandidateRecord[];
+}
+
+/**
+ * Code-computed facts for the visual race tracker. The client only arranges
+ * these values; it never derives campaign performance from source setup state.
+ */
+export interface ElectionRaceAnalytics {
+  range: { start: string; end: string; days: number };
+  audience: MetricRow[];
+  audienceNetChange: MetricRow[];
+  engagementTotal: MetricRow[];
+  shareOfEngagement: MetricRow[];
+  posts: MetricRow[];
+  views: MetricRow[];
+  engagementSeries: TimeSeriesResult;
+  topPosts: PostDto[];
 }
