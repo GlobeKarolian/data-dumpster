@@ -29,6 +29,7 @@
  *    expired. Failures are caught per channel, written to ingestion_runs, and
  *    reported in the summary.
  */
+import { SNAPSHOT_COLUMNS, snapshotValuesFor } from './snapshot-values';
 import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
@@ -859,29 +860,15 @@ async function insertMetricSnapshots(
   capturedAt: Date,
   sourceRunId: string,
 ): Promise<number> {
-  const values = postRows
-    .map((row) => {
-      const postId = ids.get(row.externalId);
-      if (!postId) return undefined;
-      return {
-        postId,
-        capturedAt,
-        applause: row.applause,
-        conversation: row.conversation,
-        amplification: row.amplification,
-        saves: row.saves,
-        views: row.views,
-        engagementTotal: row.engagementTotal,
-        sourceRunId,
-        visibility: 'public_comparable',
-      };
-    })
-    .filter((v): v is NonNullable<typeof v> => v !== undefined);
+  // Mapping and in-run de-duplication live in snapshot-values.ts. The key
+  // property: one row per (post_id, captured_at) within the statement, or the
+  // ON CONFLICT DO UPDATE below rejects the whole batch.
+  const values = snapshotValuesFor(postRows, ids, capturedAt, sourceRunId);
 
   if (values.length === 0) return 0;
 
   let written = 0;
-  for (const batch of chunkRows(values, 8)) {
+  for (const batch of chunkRows(values, SNAPSHOT_COLUMNS)) {
     await db.insert(postMetricSnapshots).values(batch).onConflictDoUpdate({
       target: [postMetricSnapshots.postId, postMetricSnapshots.capturedAt],
       set: {
