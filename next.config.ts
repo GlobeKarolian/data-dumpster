@@ -29,7 +29,12 @@ export function buildContentSecurityPolicy(isDevelopment: boolean): string {
     "img-src 'self' https: data: blob:",
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
-    `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ''}`,
+    // 'wasm-unsafe-eval' permits only WebAssembly compilation, never JS eval.
+    // The OCR worker compiles the self-hosted tesseract core; without this the
+    // compile is refused inside the worker and tesseract.js hangs the spinner
+    // forever instead of rejecting. Dev worked because 'unsafe-eval' covers
+    // wasm, which is exactly how the gap shipped.
+    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDevelopment ? " 'unsafe-eval'" : ''}`,
     // Screenshot-to-table OCR runs in a self-hosted Web Worker. The blob is
     // only a same-origin bootstrap wrapper; its worker script and model files
     // are all served by this app.
