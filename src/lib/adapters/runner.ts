@@ -466,9 +466,12 @@ export function pooledFetchCursor(cursor: Record<string, unknown>): Record<strin
 /**
  * Resolve the source the deployment policy will call before network access.
  *
- * Multi-vendor adapters currently choose Bright Data whenever its deployment
- * key is present and use EnsembleData only when it is absent. Keeping the same
- * decision here lets the runner load only that source's durable cursor.
+ * Multi-vendor adapters choose Bright Data whenever its deployment key is
+ * present and use EnsembleData only when it is absent — except X, where the
+ * official API leads whenever the deployment Bearer exists. Keeping the same
+ * decision here lets the runner load only that source's durable cursor; if
+ * this ever disagrees with the adapter's own order, the continuity guard will
+ * discard every response from the mismatched source.
  */
 export function selectedPublicSourceKey(
   platform: Platform,
@@ -493,8 +496,18 @@ export function selectedPublicSourceKey(
     case 'instagram':
     case 'threads':
     case 'tiktok':
-    case 'twitter':
       return hasBrightData ? 'brightdata' : hasEnsemble ? 'ensembledata' : undefined;
+    case 'twitter':
+      // Must mirror twitterSourceOrder: the official API leads whenever the
+      // deployment app-only Bearer is present (pay-per-use adoption, 17 Aug
+      // 2026). This planner and the adapter's own order are two halves of one
+      // decision — when they disagreed (planner said brightdata, adapter
+      // answered x-api-v2), the source-continuity guard correctly refused to
+      // write the mismatched response, which meant every successful paid API
+      // read was fetched and then discarded. Change both together, always.
+      return credentials.bearerToken?.trim()
+        ? 'x-api-v2'
+        : hasBrightData ? 'brightdata' : hasEnsemble ? 'ensembledata' : undefined;
     // RSS is retired and has no public source.
     case 'rss':
       return undefined;

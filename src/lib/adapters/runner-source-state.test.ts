@@ -15,10 +15,20 @@ describe('public source-specific runner state', () => {
       brightDataApiKey: 'bright',
       ensembleDataToken: 'ensemble',
     }), 'brightdata');
+    // X mirrors twitterSourceOrder: the official API leads whenever the
+    // deployment Bearer is present; vendors are the no-Bearer fallback.
+    assert.equal(selectedPublicSourceKey('twitter', {
+      bearerToken: 'x-app-bearer',
+      brightDataApiKey: 'bright',
+      ensembleDataToken: 'ensemble',
+    }), 'x-api-v2');
     assert.equal(selectedPublicSourceKey('twitter', {
       brightDataApiKey: 'bright',
       ensembleDataToken: 'ensemble',
     }), 'brightdata');
+    assert.equal(selectedPublicSourceKey('twitter', {
+      ensembleDataToken: 'ensemble',
+    }), 'ensembledata');
     assert.equal(selectedPublicSourceKey('threads', {
       ensembleDataToken: 'ensemble',
     }), 'ensembledata');
