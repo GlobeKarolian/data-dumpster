@@ -159,15 +159,22 @@
     {
       "idx": 22,
       "version": "7",
-      "when": 1786927619505,
+      "when": 1786982404000,
       "tag": "0022_election_source_labels",
       "breakpoints": true
     },
     {
       "idx": 23,
       "version": "7",
-      "when": 1786940781261,
+      "when": 1786982405000,
       "tag": "0023_openrouter_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786982406000,
+      "tag": "0024_external_brand_metrics",
       "breakpoints": true
     }
   ]
