@@ -48,13 +48,18 @@ describe('pooled public-source provenance', () => {
     );
   });
 
+  it('accepts the official X API as a pooled public source', () => {
+    // Inverted 17 Aug 2026 when the deployment Bearer became the primary X
+    // source: app-only reads are the public surface, impression_count
+    // included. The first fleet run was refused by this registry because only
+    // the source order and credential allowlist had been updated; this case
+    // pins the third layer.
+    assert.equal(publicSourceKeyForFetch('twitter', fetched('x-api-v2')), 'x-api-v2');
+  });
+
   it('rejects unexpected and owned-only sources', () => {
     assert.throws(
       () => publicSourceKeyForFetch('facebook', fetched('ensembledata')),
-      /unsupported public source/i,
-    );
-    assert.throws(
-      () => publicSourceKeyForFetch('twitter', fetched('x-api-v2')),
       /unsupported public source/i,
     );
     assert.throws(

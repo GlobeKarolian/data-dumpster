@@ -7,6 +7,15 @@ export const PUBLIC_SOURCE_KEYS = [
   'ensembledata',
   'apify-truth-social',
   'youtube-data-api-v3',
+  // The official X API under app-only authentication. Public-basis since X
+  // made impression_count public (verified live 17 Aug 2026); adopted as the
+  // primary X source the same day. The first fleet-wide run after the source
+  // order flipped was refused HERE, by this registry, because the order and
+  // the credential allowlist were updated and this list was not: seventeen
+  // channels landed in operator review with zero observations written. That
+  // is this module doing its job. A new pooled source exists only when all
+  // three layers say so.
+  'x-api-v2',
 ] as const;
 
 export type PublicSourceKey = typeof PUBLIC_SOURCE_KEYS[number];
@@ -49,7 +58,7 @@ function requireVendor(
         + 'No pooled observations may be written without exact public-source provenance.',
     );
   }
-  if (!VENDOR_SOURCES.has(claimed as PublicSourceKey) || !allowed.has(claimed as PublicSourceKey)) {
+  if (!allowed.has(claimed as PublicSourceKey)) {
     throw new Error(
       `The ${platform} source response claimed unsupported public source "${claimed}". `
         + 'No pooled observations were written.',
@@ -98,8 +107,11 @@ export function publicSourceKeyForFetch(
     case 'instagram':
     case 'threads':
     case 'tiktok':
-    case 'twitter':
       return requireVendor(platform, fetched, VENDOR_SOURCES);
+    case 'twitter':
+      // Official API first, vendors as the degradation path.
+      return requireVendor(platform, fetched,
+        new Set<PublicSourceKey>(['x-api-v2', 'brightdata', 'ensembledata']));
     case 'linkedin':
       return requireVendor(platform, fetched, new Set<PublicSourceKey>(['brightdata']));
     case 'truth_social':
