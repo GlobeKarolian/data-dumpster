@@ -41,11 +41,16 @@ export function publicSourceCredentials(
       pickBrightDataOrEnsemble();
       break;
     case 'twitter':
-      // Collection uses Bright Data exclusively when it is configured. Keep
-      // EnsembleData alongside it only because X onboarding still needs the
-      // vendor's synchronous profile endpoint until Bright Data has a separate,
-      // receipt-preserving profile mapper.
+      // The app-only Bearer token is a deployment credential reading the same
+      // public surface any API consumer sees, including impression_count,
+      // which X made public (verified live 17 Aug 2026). It is therefore a
+      // pooled public source exactly like a vendor key. What stays excluded is
+      // any organization's user-context X token: those can reach non-public
+      // metrics and would change the basis of shared rows.
+      pick(out, 'bearerToken', environment.TWITTER_BEARER_TOKEN);
       pick(out, 'brightDataApiKey', brightDataKey);
+      // EnsembleData remains for onboarding's synchronous profile lookup and
+      // as the last-resort collection fallback.
       pick(out, 'ensembleDataToken', ensembleToken);
       break;
     case 'tiktok':

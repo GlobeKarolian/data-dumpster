@@ -18,11 +18,13 @@ Next.js 16 App Router, React 19, TypeScript strict, Tailwind v4, Drizzle ORM on 
 
 It ingests account- and post-level social data across Facebook, Instagram,
 TikTok, X, Threads, Reddit, LinkedIn, YouTube and Bluesky through a
-`ChannelAdapter` interface. Bright Data is the purchased primary source for
-existing Facebook profiles and, whenever configured, for Instagram, TikTok, X,
-Threads and LinkedIn. EnsembleData remains the Reddit publisher-user source,
-the synchronous X onboarding helper, and the no-Bright fallback for Instagram,
-TikTok, X and Threads. A started or failed paid Bright Data stage never falls
+`ChannelAdapter` interface. X uses the official X API v2 first (app-only
+Bearer, pay-per-use; the only X source that certifies a chronological window,
+with public impression_count as views). Bright Data is the purchased primary
+source for existing Facebook profiles and, whenever configured, for Instagram,
+TikTok, Threads, LinkedIn and as the X fallback. EnsembleData remains the
+Reddit publisher-user source, the synchronous X onboarding helper, and the
+no-Bright fallback for Instagram, TikTok, X and Threads. A started or failed paid Bright Data stage never falls
 through to another vendor. YouTube and Bluesky use their sanctioned public
 interfaces. AI features run behind a `ModelProvider` interface so the org brings
 its own model (Anthropic, OpenAI, Google, Azure, OpenAI-compatible, Ollama).

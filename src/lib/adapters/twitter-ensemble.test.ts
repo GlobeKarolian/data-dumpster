@@ -210,7 +210,11 @@ describe('EnsembleData X response parsing', () => {
 });
 
 describe('X source routing and failover', { concurrency: false }, () => {
-  it('orders sources by channel ownership', () => {
+  it('leads with the official API whenever the deployment Bearer exists', () => {
+    // The ownership gate is retired: impression_count is public through
+    // app-only auth (verified live 17 Aug 2026), so the Bearer serves pooled
+    // collection with the same public basis as a vendor key. Only the API can
+    // certify a chronological window; the vendors are the degradation path.
     assert.deepEqual(twitterSourceOrder({
       owned: true,
       hasBearer: true,
@@ -223,7 +227,7 @@ describe('X source routing and failover', { concurrency: false }, () => {
       hasBearer: true,
       hasEnsemble: true,
       hasBrightData: true,
-    }), ['brightdata']);
+    }), ['x-api-v2', 'brightdata']);
 
     assert.deepEqual(twitterSourceOrder({
       owned: false,
@@ -237,23 +241,37 @@ describe('X source routing and failover', { concurrency: false }, () => {
       hasBearer: true,
       hasEnsemble: false,
       hasBrightData: false,
-    }), []);
+    }), ['x-api-v2']);
   });
 
-  it('ignores Bearer and EnsembleData and uses Bright Data for public collection', async () => {
-    const calls: string[] = [];
+  it('prefers the official API and leaves the vendors untouched when it succeeds', async () => {
+    // The inverse of the retired vendors-first policy. The API is the only X
+    // source that certifies a chronological window, and impression_count is
+    // public through app-only auth (verified live 17 Aug 2026), so it leads
+    // for pooled channels. A vendor request here would be wasted spend.
+    const hosts: string[] = [];
     await withMockFetch(async (input) => {
       const url = urlOf(input);
-      calls.push(url);
-      if (url.startsWith('https://api.brightdata.com/')) {
-        return json([{
-          user_id: '95431448',
-          user_posted: 'BostonGlobe',
-          followers: 769_679,
-          id: 'bright-post-1',
-          date_posted: '2026-07-28T12:00:00Z',
-          description: 'A story',
-        }]);
+      hosts.push(new URL(url).hostname);
+      if (url.includes('/2/users/by/username/')) {
+        return json({ data: {
+          id: '95431448', name: 'The Boston Globe', username: 'BostonGlobe',
+          public_metrics: { followers_count: 771903 },
+        } });
+      }
+      if (url.includes('/2/users/95431448/tweets')) {
+        return json({
+          data: [{
+            id: '2089131705458164172',
+            text: 'A story',
+            created_at: '2026-07-28T12:00:00.000Z',
+            public_metrics: {
+              like_count: 4, reply_count: 2, retweet_count: 1, quote_count: 0,
+              bookmark_count: 3, impression_count: 2273,
+            },
+          }],
+          meta: { result_count: 1 },
+        });
       }
       throw new Error('Unexpected source: ' + url);
     }, async () => {
@@ -265,14 +283,16 @@ describe('X source routing and failover', { concurrency: false }, () => {
           brightDataApiKey: 'bright',
         },
       }));
-      assert.equal(result.cursor?.source, 'brightdata');
-      assert.equal(result.hasMore, false);
-      assert.equal(result.exhaustive, false);
+      assert.equal(result.posts.length, 1);
+      assert.equal(result.posts[0].views, 2273,
+        'public impression_count must land as views');
+      assert.equal(result.posts[0].saves, 3);
+      assert.equal(result.exhaustive, true,
+        'a finished API timeline certifies the window');
+      assert.equal(result.audience[0]?.followers, 771903);
     });
-
-    assert.equal(calls.length, 1);
-    assert.ok(calls[0].startsWith('https://api.brightdata.com/'));
-    assert.ok(calls.every((url) => url.startsWith('https://api.brightdata.com/')));
+    assert.ok(hosts.every((h) => h === 'api.x.com'),
+      'no vendor host may be contacted when the API succeeds: ' + hosts.join(','));
   });
 
   it('uses EnsembleData for public collection when Bright Data is absent', async () => {
@@ -354,6 +374,8 @@ describe('X source routing and failover', { concurrency: false }, () => {
   });
 
   it('does not fall back to EnsembleData after a Bright Data stage fails', async () => {
+    // No bearer configured here on purpose: the subject is the paid-stage
+    // rule, and with a bearer the API would simply lead.
     const calls: string[] = [];
     await withMockFetch(async (input) => {
       const url = urlOf(input);
@@ -370,7 +392,6 @@ describe('X source routing and failover', { concurrency: false }, () => {
         twitterAdapter.fetch(context({
           cursor: { __isOwned: false },
           credentials: {
-            bearerToken: 'bearer',
             ensembleDataToken: 'ensemble',
             brightDataApiKey: 'bright',
           },
@@ -461,7 +482,8 @@ describe('X source routing and failover', { concurrency: false }, () => {
     });
   });
 
-  it('never falls back to EnsembleData or Bearer when Bright Data fails', async () => {
+  it('never falls back to EnsembleData when Bright Data fails', async () => {
+    // No bearer configured: with one, the API leads and this rule is moot.
     const calls: string[] = [];
     await withMockFetch(async (input) => {
       const url = urlOf(input);
@@ -478,8 +500,6 @@ describe('X source routing and failover', { concurrency: false }, () => {
         twitterAdapter.fetch(context({
           cursor: { __isOwned: false },
           credentials: {
-            bearerToken: 'bearer',
-            selfUserId: '95431448',
             ensembleDataToken: 'ensemble',
             brightDataApiKey: 'bright',
           },
@@ -492,7 +512,33 @@ describe('X source routing and failover', { concurrency: false }, () => {
     assert.deepEqual(hosts, ['api.brightdata.com']);
   });
 
-  it('rejects Bearer-only public collection without making an X API call', async () => {
+  it('serves Bearer-only public collection through the official API', async () => {
+    // The inverse of the retired policy this test used to pin. The ownership
+    // gate existed to keep an owned-basis metric out of pooled rows;
+    // impression_count is public through app-only auth now (verified live
+    // 17 Aug 2026), so a deployment Bearer is a pooled public source and the
+    // only one that certifies a chronological window.
+    const hosts: string[] = [];
+    await withMockFetch(async (input) => {
+      hosts.push(new URL(urlOf(input)).hostname);
+      throw new Error('Stub network failure after routing.');
+    }, async () => {
+      await assert.rejects(
+        twitterAdapter.fetch(context({
+          cursor: { __isOwned: false },
+          credentials: { bearerToken: 'bearer' },
+        })),
+      );
+    });
+    // The transport retries a network failure, so the same host may appear
+    // more than once. What matters is that every attempt went to the official
+    // API and none went to a vendor.
+    assert.ok(hosts.length > 0);
+    assert.ok(hosts.every((h) => h === 'api.x.com'),
+      'every request must go to the official API, not a vendor: ' + hosts.join(','));
+  });
+
+  it('refuses public collection only when no source at all is configured', async () => {
     let calls = 0;
     await withMockFetch(async () => {
       calls += 1;
@@ -501,9 +547,9 @@ describe('X source routing and failover', { concurrency: false }, () => {
       await assert.rejects(
         twitterAdapter.fetch(context({
           cursor: { __isOwned: false },
-          credentials: { bearerToken: 'bearer', selfUserId: '95431448' },
+          credentials: {},
         })),
-        /public X collection requires an EnsembleData token or a Bright Data API key/i,
+        /requires an X API v2 Bearer token, a Bright Data API key or an EnsembleData token/i,
       );
     });
     assert.equal(calls, 0);
@@ -533,7 +579,9 @@ describe('X source routing and failover', { concurrency: false }, () => {
     });
 
     assert.equal(calls.length, 1);
-    assert.ok(calls[0].startsWith('https://api.brightdata.com/'));
+    // The official API leads now; cancellation must still stop the failover
+    // before any second source spends anything.
+    assert.ok(calls[0].startsWith('https://api.x.com/'));
   });
 
   it('prefers EnsembleData for profile resolution when Bearer is also configured', async () => {

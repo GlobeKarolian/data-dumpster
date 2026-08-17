@@ -157,7 +157,11 @@ policy is:
   credentials are excluded until public grants and owned insights have explicit
   bindings and storage. New Facebook profile onboarding is temporarily disabled
   because identity currently requires purchasing the posts crawl twice.
-- Instagram, TikTok, X and Threads use Bright Data first whenever its deployment
+- X uses the official X API v2 first whenever the deployment Bearer token is
+  configured (app-only, pay-per-use, adopted 17 August 2026). It is the only X
+  source that certifies a chronological window, and impression_count is public
+  through app-only auth, so views are measured. Bright Data is the X fallback.
+- Instagram, TikTok and Threads use Bright Data first whenever its deployment
   key is configured. A live Bright Data receipt is always resumed and a failed
   paid stage never falls through to another vendor. EnsembleData is used for
   those platforms only when Bright Data is absent; X still uses its synchronous
@@ -209,8 +213,9 @@ person for review.
    through `0021_truth_social_runner_recovery.sql`) via `npm run db:migrate`, deploy
    the matching application, then inspect health and collection outcomes in
    production. Never reverse that migration-before-code order.
-3. Choose a chronological X source or accept an explicitly limited X product.
-   Never relabel Highlights as a timeline.
+3. Resolved 17 August 2026: the official X API v2 is the chronological X
+   source, adopted on pay-per-use billing. Watch the first weeks of spend via
+   the ingestion audits and X's /2/usage/tweets endpoint.
 4. Obtain and record Legal/procurement decisions for every purchased source,
    including Reddit commercial use and TikTok/Threads competitor collection.
 5. Tune alerts with real newsroom use, activate only approved brief/report

@@ -34,10 +34,11 @@
  *    front of their own audience", which is what amplification means everywhere
  *    else in this product)
  *  - bookmark_count  -> saves
- *  - impression_count -> views, BUT it is only populated for tweets from the
- *    authenticating user. For every competitor account it is absent, and we
- *    store 0. Any view-based rate on a competitor X account is therefore
- *    undefined, not zero, and the metrics layer must say so.
+ *  - impression_count -> views. Verified live on 17 Aug 2026: X now returns
+ *    impression_count through app-only authentication for accounts we do not
+ *    authenticate as, so views are part of the public surface. The historical
+ *    owner-only limitation this header used to describe is gone, and it was
+ *    the reason bearer collection was once restricted to owned channels.
  */
 import type { Platform } from '@/lib/types';
 import {
@@ -320,7 +321,6 @@ function readTweet(raw: Record<string, unknown>, media: Map<string, MediaInfo>):
     conversation: asCount(metrics?.reply_count),
     amplification: asCount(metrics?.retweet_count) + asCount(metrics?.quote_count),
     saves: asCount(metrics?.bookmark_count),
-    // Only ever non-zero on your own posts. See the file header.
     views: asCount(metrics?.impression_count),
     raw: {
       retweetCount: asCount(metrics?.retweet_count),
@@ -418,13 +418,23 @@ export interface TwitterSourceAvailability {
 }
 
 /**
- * Source precedence is ownership-aware.
+ * The official API leads for every X channel when a Bearer token is configured.
  *
- * The X API is available only for an explicitly owned channel, where it can
- * return a complete incremental timeline and potentially owned impressions.
- * Public-comparable collection never includes it, even as a last resort: a
- * Bearer token accidentally reaching this adapter must not change the metric
- * basis after the public vendors fail.
+ * This used to be ownership-gated, and the old rationale was the metric basis:
+ * when impression_count was returned only for the authenticating user, letting
+ * a Bearer token serve pooled collection could have mixed owned-native values
+ * into public rows. That premise is gone, verified live on 17 Aug 2026:
+ * app-only authentication returns impression_count for accounts we do not own,
+ * which is by definition the public surface any API consumer sees. An app-only
+ * Bearer is a deployment credential like a vendor key, not an organization's
+ * user-context token; those remain excluded from pooled collection.
+ *
+ * The API is also the only X source that certifies a window: a chronological
+ * timeline with since_id and pagination to the boundary. Bright Data could not
+ * certify on a live exact-window test and EnsembleData returns a
+ * Twitter-selected Highlights feed. The vendors stay as fallback so a vendor
+ * outage or an API failure degrades to uncertified-but-useful rather than to
+ * nothing, and a pending paid Bright Data receipt still resumes first.
  */
 export function twitterSourceOrder(
   availability: TwitterSourceAvailability,
@@ -435,7 +445,7 @@ export function twitterSourceOrder(
       ? ['ensembledata']
       : [];
 
-  if (availability.owned && availability.hasBearer) {
+  if (availability.hasBearer) {
     return ['x-api-v2', ...vendors];
   }
   return vendors;
@@ -466,16 +476,6 @@ async function fetchViaXApi(ctx: FetchContext, bearer: string): Promise<FetchRes
     : undefined;
   const sinceId = cursorUserId === profile.externalId ? storedSinceId : undefined;
   const timeline = await fetchTimeline(profile.externalId, profile.handle, bearer, ctx, sinceId);
-
-  const ownAccount = ctx.credentials.selfUserId?.trim() === profile.externalId;
-  if (!ownAccount && timeline.posts.some((post) => post.views > 0)) {
-    warnings.push(
-      'impression_count was returned for an account not marked as owned; treating it as views.',
-    );
-  }
-  if (!ownAccount) {
-    warnings.push('Views are unavailable for accounts you do not authenticate as, and are stored as 0.');
-  }
 
   return {
     posts: timeline.posts,
@@ -799,14 +799,16 @@ export const twitterAdapter: ChannelAdapter = {
   },
 
   async fetch(ctx: FetchContext): Promise<FetchResult> {
-    // Fetch credentials are supplied by the runner's explicit source policy.
-    // Do not reach around it to an environment Bearer token: pooled collection
-    // must never fall back to an owned X path after public vendors fail. The
-    // adapter also ignores a mistakenly supplied Bearer token unless ownership
-    // was asserted explicitly by the future org-private runner.
+    // Fetch credentials are supplied by the runner's explicit source policy;
+    // the adapter still never reaches around it to the environment. The
+    // deployment Bearer arrives here through publicSourceCredentials because
+    // app-only reads return the public surface, impression_count included
+    // (verified live 17 Aug 2026), so using it for pooled channels no longer
+    // changes the metric basis. What keeps org user-context tokens out of
+    // pooled rows is the runner's allowlist: they are never supplied, so there
+    // is nothing here to discard.
     const explicitlyOwned = ctx.cursor.__isOwned === true;
-    const suppliedBearer = ctx.credentials.bearerToken?.trim() || '';
-    const bearer = explicitlyOwned ? suppliedBearer : '';
+    const bearer = ctx.credentials.bearerToken?.trim() || '';
     const ensembleToken = ctx.credentials.ensembleDataToken?.trim() || '';
     const brightDataKey = ctx.credentials.brightDataApiKey?.trim() || '';
     const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
@@ -837,8 +839,8 @@ export const twitterAdapter: ChannelAdapter = {
       throw new AdapterError(
         explicitlyOwned
           ? 'Owned X collection requires an X API v2 Bearer token, an EnsembleData token, or a Bright Data API key.'
-          : 'Public X collection requires an EnsembleData token or a Bright Data API key. '
-            + 'Bearer tokens are reserved for explicitly owned, organization-private collection.',
+          : 'Public X collection requires an X API v2 Bearer token, a Bright Data API key or an '
+            + 'EnsembleData token.',
         { platform: PLATFORM, retryable: false },
       );
     }

@@ -20,7 +20,10 @@ const configuredEnvironment: Record<string, string> = {
   TIKTOK_CLIENT_KEY: 'forbidden-tiktok-client',
   TIKTOK_CLIENT_SECRET: 'forbidden-tiktok-secret',
   LINKEDIN_ACCESS_TOKEN: 'forbidden-linkedin-admin',
-  TWITTER_BEARER_TOKEN: 'forbidden-x-bearer',
+  // App-only, deployment-wide. Public-basis since X made impression_count
+  // public (verified live 17 Aug 2026); org user-context X tokens remain
+  // forbidden and have no environment key at all.
+  TWITTER_BEARER_TOKEN: 'x-app-bearer',
 };
 
 describe('pooled collection source containment', () => {
@@ -35,6 +38,7 @@ describe('pooled collection source containment', () => {
       brightDataApiKey: 'bright-vendor-key',
     });
     assert.deepEqual(publicSourceCredentials('twitter', configuredEnvironment), {
+      bearerToken: 'x-app-bearer',
       brightDataApiKey: 'bright-vendor-key',
       ensembleDataToken: 'ensemble-vendor-token',
     });
@@ -63,11 +67,16 @@ describe('pooled collection source containment', () => {
       BRIGHTDATA_API_KEY: '',
     };
 
-    for (const platform of ['instagram', 'twitter', 'tiktok', 'threads'] as const) {
+    for (const platform of ['instagram', 'tiktok', 'threads'] as const) {
       assert.deepEqual(publicSourceCredentials(platform, withoutBrightData), {
         ensembleDataToken: 'ensemble-vendor-token',
       });
     }
+    // X keeps the official API first even with no vendor at all.
+    assert.deepEqual(publicSourceCredentials('twitter', withoutBrightData), {
+      bearerToken: 'x-app-bearer',
+      ensembleDataToken: 'ensemble-vendor-token',
+    });
   });
 
   it('never exposes an owned or admin credential to pooled adapters', () => {
@@ -76,7 +85,9 @@ describe('pooled collection source containment', () => {
       'refreshToken',
       'clientKey',
       'clientSecret',
-      'bearerToken',
+      // bearerToken left this list deliberately: the app-only X Bearer is a
+      // deployment public source. selfUserId stays, because it marks a
+      // user-context identity and pooled collection must never carry one.
       'selfUserId',
       'igUserId',
       'pageId',
