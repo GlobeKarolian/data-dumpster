@@ -61,11 +61,23 @@ export const PROVIDERS: Record<ModelProviderId, ModelProvider> = {
   ollama: ollamaProvider,
 };
 
-/** Display order for the Settings picker: hosted first, then bring-your-own-host. */
-const DISPLAY_ORDER: ModelProviderId[] = [
-  'anthropic', 'openai', 'google', 'azure_openai',
+/**
+ * Display order for the Settings picker: hosted first, then bring-your-own-host.
+ *
+ * `satisfies` with a length check keeps this list exhaustive: PROVIDERS is a
+ * Record the compiler polices, but an ordered array is not, and OpenRouter
+ * shipped in the Record while missing from this list — present everywhere
+ * except the one dropdown a person actually sees.
+ */
+const DISPLAY_ORDER = [
+  'anthropic', 'openai', 'google', 'openrouter', 'azure_openai',
   'openai_compatible', 'ollama', 'bedrock',
-];
+] as const satisfies readonly ModelProviderId[];
+
+type MissingFromDisplayOrder = Exclude<ModelProviderId, (typeof DISPLAY_ORDER)[number]>;
+// Compile error on this line means a provider id is absent from DISPLAY_ORDER.
+const _displayOrderExhaustive: MissingFromDisplayOrder extends never ? true : never = true;
+void _displayOrderExhaustive;
 
 export function getProvider(id: ModelProviderId): ModelProvider {
   const provider = PROVIDERS[id];
