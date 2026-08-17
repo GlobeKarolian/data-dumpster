@@ -1016,3 +1016,41 @@ export const reportDeliveries = pgTable('report_deliveries', {
   uniqueIndex('report_deliveries_schedule_window_uq').on(t.scheduleId, t.scheduledFor),
   index('report_deliveries_org_time_idx').on(t.orgId, t.startedAt),
 ]);
+
+/**
+ * Vendor-supplied brand-week metrics that predate our own collection.
+ *
+ * Everything else in this schema is measured by us: posts we fetched, audience
+ * readings we took. This table is deliberately separate because these numbers
+ * are a third party's arithmetic over a week we never observed, at brand grain
+ * rather than channel grain. Keeping them out of `posts` and out of
+ * `audience_snapshots` is what stops a vendor's weekly engagement total from
+ * being silently mixed into an engagement number the product computed from
+ * individual posts, which would make the two impossible to reconcile.
+ *
+ * `metric` uses the product's own MetricKey vocabulary so a chart can ask for
+ * the same name it uses everywhere else. `source` is part of the key so a
+ * second vendor, or a corrected re-export, lands beside the original instead
+ * of overwriting history.
+ */
+export const externalBrandMetrics = pgTable('external_brand_metrics', {
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  platform: platformEnum('platform').notNull(),
+  /** MetricKey-compatible name, e.g. 'engagementTotal', 'views'. */
+  metric: text('metric').notNull(),
+  /** First day of the reported period, matching the vendor's week start. */
+  periodStart: date('period_start').notNull(),
+  /** Length of the reported period; 7 for a vendor week. */
+  periodDays: integer('period_days').notNull().default(7),
+  value: bigint('value', { mode: 'number' }).notNull(),
+  /** Who reported it. Part of the key: vendors are not interchangeable. */
+  source: text('source').notNull(),
+  capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({
+    name: 'external_brand_metrics_pk',
+    columns: [t.companyId, t.platform, t.metric, t.periodStart, t.source],
+  }),
+  index('external_brand_metrics_period_idx').on(t.periodStart),
+  check('external_brand_metrics_period_days_ck', sql`${t.periodDays} > 0`),
+]);

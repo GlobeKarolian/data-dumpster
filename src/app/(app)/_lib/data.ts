@@ -1,4 +1,4 @@
-import type { AnalyticsQuery, MetricKey } from '@/lib/types';
+import type { AnalyticsQuery, MetricKey, Platform } from '@/lib/types';
 import type {
   FactSheet, MetricsApi, PostsQuery, SummaryResult, TopPostsQuery,
 } from '@/lib/metrics/contract';
@@ -119,6 +119,29 @@ export async function loadPostingCadence(q: ScopedQuery) {
     const api = await metricsApi();
     return api.getPostingCadence(q);
   }, []);
+}
+
+/**
+ * Vendor-reported history for periods we never collected ourselves.
+ *
+ * Kept out of loadTimeSeries on purpose: these numbers are a third party's
+ * arithmetic and must stay visibly separate from anything this product
+ * computed, so the caller has to ask for them by name.
+ */
+export async function loadExternalHistory(q: {
+  companyIds: string[];
+  metric: string;
+  start: Date;
+  end: Date;
+  platforms?: Platform[];
+}) {
+  return tryQuery(
+    async () => {
+      const { getExternalBrandHistory } = await import('@/lib/metrics/external-history');
+      return getExternalBrandHistory(q);
+    },
+    { series: [], sources: [], earliest: null as string | null, latest: null as string | null },
+  );
 }
 
 export async function loadFactSheet(q: ScopedQuery): Promise<Loaded<FactSheet | null>> {

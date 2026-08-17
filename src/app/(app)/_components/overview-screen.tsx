@@ -24,8 +24,8 @@ import {
 } from '@/lib/platform-language';
 import { effectiveFocusCompanyId } from '@/lib/analytics-scope';
 import {
-  loadLeaderboard, loadPostingCadence, loadSummary, loadTimeSeries,
-  loadTopPostsByPlatform,
+  loadExternalHistory, loadLeaderboard, loadPostingCadence, loadSummary,
+  loadTimeSeries, loadTopPostsByPlatform,
 } from '../_lib/data';
 
 export interface OverviewScreenProps {
@@ -43,6 +43,7 @@ function OverviewJumpNav() {
     { href: '#overview-highlights', label: 'At a glance' },
     { href: '#overview-top-content', label: 'Top content' },
     { href: '#overview-benchmarks', label: 'Benchmarks' },
+    { href: '#overview-growth', label: 'Growth patterns' },
     { href: '#overview-patterns', label: 'Publishing patterns' },
   ];
   return (
@@ -87,7 +88,10 @@ export async function OverviewScreen({
   const redditAccountView = platform === 'reddit' && redditMode !== 'subreddit';
 
   const [
-    [summary, audience, posts, engagement, rate, series, voice, cadence, topPosts],
+    [
+      summary, audience, posts, engagement, rate, series, voice, cadence, topPosts,
+      audienceSeries, netChangeSeries, growthRate, externalEngagement,
+    ],
     redditMetrics,
   ] = await Promise.all([
     Promise.all([
@@ -102,6 +106,18 @@ export async function OverviewScreen({
       loadTopPostsByPlatform({
         ...base,
         perPlatform: platform ? 18 : 3,
+      }),
+      loadTimeSeries({ ...base, metric: 'audience' }),
+      loadTimeSeries({ ...base, metric: 'audienceNetChange' }),
+      loadLeaderboard({ ...base, metric: 'audienceGrowthRate' }),
+      loadExternalHistory({
+        companyIds: ctx.companyIds.length > 0
+          ? ctx.companyIds
+          : ctx.companies.map((company) => company.id),
+        metric: 'engagementTotal',
+        start: ctx.range.start,
+        end: ctx.range.end,
+        platforms: platform ? [platform] : undefined,
       }),
     ]),
     redditAccountView
@@ -355,6 +371,93 @@ export async function OverviewScreen({
           />
         </div>
       )}
+
+      {/*
+        * Growth patterns answers "is the audience getting bigger, and whose is
+        * growing fastest", which the benchmark tables above can only answer as
+        * a single end-of-window number. Audience is a stock, so the stock line
+        * and the per-bucket change are deliberately two charts: a rising line
+        * with shrinking increments is a slowdown, and one chart cannot show
+        * both. Growth rate sits beside them because a large brand adding
+        * 20,000 followers and a small one adding 2,000 can be the same story.
+        */}
+      <PageSection
+        id="overview-growth"
+        title="Growth patterns"
+        description="Audience is a stock: the line is how many followers exist, the bars are how many were added or lost in each period."
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Panel
+              metric="audience"
+              title={platform ? platformMetricLabel('audience', platform) + ' over time' : 'Audience over time'}
+              description="Click a company in the legend to drop it out of the chart."
+              error={audienceSeries.error}
+            >
+              <TimeSeriesChart
+                data={audienceSeries.data.series}
+                series={chartSeries}
+                metric="audience"
+                granularity={audienceSeries.data.granularity}
+              />
+            </Panel>
+            <Panel
+              metric="audienceNetChange"
+              title="Net change per period"
+              description="Followers gained or lost inside each bucket. Zero is a flat period, not a missing one."
+              error={netChangeSeries.error}
+            >
+              <TimeSeriesChart
+                data={netChangeSeries.data.series}
+                series={chartSeries}
+                metric="audienceNetChange"
+                granularity={netChangeSeries.data.granularity}
+              />
+            </Panel>
+          </div>
+
+          <LeaderboardPanel
+            metric="audienceGrowthRate"
+            rows={growthRate.data}
+            error={growthRate.error}
+            focusCompanyId={focusCompanyId}
+            showPlatformBreakdown={!platform}
+          />
+
+          {/*
+            * Only rendered when the window actually reaches back into vendor
+            * history. It is a separate chart from "Engagement over time" on
+            * purpose: a vendor's weekly total and our post-derived total are
+            * different measurements, and splicing them into one line would
+            * make a change of source look identical to a change in the world.
+            */}
+          {externalEngagement.data.series.length > 0 ? (
+            <Panel
+              metric="engagementTotal"
+              title={'Engagement history, as reported by '
+                + externalEngagement.data.sources.join(' and ')}
+              description={
+                'Weekly totals from '
+                + externalEngagement.data.sources.join(' and ')
+                + ', covering '
+                + (externalEngagement.data.earliest ?? '')
+                + ' to '
+                + (externalEngagement.data.latest ?? '')
+                + '. Imported history, not collected by this app.'
+              }
+              error={externalEngagement.error}
+              note="These are a third party's weekly figures over posts this app never collected, so they will not tie out against the engagement numbers above. Read them as a trend line for the period before collection began, not as the same measurement."
+            >
+              <TimeSeriesChart
+                data={externalEngagement.data.series}
+                series={chartSeries}
+                metric="engagementTotal"
+                granularity="week"
+              />
+            </Panel>
+          ) : null}
+        </div>
+      </PageSection>
 
       <PageSection
         id="overview-patterns"
