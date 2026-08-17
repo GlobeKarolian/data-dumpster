@@ -49,7 +49,6 @@ export const openaiCompatibleProvider: ModelProvider = {
     { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B (Together)', inputCost: 0.88, outputCost: 0.88 },
     { id: 'accounts/fireworks/models/deepseek-v3', label: 'DeepSeek V3 (Fireworks)', inputCost: 0.9, outputCost: 0.9 },
     { id: 'qwen/qwen3-32b', label: 'Qwen3 32B (self-hosted vLLM)' },
-    { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini (OpenRouter)', inputCost: 0.4, outputCost: 1.6 },
   ],
 
   async complete(conn: ResolvedModelConnection, req: CompletionRequest): Promise<CompletionResult> {

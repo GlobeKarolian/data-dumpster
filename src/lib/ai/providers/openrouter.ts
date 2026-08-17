@@ -41,13 +41,18 @@ export const openrouterProvider: ModelProvider = {
   keyUrl: 'https://openrouter.ai/settings/keys',
   // Model ids are "vendor/model" on OpenRouter. Costs are deliberately not
   // listed: OpenRouter prices float with the underlying hosts, and a stale
-  // number shown as truth is worse than none. The picker allows free text.
+  // number shown as truth is worse than none. The picker allows free text, so
+  // this list is a starting lineup, not a boundary. Ids verified against the
+  // live /api/v1/models catalog on 17 Aug 2026.
   suggestedModels: [
-    { id: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-    { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' },
-    { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-    { id: 'deepseek/deepseek-chat-v3-0324', label: 'DeepSeek V3' },
+    { id: 'anthropic/claude-fable-5', label: 'Claude Fable 5' },
+    { id: 'anthropic/claude-opus-5', label: 'Claude Opus 5' },
+    { id: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { id: 'openai/gpt-5.6-luna-pro', label: 'GPT-5.6 Luna Pro' },
+    { id: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
+    { id: 'x-ai/grok-4.6', label: 'Grok 4.6' },
+    { id: 'deepseek/deepseek-v4-pro-0813', label: 'DeepSeek V4 Pro' },
+    { id: 'moonshotai/kimi-k3', label: 'Kimi K3' },
   ],
 
   async complete(conn: ResolvedModelConnection, req: CompletionRequest): Promise<CompletionResult> {
