@@ -1,1 +1,15 @@
-ûäáx6­h;¦¦Ë^­ö¯‰Ê'¶ƒºjlµêÌj¹®‰œ¢jhéí³û!zY–ˆ(¶Ìp†+^¢{axihmï«yÛb•ç±iËeÊØ^²'^mªí­æ­™éíN z‰ž¶¼¢±Ê)‰çkjØ^®ØZž)©¢»^u·œjë¶¬~)^ŠË®÷jÆ¬µ«bq«,zØŸ¶¦j¹"žZ ¢Û1r§ë…©àz+az·­¢¾²ø/‰ì£
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- The DumpsterMark from components/shell/logo.tsx: white on the Globe-red
+       tile, exactly the sidebar treatment. Geometry is copied, not imported,
+       because this is a static asset; if logo.tsx changes, change this too. -->
+  <rect width="32" height="32" rx="6" fill="#C8102E"/>
+  <g fill="#ffffff" transform="translate(3.2 3.2) scale(0.8)">
+    <rect x="9.2" y="9.5" width="3.4" height="5.5" rx="0.6" opacity="0.55"/>
+    <rect x="14.3" y="6.2" width="3.4" height="8.8" rx="0.6" opacity="0.78"/>
+    <rect x="19.4" y="2.8" width="3.4" height="12.2" rx="0.6"/>
+    <path d="M2.6 14.4h26.8a1 1 0 0 1 .98 1.2l-.34 1.7a1 1 0 0 1-.98.8H2.94a1 1 0 0 1-.98-.8l-.34-1.7a1 1 0 0 1 .98-1.2Z"/>
+    <path d="M4.2 19.1h23.6l-2.1 6.9a1.2 1.2 0 0 1-1.15.85H7.45A1.2 1.2 0 0 1 6.3 26Z" opacity="0.88"/>
+    <circle cx="10.4" cy="28.6" r="1.7"/>
+    <circle cx="21.6" cy="28.6" r="1.7"/>
+  </g>
+</svg>
