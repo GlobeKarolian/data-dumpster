@@ -1,5 +1,7 @@
-.codex-tmp
-boston-news-fresh
-boston-news-landing
-boston-news-swings
-outputs
+# vercel deploy uploads the working directory, and agent worktrees live inside
+# the primary checkout at .worktrees/<agent> with their own 700MB+ node_modules.
+# One stuck seven-minute deploy from the primary checkout taught us that the
+# gitignore alone is not a deploy guard: it only protects a checkout that has
+# pulled the commit carrying the entry. This file is checked at upload time by
+# every tree that has it.
+.worktrees
