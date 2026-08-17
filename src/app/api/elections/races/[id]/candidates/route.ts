@@ -27,8 +27,9 @@ const createCandidateSchema = z.object({
   sources: z.array(z.object({
     platform: z.enum(PLATFORMS).refine((platform) => platform !== 'rss', 'RSS is not a social profile.'),
     url: z.url().max(2000),
+    label: z.string().trim().max(80).nullish(),
     note: z.string().trim().max(1000).nullish(),
-  }).strict()).max(20).default([]),
+  }).strict()).max(40).default([]),
 }).strict();
 
 export const POST = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
@@ -113,6 +114,7 @@ export const POST = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => 
       candidateId: candidate.id,
       platform: source.platform,
       url: source.url,
+      label: source.label ?? null,
       status: 'pending',
       note: source.note ?? null,
     }))).onConflictDoNothing();

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, Clock3, ExternalLink, Plus, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, Clock3, ExternalLink, Plus, Trash2, X } from 'lucide-react';
 import type { Platform } from '@/lib/types';
 import { PLATFORM_LABELS } from '@/lib/types';
 import type { ElectionCandidateRecord, ElectionCandidateSource, ElectionRaceAnalytics, ElectionRaceDetail } from '@/lib/elections/types';
@@ -31,9 +31,132 @@ function ProfileStatus({ source }: { source: ElectionCandidateSource }) {
   return <Badge tone={connected ? 'positive' : review ? 'warning' : 'outline'}>{connected ? 'Connected' : review ? 'Review needed' : 'Connecting'}</Badge>;
 }
 
-function CandidateCard({ candidate, canEdit }: { candidate: ElectionCandidateRecord; canEdit: boolean }) {
+/**
+ * One account row inside the account-entry editor: platform, URL, and an
+ * optional label so "Ed's personal X" and "the campaign's X" stay distinct
+ * when a candidate runs several accounts on one platform.
+ */
+interface AccountDraft {
+  key: string;
+  platform: Platform;
+  url: string;
+  label: string;
+}
+
+let accountDraftKey = 0;
+function newAccountDraft(platform: Platform = 'twitter'): AccountDraft {
+  accountDraftKey += 1;
+  return { key: 'draft-' + accountDraftKey, platform, url: '', label: '' };
+}
+
+/** Add and remove account rows without losing the rows already typed in. */
+function AccountRowsEditor({ accounts, onChange }: { accounts: AccountDraft[]; onChange: (next: AccountDraft[]) => void }) {
+  const update = (key: string, patch: Partial<AccountDraft>) => {
+    onChange(accounts.map((account) => (account.key === key ? { ...account, ...patch } : account)));
+  };
+  return (
+    <div className="space-y-2">
+      {accounts.map((account, index) => (
+        <div key={account.key} className="grid grid-cols-1 gap-2 rounded-lg border border-zinc-200 p-2.5 dark:border-zinc-800 sm:grid-cols-[10rem_1fr_9rem_2rem] sm:items-center">
+          <div className="relative">
+            <PlatformIcon platform={account.platform} className="absolute left-2.5 top-2.5 h-4 w-4" />
+            <select
+              aria-label="Platform"
+              value={account.platform}
+              onChange={(event) => update(account.key, { platform: event.target.value as Platform })}
+              className="w-full appearance-none rounded-md border border-zinc-200 bg-white py-2 pl-8 pr-2 text-sm dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              {SOURCE_PLATFORMS.map((platform) => <option key={platform} value={platform}>{PLATFORM_LABELS[platform]}</option>)}
+            </select>
+          </div>
+          <Input aria-label="Profile URL" type="url" placeholder="https://" value={account.url} onChange={(event) => update(account.key, { url: event.target.value })} />
+          <Input aria-label="Label" placeholder={index === 0 ? 'Label (optional)' : 'e.g. campaign'} value={account.label} maxLength={80} onChange={(event) => update(account.key, { label: event.target.value })} />
+          <Button type="button" size="icon" variant="ghost" aria-label="Remove this account" disabled={accounts.length === 1} onClick={() => onChange(accounts.filter((item) => item.key !== account.key))}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <Button type="button" size="sm" variant="ghost" onClick={() => onChange([...accounts, newAccountDraft()])}>
+        <Plus className="h-3.5 w-3.5" /> Add another account
+      </Button>
+    </div>
+  );
+}
+
+/** Normalize a pasted profile URL so the same account typed twice collides. */
+function normalizedAccountUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = '';
+    parsed.search = '';
+    const path = parsed.pathname.replace(/\/+$/, '');
+    return parsed.origin.toLowerCase() + path;
+  } catch {
+    return trimmed;
+  }
+}
+
+function dedupeDrafts(accounts: AccountDraft[]): AccountDraft[] {
+  const seen = new Set<string>();
+  const out: AccountDraft[] = [];
+  for (const account of accounts) {
+    const url = normalizedAccountUrl(account.url);
+    if (!url) continue;
+    const key = account.platform + '|' + url;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...account, url });
+  }
+  return out;
+}
+
+/** The remove-account button is a two-tap confirm so a stray click cannot stop collection. */
+function RemoveSourceButton({ raceId, candidateId, source, onRemoved }: { raceId: string; candidateId: string; source: ElectionCandidateSource; onRemoved: () => void }) {
+  const [confirming, setConfirming] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/elections/races/' + raceId + '/candidates/' + candidateId + '/sources', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceId: source.id }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? 'The account could not be removed.');
+      onRemoved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The account could not be removed.');
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      {confirming ? (
+        <>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={remove}>{busy ? 'Removing…' : 'Confirm remove'}</Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>Keep</Button>
+        </>
+      ) : (
+        <Button size="icon" variant="ghost" aria-label="Stop tracking this account" title="Stop tracking this account" onClick={() => setConfirming(true)}>
+          <Trash2 className="h-3.5 w-3.5 text-zinc-400 hover:text-red-600" />
+        </Button>
+      )}
+      {error ? <span className="text-[10px] text-red-600">{error}</span> : null}
+    </span>
+  );
+}
+
+function CandidateCard({ candidate, raceId, canEdit }: { candidate: ElectionCandidateRecord; raceId: string; canEdit: boolean }) {
   const router = useRouter();
   const [selected, setSelected] = React.useState<ElectionCandidateSource | null>(null);
+  const [addingAccounts, setAddingAccounts] = React.useState(false);
   const connected = candidate.profiles.length;
   return (
     <Card>
@@ -57,10 +180,15 @@ function CandidateCard({ candidate, canEdit }: { candidate: ElectionCandidateRec
               <div className="flex items-start gap-2.5">
                 <PlatformIcon platform={source.platform} className="mt-0.5 h-5 w-5 shrink-0" label />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2"><p className="text-xs font-semibold">{PLATFORM_LABELS[source.platform]}</p><ProfileStatus source={source} /></div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-semibold">{PLATFORM_LABELS[source.platform]}</p>
+                    {source.label ? <Badge tone="neutral">{source.label}</Badge> : null}
+                    <ProfileStatus source={source} />
+                  </div>
                   <a href={profile?.profileUrl ?? source.url} target="_blank" rel="noopener noreferrer" className="mt-1 block truncate text-[11px] text-zinc-500 hover:text-red-700 hover:underline">{profile ? '@' + profile.handle.replace(/^@/, '') : source.url}</a>
                 </div>
                 {profile ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : needsReview ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /> : <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />}
+                {canEdit ? <RemoveSourceButton raceId={raceId} candidateId={candidate.id} source={source} onRemoved={() => router.refresh()} /> : null}
               </div>
               {source.note ? <p className="mt-2 text-[10px] leading-4 text-amber-700 dark:text-amber-400">{source.note}</p> : null}
               {needsReview ? <Button className="mt-2" size="sm" onClick={() => setSelected(source)}>Review source</Button> : null}
@@ -70,12 +198,77 @@ function CandidateCard({ candidate, canEdit }: { candidate: ElectionCandidateRec
       </CardBody>
       <CardBody className="flex items-center justify-between border-t border-zinc-200 py-3 dark:border-zinc-800">
         <span className="text-[11px] text-zinc-500">{connected + ' of ' + candidate.sources.length + ' supplied profiles connected'}</span>
-        {candidate.website ? <a href={candidate.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-zinc-600 hover:text-red-700">Candidate site <ExternalLink className="h-3.5 w-3.5" /></a> : null}
+        <span className="flex items-center gap-3">
+          {canEdit ? <Button size="sm" variant="ghost" onClick={() => setAddingAccounts(true)}><Plus className="h-3.5 w-3.5" /> Add accounts</Button> : null}
+          {candidate.website ? <a href={candidate.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-zinc-600 hover:text-red-700">Candidate site <ExternalLink className="h-3.5 w-3.5" /></a> : null}
+        </span>
       </CardBody>
       <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null); }} labelledBy={'verify-' + candidate.id} className="max-w-3xl">
         {selected ? <><div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800"><div><h2 id={'verify-' + candidate.id} className="text-lg font-semibold">Resolve {candidate.name} on {PLATFORM_LABELS[selected.platform]}</h2><p className="mt-1 text-xs text-zinc-500">Automatic connection found an identity conflict. Review this one source before it joins the shared dataset.</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button></div><div className="max-h-[70vh] overflow-y-auto p-5"><AddChannelForm companyId={candidate.companyId} existing={candidate.profiles.map((profile) => profile.platform)} preferredPlatform={selected.platform} initialInput={selected.url} onCancel={() => setSelected(null)} onDone={() => { setSelected(null); router.refresh(); }} /></div></> : null}
       </Dialog>
+      {addingAccounts ? (
+        <AddAccountsDialog raceId={raceId} candidate={candidate} open onOpenChange={setAddingAccounts} />
+      ) : null}
     </Card>
+  );
+}
+
+/** Add more accounts to a candidate already in the race, same one-flow editor. */
+function AddAccountsDialog({ raceId, candidate, open, onOpenChange }: { raceId: string; candidate: ElectionCandidateRecord; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const router = useRouter();
+  const [accounts, setAccounts] = React.useState<AccountDraft[]>(() => [newAccountDraft()]);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    const sources = dedupeDrafts(accounts).map((account) => ({
+      platform: account.platform,
+      url: account.url,
+      label: account.label.trim() || null,
+    }));
+    if (sources.length === 0) {
+      setError('Add at least one profile URL.');
+      setSaving(false);
+      return;
+    }
+    try {
+      const response = await fetch('/api/elections/races/' + raceId + '/candidates/' + candidate.id + '/sources', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sources }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? 'The accounts could not be added.');
+      onOpenChange(false);
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The accounts could not be added.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} labelledBy={'add-accounts-' + candidate.id} className="max-w-3xl">
+      <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <div>
+          <h2 id={'add-accounts-' + candidate.id} className="text-lg font-semibold">Add accounts for {candidate.name}</h2>
+          <p className="mt-1 text-xs text-zinc-500">Multiple accounts per platform are welcome. Label them so personal, campaign and official profiles stay distinct.</p>
+        </div>
+        <Button size="icon" variant="ghost" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></Button>
+      </div>
+      <form onSubmit={submit} className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
+        <AccountRowsEditor accounts={accounts} onChange={setAccounts} />
+        {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Adding…' : 'Add accounts'}</Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -83,22 +276,74 @@ function AddCandidateDialog({ raceId, open, onOpenChange }: { raceId: string; op
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [accounts, setAccounts] = React.useState<AccountDraft[]>(() => [newAccountDraft()]);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSaving(true); setError(null);
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
     const form = new FormData(event.currentTarget);
-    const sources = SOURCE_PLATFORMS.flatMap((platform) => {
-      const url = String(form.get('source-' + platform) ?? '').trim();
-      return url ? [{ platform, url }] : [];
-    });
+    const sources = dedupeDrafts(accounts).map((account) => ({
+      platform: account.platform,
+      url: account.url,
+      label: account.label.trim() || null,
+    }));
     try {
-      const response = await fetch('/api/elections/races/' + raceId + '/candidates', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: String(form.get('name') ?? ''), party: String(form.get('party') ?? '') || null, website: String(form.get('website') ?? '') || null, color: String(form.get('color') ?? '') || null, incumbent: form.get('incumbent') === 'on', sources }) });
+      const response = await fetch('/api/elections/races/' + raceId + '/candidates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: String(form.get('name') ?? ''),
+          party: String(form.get('party') ?? '') || null,
+          website: String(form.get('website') ?? '') || null,
+          color: String(form.get('color') ?? '') || null,
+          incumbent: form.get('incumbent') === 'on',
+          sources,
+        }),
+      });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'The candidate could not be added.');
-      onOpenChange(false); router.refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The candidate could not be added.'); }
-    finally { setSaving(false); }
+      onOpenChange(false);
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The candidate could not be added.');
+    } finally {
+      setSaving(false);
+    }
   }
-  return <Dialog open={open} onOpenChange={onOpenChange} labelledBy="add-candidate-title" className="max-w-3xl"><div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800"><div><h2 id="add-candidate-title" className="text-lg font-semibold">Add a candidate</h2><p className="mt-1 text-xs text-zinc-500">Paste campaign accounts. Data Dumpster connects and starts collecting them automatically.</p></div><Button size="icon" variant="ghost" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></Button></div><form onSubmit={submit} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Candidate name"><Input name="name" required autoFocus data-dialog-initial-focus /></Field><Field label="Party"><Input name="party" /></Field><Field label="Campaign website"><Input name="website" type="url" placeholder="https://" /></Field><Field label="Chart color"><Input name="color" type="color" defaultValue="#52525B" /></Field></div><label className="flex items-center gap-2 text-xs"><input name="incumbent" type="checkbox" /> Incumbent in this race</label><div className="border-t border-zinc-200 pt-4 dark:border-zinc-800"><p className="text-xs font-semibold">Campaign profile URLs</p><div className="mt-3 grid gap-3 sm:grid-cols-2">{SOURCE_PLATFORMS.map((platform) => <Field key={platform} label={PLATFORM_LABELS[platform]}><div className="relative"><PlatformIcon platform={platform} className="absolute left-2.5 top-2.5 h-4 w-4" /><Input name={'source-' + platform} type="url" placeholder="https://" className="pl-8" /></div></Field>)}</div></div>{error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}<div className="flex justify-end gap-2"><Button type="button" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" variant="primary" disabled={saving}>{saving ? 'Adding…' : 'Add candidate'}</Button></div></form></Dialog>;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} labelledBy="add-candidate-title" className="max-w-3xl">
+      <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <div>
+          <h2 id="add-candidate-title" className="text-lg font-semibold">Add a candidate</h2>
+          <p className="mt-1 text-xs text-zinc-500">Paste campaign accounts — as many as they run, per platform. Data Dumpster connects and starts collecting them automatically.</p>
+        </div>
+        <Button size="icon" variant="ghost" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></Button>
+      </div>
+      <form onSubmit={submit} className="max-h-[78vh] space-y-4 overflow-y-auto p-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Candidate name"><Input name="name" required autoFocus data-dialog-initial-focus /></Field>
+          <Field label="Party"><Input name="party" /></Field>
+          <Field label="Campaign website"><Input name="website" type="url" placeholder="https://" /></Field>
+          <Field label="Chart color"><Input name="color" type="color" defaultValue="#52525B" /></Field>
+        </div>
+        <label className="flex items-center gap-2 text-xs"><input name="incumbent" type="checkbox" /> Incumbent in this race</label>
+        <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          <p className="text-xs font-semibold">Campaign accounts</p>
+          <p className="mt-1 text-[11px] text-zinc-500">Add every account the candidate runs — multiple accounts per platform are fine. Labels keep personal, campaign and official profiles distinct.</p>
+          <div className="mt-3">
+            <AccountRowsEditor accounts={accounts} onChange={setAccounts} />
+          </div>
+        </div>
+        {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Adding…' : 'Add candidate'}</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
 }
 
 export function ElectionRaceWorkspace({ race, analytics, canEdit, manualRefreshAllowed }: { race: ElectionRaceDetail; analytics: ElectionRaceAnalytics; canEdit: boolean; manualRefreshAllowed: boolean }) {
@@ -135,9 +380,9 @@ export function ElectionRaceWorkspace({ race, analytics, canEdit, manualRefreshA
       </summary>
       <div className="space-y-4 border-t border-zinc-200 p-4 dark:border-zinc-800">
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/25 dark:text-blue-300">{isWatchlist ? <><strong>Candidate-controlled accounts.</strong> The August 14 account audit includes verified or likely personal, campaign, government and congressional profiles—even when a candidate has more than one account on the same platform. Mirrors, squatters and independently controlled affiliated organizations stay excluded.</> : <><strong>Campaign accounts only.</strong> Data Dumpster connects supplied profiles and begins collection automatically. Official government accounts stay outside this race unless explicitly added.</>}</div>
-        <div className="grid gap-4 xl:grid-cols-2">{race.candidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} canEdit={canEdit} />)}</div>
+        <div className="grid gap-4 xl:grid-cols-2">{race.candidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} raceId={race.id} canEdit={canEdit} />)}</div>
       </div>
     </details>
-    <AddCandidateDialog raceId={race.id} open={adding} onOpenChange={setAdding} />
+    {adding ? <AddCandidateDialog raceId={race.id} open onOpenChange={setAdding} /> : null}
   </div>;
 }

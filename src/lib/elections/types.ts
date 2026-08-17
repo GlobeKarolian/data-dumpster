@@ -43,6 +43,8 @@ export interface ElectionCandidateSource {
   id: string;
   platform: Platform;
   url: string;
+  /** Editor-supplied account disambiguation, e.g. "personal" vs "campaign". */
+  label: string | null;
   status: ElectionProfileSourceStatus;
   channelId: string | null;
   note: string | null;
