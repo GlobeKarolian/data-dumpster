@@ -218,9 +218,38 @@ function queueDisposition(outcome: CollectionOutcome): QueueDisposition {
   }
 }
 
+/**
+ * Consecutive failed attempts before a retryable failure stops itself.
+ *
+ * Backoff alone caps at sixty minutes and never ends, so a channel whose
+ * vendor answer is wrong every time would become an hourly paid crawl forever,
+ * which is exactly the infinite purchase loop the outcome model exists to
+ * prevent. Twelve consecutive failures is at least nine hours of continuous
+ * refusal in backoff terms and, under the twice-daily windows, spread over
+ * several days in practice. After that this stops asking the vendor and asks a
+ * person instead.
+ *
+ * The ceiling counts CONSECUTIVE failures because attempts now reset when a
+ * claim settles usefully. A vendor outage therefore self-heals: the first
+ * success after the outage returns the counter to zero.
+ */
+const MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS = 12;
+
+function escalateRetryableOutcome(
+  outcome: CollectionOutcome,
+  consecutiveAttempts: number,
+): CollectionOutcome {
+  if (outcome !== 'retryable_operational_failure') return outcome;
+  return consecutiveAttempts >= MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS
+    ? 'permanent_failure'
+    : outcome;
+}
+
 export const collectionQueueTestHelpers = {
   collectionRunSince,
   queueDisposition,
+  escalateRetryableOutcome,
+  MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS,
   mergeCertifiedCoverage,
   poolDemandWindows,
   demandWindowIsCovered,
@@ -928,10 +957,22 @@ async function finishClaim(
     }
   }
 
+  // Bounded retry: a claim that keeps failing operationally eventually stops
+  // itself rather than retrying on the hour forever. item.attempts was
+  // incremented at claim time, so it already counts this attempt.
+  const consecutiveAttempts = Number(item.attempts) || 0;
+  const escalated = escalateRetryableOutcome(stateOutcome, consecutiveAttempts);
+  if (escalated !== stateOutcome) {
+    stateOutcome = escalated;
+    disposition = queueDisposition(escalated);
+    lastError = 'Escalated to operator review after ' + consecutiveAttempts
+      + ' consecutive failed attempts.' + (lastError ? ' Last error: ' + lastError : '');
+  }
+
   const nextAttemptAt = disposition.schedule === 'immediate'
     ? new Date()
     : disposition.schedule === 'backoff'
-      ? retryAt(Number(item.attempts) || 1)
+      ? retryAt(consecutiveAttempts || 1)
       : null;
   const previousAttemptedUntil = item.attempted_until
     ? asDate(item.attempted_until)
@@ -961,7 +1002,15 @@ async function finishClaim(
   const requeueExpandedDemand = stateOutcome === 'certified_complete';
   const settledStatus = coverageComplete ? 'succeeded' : disposition.status;
 
+  // A useful settle ends the consecutive-failure streak. Certified coverage,
+  // a continuation making progress and a terminal source limitation all prove
+  // the pipeline works; only failures leave the counter running.
+  const settlesUsefully = stateOutcome === 'certified_complete'
+    || stateOutcome === 'continuation'
+    || stateOutcome === 'terminal_source_limitation';
+
   const finished = await db.update(channelCollectionState).set({
+    attempts: settlesUsefully ? 0 : undefined,
     status: requeueExpandedDemand
       ? sql`CASE
           WHEN ${expandedWhileRunning} THEN 'queued'::ingest_status

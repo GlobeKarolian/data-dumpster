@@ -34,6 +34,26 @@ export interface TwitterVendorResult {
   incompleteReason?: string;
 }
 
+
+/**
+ * The failure for a response that contained only vendor error rows.
+ *
+ * Exported for its test: the retryable flag here is what decides whether a
+ * vendor-side crawler outage freezes every X channel until an operator
+ * intervenes, which is precisely what happened when this was false.
+ */
+export function errorRowFailure(handle: string, warnings: readonly string[]): AdapterError {
+  const vendorFailure = warnings.find((warning) => warning.startsWith('X row error'));
+  return new AdapterError(
+    (vendorFailure
+      ? 'Bright Data could not collect X profile @' + handle + ': '
+        + vendorFailure.replace(/^X row error for @[^:]+:\s*/, '')
+      : 'Bright Data returned only error rows for X profile @' + handle + '.')
+      + ' This is a vendor-side collection failure and will be retried.',
+    { platform: PLATFORM, retryable: true },
+  );
+}
+
 export async function fetchProfilePosts(
   handle: string,
   apiKey: string,
@@ -177,14 +197,21 @@ export async function fetchProfilePosts(
   }
   if (!profile) {
     if (sawErrorRow) {
-      const vendorFailure = warnings.find((warning) => warning.startsWith('X row error'));
-      throw new AdapterError(
-        vendorFailure
-          ? 'Bright Data could not collect X profile @' + handle + ': '
-            + vendorFailure.replace(/^X row error for @[^:]+:\s*/, '')
-          : 'Bright Data returned only error rows for X profile @' + handle + '.',
-        { platform: PLATFORM, retryable: false },
-      );
+      /*
+       * A vendor error row is evidence that the CRAWL failed, never that the
+       * account is gone. When X shipped a frontend change, Bright Data's
+       * crawler answered every profile with "Crawler error: waiting for
+       * selector [data-namespace=@xai/icons]" for a while, and this branch
+       * classified all ninety X channels as permanent failures. They stayed
+       * frozen after the vendor fixed their selectors, because permanent means
+       * nothing retries without an operator.
+       *
+       * X offers no anonymous public page to corroborate absence the way the
+       * Threads adapter does, so every vendor-reported failure here is
+       * retryable. The queue's consecutive-attempt ceiling is what keeps a
+       * genuinely dead account from becoming an hourly paid crawl forever.
+       */
+      throw errorRowFailure(handle, warnings);
     }
     if (rows.length === 0 || noPublicPosts) {
       const incompleteReason = noPublicPosts

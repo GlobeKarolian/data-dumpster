@@ -399,3 +399,36 @@ describe('collection outcomes', () => {
     assert.equal(limited.status, 'partial');
   });
 });
+
+describe('escalateRetryableOutcome', () => {
+  const { escalateRetryableOutcome, MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS } =
+    collectionQueueTestHelpers;
+
+  it('leaves a retryable failure retryable below the ceiling', () => {
+    assert.equal(
+      escalateRetryableOutcome('retryable_operational_failure',
+        MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS - 1),
+      'retryable_operational_failure',
+    );
+  });
+
+  it('stops the paid loop at the ceiling and asks a person', () => {
+    // Backoff caps at sixty minutes and never ends on its own, so without
+    // this ceiling a channel whose vendor answer is wrong every time becomes
+    // an hourly purchase forever.
+    assert.equal(
+      escalateRetryableOutcome('retryable_operational_failure',
+        MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS),
+      'permanent_failure',
+    );
+  });
+
+  it('never touches any other outcome, whatever the attempt count', () => {
+    for (const outcome of [
+      'certified_complete', 'continuation',
+      'terminal_source_limitation', 'permanent_failure',
+    ] as const) {
+      assert.equal(escalateRetryableOutcome(outcome, 999), outcome);
+    }
+  });
+});
