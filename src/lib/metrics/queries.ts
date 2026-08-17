@@ -680,40 +680,81 @@ async function companyPlatformAgg(
            : sql``}
        GROUP BY ch.company_id, ch.platform
     ),
+    /*
+     * Same carry-forward stance as the bucketed series: a channel's stock at
+     * the window's edges is its last reading on or before that edge, within
+     * the carry bound. A channel with no reading by the window end — never
+     * tracked yet, or dark past the bound — is not tracked for this window,
+     * so a channel born in 2026 does not blank a company's 2025 history.
+     */
     aud_channel AS (
       SELECT ch.company_id,
              ch.platform,
              ch.id AS channel_id,
-             (array_agg(a.followers ORDER BY a.day DESC)
-               FILTER (WHERE a.day IS NOT NULL))[1] AS f_last,
-             (array_agg(a.followers ORDER BY a.day ASC)
-               FILTER (WHERE a.day IS NOT NULL))[1] AS f_first,
-             count(a.day)::int AS days_observed
+             last_r.followers AS f_last,
+             coalesce(seed_r.followers, inw.f_in_first) AS baseline,
+             (seed_r.followers IS NOT NULL) AS has_seed,
+             coalesce(inw.days_observed, 0) AS days_observed
         FROM channels ch
-        LEFT JOIN audience_snapshots a
-          ON a.channel_id = ch.id
-         AND a.day >= ${dayParam(range.start)}
-         AND a.day <= ${dayParam(range.end)}
+        LEFT JOIN LATERAL (
+          SELECT a.followers
+            FROM audience_snapshots a
+           WHERE a.channel_id = ch.id
+             AND a.day <= ${dayParam(range.end)}
+             AND a.day >= ${dayParam(range.start)}::date - ${AUDIENCE_CARRY_DAYS}::int
+           ORDER BY a.day DESC
+           LIMIT 1
+        ) last_r ON true
+        LEFT JOIN LATERAL (
+          SELECT a.followers
+            FROM audience_snapshots a
+           WHERE a.channel_id = ch.id
+             AND a.day < ${dayParam(range.start)}
+             AND a.day >= ${dayParam(range.start)}::date - ${AUDIENCE_CARRY_DAYS}::int
+           ORDER BY a.day DESC
+           LIMIT 1
+        ) seed_r ON true
+        LEFT JOIN LATERAL (
+          SELECT (array_agg(a.followers ORDER BY a.day ASC))[1] AS f_in_first,
+                 count(*)::int AS days_observed
+            FROM audience_snapshots a
+           WHERE a.channel_id = ch.id
+             AND a.day >= ${dayParam(range.start)}
+             AND a.day <= ${dayParam(range.end)}
+        ) inw ON true
        WHERE ch.company_id IN (${idList(scope.companyIds)})
          AND ch.active
          AND NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
          ${f.platforms?.length
            ? sql`AND ch.platform IN (${platformList(f.platforms)})`
            : sql``}
-       GROUP BY ch.company_id, ch.platform, ch.id
     ),
     aud AS (
       SELECT company_id,
              platform,
-             coalesce(sum(f_last), 0)  AS followers_last,
-             coalesce(sum(f_first), 0) AS followers_first,
-             min(days_observed)        AS audience_days,
-             max(days_observed)        AS audience_max_days,
-             count(*)::int             AS audience_tracked_channels,
+             coalesce(sum(f_last), 0) AS followers_last,
+             /*
+              * Net change pairs each channel's end value with its start value:
+              * the pre-window carried seed, or for a channel born inside the
+              * window its first reading once a second one exists. Sums are
+              * restricted to paired channels so both ends compare the same
+              * set; availability still demands every tracked channel pair up.
+              */
+             coalesce(sum(baseline) FILTER (
+               WHERE f_last IS NOT NULL AND baseline IS NOT NULL
+                 AND (has_seed OR days_observed >= 2)
+             ), 0) AS followers_first,
+             coalesce(min(days_observed) FILTER (WHERE days_observed > 0), 0)
+               AS audience_days,
+             coalesce(max(days_observed), 0) AS audience_max_days,
+             count(*) FILTER (WHERE f_last IS NOT NULL)::int
+               AS audience_tracked_channels,
              count(*) FILTER (WHERE f_last IS NOT NULL)::int
                AS audience_observed_channels,
-             count(*) FILTER (WHERE days_observed >= 2)::int
-               AS audience_change_channels
+             count(*) FILTER (
+               WHERE f_last IS NOT NULL AND baseline IS NOT NULL
+                 AND (has_seed OR days_observed >= 2)
+             )::int AS audience_change_channels
         FROM aud_channel
        GROUP BY company_id, platform
     ),
@@ -988,8 +1029,12 @@ function platformMetricValue(p: PlatformAgg, key: MetricKey, days: number, t: La
     postsMissingFollowers: p.postsMissingFollowers,
     followersLast: p.followersLast,
     followersFirst: p.followersFirst,
-    audienceChangeLast: p.audienceDays >= 2 ? p.followersLast : 0,
-    audienceChangeFirst: p.audienceDays >= 2 ? p.followersFirst : 0,
+    // Paired-channel counts gate change math now that carry-forward exists;
+    // a platform where every observed channel has a baseline is comparable.
+    audienceChangeLast: p.audienceChangeChannels > 0
+      && p.audienceChangeChannels >= p.audienceObservedChannels ? p.followersLast : 0,
+    audienceChangeFirst: p.audienceChangeChannels > 0
+      && p.audienceChangeChannels >= p.audienceObservedChannels ? p.followersFirst : 0,
     audienceDays: p.audienceDays,
     audienceMaxDays: p.audienceMaxDays,
     trackedChannels: p.trackedChannels,
@@ -1157,9 +1202,20 @@ type BucketRow = {
   followers_first: string | number | null;
   audience_days: string | number | null;
   audience_max_days: string | number | null;
+  audience_observed: string | number | null;
+  audience_change: string | number | null;
+  change_last_sum: string | number | null;
+  change_first_sum: string | number | null;
   erf_num: string | number | null;
   erf_posts: string | number | null;
 };
+
+/**
+ * How long a channel's last audience reading keeps counting toward totals.
+ * Long enough to bridge weekly imported history and vendor gaps, short enough
+ * that a channel which stopped reporting ages out rather than lying forever.
+ */
+const AUDIENCE_CARRY_DAYS = 90;
 
 /** Buckets the window itself, so a chart renders empty periods as zero, not as a gap. */
 function bucketsFor(range: DateRange, g: Granularity): string[] {
@@ -1233,37 +1289,102 @@ async function bucketSeries(
        WHERE ${postWhere(scope, range, f)}
        GROUP BY 1, 2, 3
     ),
-    ab_channel AS (
-      SELECT ch.company_id,
-             ch.platform,
-             ch.id AS channel_id,
-             b.bucket,
-             (array_agg(a.followers ORDER BY a.day DESC)
-               FILTER (WHERE a.day IS NOT NULL))[1] AS f_last,
-             (array_agg(a.followers ORDER BY a.day ASC)
-               FILTER (WHERE a.day IS NOT NULL))[1] AS f_first,
-             count(a.day)::int AS days_observed
-        FROM channels ch
-        CROSS JOIN bucket_list b
-        LEFT JOIN audience_snapshots a
-          ON a.channel_id = ch.id
-         AND a.day >= ${dayParam(range.start)}
-         AND a.day <= ${dayParam(range.end)}
-         AND date_trunc(${g}::text, a.day::timestamp)::date = b.bucket
+    /*
+     * Audience is a stock, and channels report it on mixed cadences: our own
+     * collection is daily, imported RivalIQ history is weekly, and vendors
+     * skip days. Summing only same-bucket readings made every company's total
+     * collapse on the days some channels happened not to report and snap back
+     * when they did — a square-wave artifact, not a follower story. Each
+     * channel therefore carries its last known reading forward until a newer
+     * one exists, bounded at AUDIENCE_CARRY_DAYS so a channel that stops
+     * reporting ages out instead of contributing a stale count forever.
+     * days_observed still counts real readings only; carrying a stock forward
+     * is measurement persistence, but coverage reporting stays honest.
+     */
+    ab_readings AS (
+      SELECT a.channel_id, a.day, a.followers
+        FROM audience_snapshots a
+        JOIN channels ch ON ch.id = a.channel_id
        WHERE ch.company_id IN (${idList(scope.companyIds)})
          AND ch.active
          AND NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
          ${f.platforms?.length
            ? sql`AND ch.platform IN (${platformList(f.platforms)})`
            : sql``}
-       GROUP BY ch.company_id, ch.platform, ch.id, b.bucket
+         AND a.day >= ${dayParam(range.start)}::date - ${AUDIENCE_CARRY_DAYS}::int
+         AND a.day <= ${dayParam(range.end)}
+    ),
+    ab_seed AS (
+      SELECT DISTINCT ON (channel_id) channel_id, followers
+        FROM ab_readings
+       WHERE day < ${dayParam(range.start)}
+       ORDER BY channel_id, day DESC
+    ),
+    ab_in_bucket AS (
+      SELECT channel_id,
+             date_trunc(${g}::text, day::timestamp)::date AS bucket,
+             (array_agg(followers ORDER BY day DESC))[1] AS f_in_last,
+             (array_agg(followers ORDER BY day ASC))[1]  AS f_in_first,
+             count(*)::int AS days_observed
+        FROM ab_readings
+       WHERE day >= ${dayParam(range.start)}
+       GROUP BY 1, 2
+    ),
+    ab_grid AS (
+      SELECT ch.company_id, ch.platform, ch.id AS channel_id, b.bucket,
+             ib.f_in_last, ib.f_in_first,
+             coalesce(ib.days_observed, 0) AS days_observed,
+             s.followers AS seed
+        FROM channels ch
+        CROSS JOIN bucket_list b
+        LEFT JOIN ab_in_bucket ib ON ib.channel_id = ch.id AND ib.bucket = b.bucket
+        LEFT JOIN ab_seed s ON s.channel_id = ch.id
+       WHERE ch.company_id IN (${idList(scope.companyIds)})
+         AND ch.active
+         AND NOT (ch.platform = 'reddit'::platform AND lower(ch.handle) LIKE 'u/%')
+         ${f.platforms?.length
+           ? sql`AND ch.platform IN (${platformList(f.platforms)})`
+           : sql``}
+    ),
+    ab_vp AS (
+      /* vp increments on buckets with a real reading, so every (channel, vp)
+       * partition holds exactly one non-null f_in_last: the value to carry. */
+      SELECT *,
+             count(f_in_last) OVER (PARTITION BY channel_id ORDER BY bucket
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS vp
+        FROM ab_grid
+    ),
+    ab_channel AS (
+      SELECT company_id, platform, channel_id, bucket, days_observed,
+             carried,
+             /* Value at bucket start: previous bucket's carried value, the
+              * pre-window seed, or for a channel born inside this bucket its
+              * first in-bucket reading (net change then starts at zero). */
+             coalesce(
+               lag(carried) OVER (PARTITION BY channel_id ORDER BY bucket),
+               seed,
+               f_in_first
+             ) AS baseline
+        FROM (
+          SELECT *,
+                 coalesce(max(f_in_last) OVER (PARTITION BY channel_id, vp), seed) AS carried
+            FROM ab_vp
+        ) carried_values
     ),
     ab AS (
       SELECT company_id, platform, bucket,
-             coalesce(sum(f_last), 0)  AS followers_last,
-             coalesce(sum(f_first), 0) AS followers_first,
-             min(days_observed)        AS audience_days,
-             max(days_observed)        AS audience_max_days
+             coalesce(sum(carried), 0) AS followers_last,
+             coalesce(sum(baseline) FILTER (WHERE carried IS NOT NULL), 0) AS followers_first,
+             coalesce(min(days_observed) FILTER (WHERE days_observed > 0), 0) AS audience_days,
+             coalesce(max(days_observed), 0) AS audience_max_days,
+             count(*) FILTER (WHERE carried IS NOT NULL)::int AS audience_observed,
+             count(*) FILTER (WHERE carried IS NOT NULL AND baseline IS NOT NULL)::int
+               AS audience_change,
+             /* Change compares the same channel set on both ends, or it lies. */
+             coalesce(sum(carried) FILTER (WHERE carried IS NOT NULL AND baseline IS NOT NULL), 0)
+               AS change_last_sum,
+             coalesce(sum(baseline) FILTER (WHERE carried IS NOT NULL AND baseline IS NOT NULL), 0)
+               AS change_first_sum
         FROM ab_channel
        GROUP BY 1, 2, 3
     ),
@@ -1282,7 +1403,11 @@ async function bucketSeries(
              coalesce(ab.followers_last, 0)          AS followers_last,
              coalesce(ab.followers_first, 0)         AS followers_first,
              coalesce(ab.audience_days, 0)           AS audience_days,
-             coalesce(ab.audience_max_days, 0)       AS audience_max_days
+             coalesce(ab.audience_max_days, 0)       AS audience_max_days,
+             coalesce(ab.audience_observed, 0)       AS audience_observed,
+             coalesce(ab.audience_change, 0)         AS audience_change,
+             coalesce(ab.change_last_sum, 0)         AS change_last_sum,
+             coalesce(ab.change_first_sum, 0)        AS change_first_sum
         FROM pb
         FULL OUTER JOIN ab
           ON ab.company_id = pb.company_id
@@ -1302,6 +1427,10 @@ async function bucketSeries(
            sum(followers_first)            AS followers_first,
            min(audience_days)::int          AS audience_days,
            max(audience_max_days)::int      AS audience_max_days,
+           sum(audience_observed)::int      AS audience_observed,
+           sum(audience_change)::int        AS audience_change,
+           sum(change_last_sum)             AS change_last_sum,
+           sum(change_first_sum)            AS change_first_sum,
            coalesce(sum(follower_rate_sum)
                     FILTER (WHERE rated_post_count > 0), 0) AS erf_num,
            coalesce(sum(rated_post_count)
@@ -1319,6 +1448,14 @@ function bucketAgg(r: BucketRow): CompanyAgg {
   const audienceMaxDays = num(r.audience_max_days);
   const followersLast = num(r.followers_last);
   const followersFirst = num(r.followers_first);
+  /*
+   * Channel counts come from the carry-forward SQL now. A channel is tracked
+   * for a bucket when it has any carriable reading by that bucket's end — a
+   * channel that did not exist yet in 2025 does not blank a company's 2025
+   * history, and one that stopped reporting ages out after the carry window.
+   */
+  const audienceObserved = num(r.audience_observed);
+  const audienceChange = num(r.audience_change);
   return {
     companyId: r.company_id,
     posts: num(r.post_count),
@@ -1331,15 +1468,15 @@ function bucketAgg(r: BucketRow): CompanyAgg {
     postsMissingFollowers: 0,
     followersLast,
     followersFirst,
-    audienceChangeLast: audienceDays >= 2 ? followersLast : 0,
-    audienceChangeFirst: audienceDays >= 2 ? followersFirst : 0,
+    audienceChangeLast: num(r.change_last_sum),
+    audienceChangeFirst: num(r.change_first_sum),
     audienceDays,
     audienceMaxDays,
     trackedChannels: 1,
     ingestedChannels: 1,
-    audienceTrackedChannels: audienceMaxDays > 0 ? 1 : 0,
-    audienceObservedChannels: audienceMaxDays > 0 ? 1 : 0,
-    audienceChangeChannels: audienceDays >= 2 ? 1 : 0,
+    audienceTrackedChannels: audienceObserved,
+    audienceObservedChannels: audienceObserved,
+    audienceChangeChannels: audienceChange,
     applicablePlatforms: 1,
     erfNumerator: num(r.erf_num),
     erfPosts: num(r.erf_posts),
