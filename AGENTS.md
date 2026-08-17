@@ -39,6 +39,30 @@ Public social data is pooled: `companies`, `channels` and `posts` are shared acr
 2. **`changePct` returns `null` on a zero baseline.** Never `Infinity`, never a four-figure percentage. A blank cell is correct; a fake number is not.
 3. **Every number an AI feature states must come from a fact sheet computed in code**, then be verified against that sheet before it renders. No model-generated arithmetic reaches the user. See `src/lib/ai/` and `docs/BYO-MODEL.md`.
 
+## Multiple agents, one machine
+
+Several agents (Claude, ChatGPT/Codex, occasional reviewers) develop this
+repository on the same computer, sometimes simultaneously. On 16 August 2026
+that produced, within one hour: commits landing on another agent's branch, a
+branch switched underneath a running task, and one file corrupted to binary by
+colliding writes. The working rules that prevent a repeat:
+
+- Work in your own git worktree under `.worktrees/<agent-name>` on a branch
+  named `agents/<agent-name>`, created from `origin/main`. Never do multi-step
+  work directly in the primary checkout: any other agent may switch its branch
+  or touch its files while you run.
+- `.env.local` is gitignored and does not follow a new worktree; copy it from
+  the primary checkout once. Run `npm ci --include=dev` per worktree.
+- Land changes by pushing `HEAD:main` (or a PR) only after the full gate suite
+  passes in YOUR worktree. Rebase onto `origin/main` first; main moves while
+  you work.
+- Deploy only a tree whose HEAD equals the commit you just pushed to main.
+  `vercel --prod` uploads the working directory, not git, so deploying from a
+  drifted or dirty tree publishes someone's half-finished work.
+- Never reset, clean or commit the primary checkout's dirty state; it is
+  another agent's work in progress. The one exception is restoring a file YOU
+  changed there.
+
 ## Working method
 
 - **curl the vendor endpoint and read the real response before writing a mapper.** Documented field names on these vendors are wrong often enough that assuming costs more time than checking. This has burned us on Instagram reels (`play_count` only exists on `/instagram/user/reels`, not `/posts`) and TikTok cover images (`{url_list: [...]}`, not a string).
