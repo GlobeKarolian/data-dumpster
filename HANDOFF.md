@@ -8,7 +8,7 @@ Data Dumpster is a competitive social-intelligence platform for newsrooms and
 Boston Globe Media's internal replacement for Rival IQ. It is live, uses real
 vendor spend, and must be treated as a production data product.
 
-    Live      https://pressbox-kappa.vercel.app
+    Live      https://www.datadumpster.boston
     Repo      https://github.com/GlobeKarolian/data-dumpster
     Local     ~/Developer/pressbox
 
@@ -205,8 +205,8 @@ person for review.
 1. Complete the remaining phases of `docs/OWNED-DATA-ISOLATION.md`. This is a
    release gate, not a later hardening task.
 2. Validate the full foundation, run the pooled-identity audit, apply
-   every committed migration from `drizzle/0000_collection_outcome.sql` through
-   `drizzle/0013_condemned_guardian.sql` via `npm run db:migrate`, deploy
+   every committed migration in `drizzle/` (currently `0000_collection_outcome.sql`
+   through `0021_truth_social_runner_recovery.sql`) via `npm run db:migrate`, deploy
    the matching application, then inspect health and collection outcomes in
    production. Never reverse that migration-before-code order.
 3. Choose a chronological X source or accept an explicitly limited X product.

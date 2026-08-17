@@ -6,11 +6,9 @@ import {
   ArrowRight,
   Bell,
   Bookmark,
-  CalendarDays,
   Check,
   ChevronRight,
   CircleUserRound,
-  Clock3,
   Compass,
   Gavel,
   House,
@@ -695,7 +693,7 @@ function PreferencesModal({ following, setFollowing, onClose }: { following: Set
         <p className={styles.kicker}>PERSONALIZE</p><h2 id="preferences-title">Tune your Globe.</h2><p>Choose the worlds you want to follow. You can change this anytime.</p>
         <div className={styles.preferenceList}>{HUBS.map((hub) => {
           const selected = following.has(hub.id);
-          return <button key={hub.id} onClick={() => setFollowing((current) => { const next = new Set(current); selected ? next.delete(hub.id) : next.add(hub.id); return next; })}><EditionMonogram hub={hub} small /><span><b>{hub.name}</b><small>{hub.category}</small></span><i className={selected ? styles.toggleOn : ''}><span /></i></button>;
+          return <button key={hub.id} onClick={() => setFollowing((current) => { const next = new Set(current); if (selected) next.delete(hub.id); else next.add(hub.id); return next; })}><EditionMonogram hub={hub} small /><span><b>{hub.name}</b><small>{hub.category}</small></span><i className={selected ? styles.toggleOn : ''}><span /></i></button>;
         })}</div>
         <button className={styles.savePreferences} onClick={onClose}>Save my Globe</button>
       </section>

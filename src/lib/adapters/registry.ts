@@ -80,6 +80,10 @@ export const UNIMPLEMENTED_REASONS: Partial<Record<Platform, string>> = {
   // dragged engagement-per-post down for the handful of companies that had a
   // feed. Publishing cadence is a real signal, but it belongs in a cadence
   // view rather than mixed into engagement comparisons.
+  // The retired adapter argued every engagement number it produced was "a
+  // hard zero, and that is correct" -- which is exactly why it was removed:
+  // hard zeros with no audience denominator distorted every average they
+  // entered. The implementation is deleted; this registry entry is the record.
   rss: 'Removed on purpose. RSS has no engagement or audience data, so its posts '
     + 'distorted every average they entered. Add the outlet\'s social channels instead.',
 };

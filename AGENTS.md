@@ -14,7 +14,7 @@ Note the naming split: the Vercel project and this local directory are still cal
 
 A Rival IQ competitor built for news organizations, for Boston Globe Media.
 
-Next.js 16 App Router, React 19, TypeScript strict, Tailwind v4, Drizzle ORM on Neon Postgres, deployed to Vercel at `pressbox-kappa.vercel.app`. Private mirror at `github.com/GlobeKarolian/data-dumpster`.
+Next.js 16 App Router, React 19, TypeScript strict, Tailwind v4, Drizzle ORM on Neon Postgres, deployed to Vercel; production is `https://www.datadumpster.boston` (the Vercel project is still named `pressbox`, and `pressbox-kappa.vercel.app` remains an alias). Private mirror at `github.com/GlobeKarolian/data-dumpster`.
 
 It ingests account- and post-level social data across Facebook, Instagram,
 TikTok, X, Threads, Reddit, LinkedIn, YouTube and Bluesky through a
