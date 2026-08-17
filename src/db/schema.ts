@@ -40,7 +40,7 @@ export const collectionOutcomeEnum = pgEnum('collection_outcome', COLLECTION_OUT
 
 export const modelProviderEnum = pgEnum('model_provider', [
   'anthropic', 'openai', 'google', 'azure_openai',
-  'bedrock', 'openai_compatible', 'ollama',
+  'bedrock', 'openrouter', 'openai_compatible', 'ollama',
 ]);
 
 export const tagSourceEnum = pgEnum('tag_source', ['manual', 'rule', 'ai']);

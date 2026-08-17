@@ -265,6 +265,13 @@ function isDomainBlock(b: Block): boolean {
 const SUITE_PREFIXES: { suite: RegExp; prefix: RegExp; name: string }[] = [
   { suite: /bostonglobe/i, prefix: /\bBG\b/, name: 'the Globe' },
   { suite: /boston\.com|^bcom/i, prefix: /\bBcom\b/, name: 'Boston.com' },
+  // STAT's own metrics carry no prefix, so this entry never matches a header;
+  // it exists so a STAT export is recognised as "own" and BG/Bcom-prefixed
+  // tables inside it are rejected as foreign. A real STAT export (17 Aug 2026)
+  // contained a stale Bostonglobe.com panel whose conversion-rate table was
+  // exactly the shape this parser prefers, and Globe referral totals rendered
+  // under the STAT heading looking entirely plausible.
+  { suite: /^stat\b/i, prefix: /\bSTAT\b/, name: 'STAT' },
 ];
 
 /**

@@ -10,7 +10,7 @@
  */
 export type ModelProviderId =
   | 'anthropic' | 'openai' | 'google' | 'azure_openai'
-  | 'bedrock' | 'openai_compatible' | 'ollama';
+  | 'bedrock' | 'openrouter' | 'openai_compatible' | 'ollama';
 
 export interface ModelMessage {
   role: 'system' | 'user' | 'assistant';

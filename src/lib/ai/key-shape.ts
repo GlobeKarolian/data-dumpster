@@ -17,12 +17,16 @@ import type { ModelProviderId } from './types';
 const EXPECTED: Partial<Record<ModelProviderId, { test: RegExp; looksLike: string }>> = {
   anthropic: { test: /^sk-ant-/, looksLike: 'sk-ant-...' },
   openai: { test: /^sk-/, looksLike: 'sk-... or sk-proj-...' },
+  openrouter: { test: /^sk-or-/, looksLike: 'sk-or-v1-...' },
   google: { test: /^AIza/, looksLike: 'AIza...' },
 };
 
 /** Which provider does this key most plausibly belong to? */
 export function guessProvider(key: string): ModelProviderId | null {
+  // Prefixed sk- variants must be tested before the bare sk- catch-all, or
+  // every Anthropic and OpenRouter key reads as an OpenAI key.
   if (/^sk-ant-/.test(key)) return 'anthropic';
+  if (/^sk-or-/.test(key)) return 'openrouter';
   if (/^AIza/.test(key)) return 'google';
   if (/^sk-/.test(key)) return 'openai';
   return null;

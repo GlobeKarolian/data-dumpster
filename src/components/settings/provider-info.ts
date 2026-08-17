@@ -24,6 +24,7 @@ export const PROVIDER_NOTE: Record<ModelProviderId, string> = {
   google: 'Gemini through the Google AI API, using a key from your Google Cloud project.',
   azure_openai: 'An Azure OpenAI deployment inside your own tenant, with your region and your compliance boundary.',
   bedrock: 'Not yet implemented. Put an OpenAI-compatible gateway in front of Bedrock and configure that instead.',
-  openai_compatible: 'Any endpoint that speaks the OpenAI chat API — vLLM, LiteLLM, Together, Groq, OpenRouter, an internal proxy.',
+  openrouter: 'One key for every major model, routed through OpenRouter. Models are addressed as "vendor/model", and billing lands on your OpenRouter account.',
+  openai_compatible: 'Any endpoint that speaks the OpenAI chat API — vLLM, LiteLLM, Together, Groq, an internal proxy.',
   ollama: 'A model running on hardware you control. Nothing leaves the building, which for some stories is the whole requirement.',
 };

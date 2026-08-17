@@ -414,3 +414,36 @@ test('paid and internal traffic leave the platform ranking but stay in the table
   const lastPlatform = labels.map((l) => /\(paid|\(internal/.test(l)).lastIndexOf(false);
   assert.ok(firstNonPlatform > lastPlatform);
 });
+
+/* --------------------------------------------------- cross-suite panels */
+
+test('a Globe panel inside a STAT export is rejected instead of silently winning', () => {
+  // Reproduces the 17 Aug 2026 export: the file's own suite is STAT, but the
+  // Workspace project carried a stale second panel pointed at Bostonglobe.com.
+  // That panel's conversion-rate table is exactly the shape the parser prefers,
+  // so without the suite guard the Globe's referral totals render under the
+  // STAT heading, all looking entirely plausible.
+  const mixed = '# Report suite: STAT\n'
+    + '"# Date: Aug 10, 2026 - Aug 16, 2026"\n'
+    + '\n'
+    + '# Freeform table\n'
+    + ',Visits,Visits\n'
+    + ',Visits,Mobile Phone\n'
+    + 'Referring Domain,495262,262055\n'
+    + 't.co,8267,5882\n'
+    + 'facebook.com,5683,4292\n'
+    + '\n'
+    + '# Freeform table\n'
+    + ',BG Logged Out Visits,BG Digital Subscriptions (Visit),Conversion Rate of Site\n'
+    + ',Visits,BG Digital Subscriptions (Visit),Conversion Rate of Site\n'
+    + 'Referring Domain,1604039,2321,0.0014\n'
+    + 'facebook.com,87576,141,0.0016\n'
+    + 't.co,23763,37,0.0015\n';
+
+  const r = parseAdobeFreeform(mixed, { requireSubscriptions: false });
+  assert.equal(r.ok, true);
+  assert.ok(r.problems.some((p) => /the Globe[^]*different report suite[^]*"STAT"/i.test(p)));
+  // The numbers that survive are STAT's own, not the Globe's.
+  assert.equal(r.rows.find((x) => x.domain === 't.co')?.visits, 8267);
+  assert.equal(r.rows.find((x) => x.domain === 'facebook.com')?.visits, 5683);
+});

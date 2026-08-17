@@ -21,6 +21,7 @@ import { anthropicProvider } from './providers/anthropic';
 import { openaiProvider } from './providers/openai';
 import { googleProvider } from './providers/google';
 import { azureOpenAiProvider } from './providers/azure_openai';
+import { openrouterProvider } from './providers/openrouter';
 import { openaiCompatibleProvider } from './providers/openai_compatible';
 import { ollamaProvider } from './providers/ollama';
 
@@ -55,6 +56,7 @@ export const PROVIDERS: Record<ModelProviderId, ModelProvider> = {
   google: googleProvider,
   azure_openai: azureOpenAiProvider,
   bedrock: bedrockProvider,
+  openrouter: openrouterProvider,
   openai_compatible: openaiCompatibleProvider,
   ollama: ollamaProvider,
 };

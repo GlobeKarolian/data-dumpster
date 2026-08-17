@@ -24,7 +24,7 @@ import {
 } from './types';
 
 const PROVIDER_IDS: ModelProviderId[] = [
-  'anthropic', 'openai', 'google', 'azure_openai', 'bedrock', 'openai_compatible', 'ollama',
+  'anthropic', 'openai', 'google', 'azure_openai', 'bedrock', 'openrouter', 'openai_compatible', 'ollama',
 ];
 
 const MAX_ATTEMPTS = 3;
@@ -65,6 +65,7 @@ function envProviderId(): ModelProviderId | null {
   if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
   if (process.env.OPENAI_API_KEY) return 'openai';
   if (process.env.GOOGLE_API_KEY) return 'google';
+  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
   if (process.env.OLLAMA_BASE_URL) return 'ollama';
   return null;
 }
@@ -75,6 +76,7 @@ function envApiKey(provider: ModelProviderId): string | null {
     case 'openai': return process.env.OPENAI_API_KEY ?? null;
     case 'google': return process.env.GOOGLE_API_KEY ?? null;
     case 'azure_openai': return process.env.AZURE_OPENAI_API_KEY ?? null;
+    case 'openrouter': return process.env.OPENROUTER_API_KEY ?? null;
     case 'openai_compatible': return process.env.OPENAI_COMPATIBLE_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
     default: return null;
   }
