@@ -117,6 +117,7 @@ type SourceRow = {
   id: string;
   platform: Platform;
   url: string;
+  label: string | null;
   source_status: string;
   source_channel_id: string | null;
   note: string | null;
@@ -155,6 +156,7 @@ export async function getElectionRaceBySlug(
         eps.id,
         eps.platform,
         eps.url,
+        eps.label,
         eps.status AS source_status,
         eps.channel_id AS source_channel_id,
         eps.note,
@@ -182,6 +184,7 @@ export async function getElectionRaceBySlug(
       id: row.id,
       platform: row.platform,
       url: row.url,
+      label: row.label,
       status: (connected ? 'connected' : row.source_status) as ElectionProfileSourceStatus,
       channelId: row.channel_id,
       note: row.note,

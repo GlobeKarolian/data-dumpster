@@ -343,6 +343,12 @@ export const electionProfileSources = pgTable('election_profile_sources', {
   candidateId: uuid('candidate_id').notNull().references(() => electionCandidates.id, { onDelete: 'cascade' }),
   platform: platformEnum('platform').notNull(),
   url: text('url').notNull(),
+  /**
+   * Editor-supplied disambiguation for candidates with several accounts on one
+   * platform, e.g. "personal", "campaign", "official". Purely presentational;
+   * identity and collection stay on the platform/url pair.
+   */
+  label: text('label'),
   status: text('status').notNull().default('pending'),
   channelId: uuid('channel_id').references(() => channels.id, { onDelete: 'set null' }),
   note: text('note'),

@@ -1,0 +1,1 @@
+ALTER TABLE "election_profile_sources" ADD COLUMN "label" text;
