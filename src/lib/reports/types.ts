@@ -252,7 +252,6 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
       { key: 'clicks', label: 'URL Clicks', numeric: true },
       { key: 'impressions', label: 'Impressions', numeric: true },
       { key: 'ctr', label: 'CTR', numeric: true },
-      { key: 'position', label: 'Avg Position', numeric: true },
     ],
   },
   {
@@ -266,7 +265,6 @@ export const MANUAL_SECTIONS: ManualSectionSpec[] = [
       { key: 'clicks', label: 'URL Clicks', numeric: true },
       { key: 'impressions', label: 'Impressions', numeric: true },
       { key: 'ctr', label: 'CTR', numeric: true },
-      { key: 'position', label: 'Avg Position', numeric: true },
     ],
   },
   {

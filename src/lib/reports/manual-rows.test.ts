@@ -16,8 +16,8 @@ test('maps the wider Looker comparison table onto the report search columns', ()
   const parsed = parseTable(source, spec.columns);
   assert.equal(parsed.headerDropped, true);
   assert.deepEqual(parsed.rows, [
-    ['lindsay clancy', '127,213', '1,991,242', '6.39%', ''],
-    ['boston globe', '47,781', '532,216', '8.98%', ''],
+    ['lindsay clancy', '127,213', '1,991,242', '6.39%'],
+    ['boston globe', '47,781', '532,216', '8.98%'],
   ]);
 });
 
@@ -27,8 +27,8 @@ test('repairs previously clipped search rows from the retained raw paste', () =>
     rows: [['Rank', 'Query', 'URL Clicks', 'Clicks % Δ', 'Impressions']],
     updatedAt: '2026-08-10T20:00:00.000Z',
   }), [
-    ['lindsay clancy', '127,213', '1,991,242', '6.39%', ''],
-    ['boston globe', '47,781', '532,216', '8.98%', ''],
+    ['lindsay clancy', '127,213', '1,991,242', '6.39%'],
+    ['boston globe', '47,781', '532,216', '8.98%'],
   ]);
 });
 

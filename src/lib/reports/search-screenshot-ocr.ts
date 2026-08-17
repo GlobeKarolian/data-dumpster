@@ -1,5 +1,6 @@
+/** Query, URL clicks, impressions, CTR — matching the section's columns. */
 export type SearchOcrRow = {
-  cells: [string, string, string, string, string];
+  cells: [string, string, string, string];
   confidence: number;
   source: string;
 };
@@ -113,7 +114,10 @@ function rowFromLine(words: TsvWord[], source: string): SearchOcrRow | null {
   // Looker Studio's comparison table has rank, clicks, click change,
   // impressions, impression change, CTR, and CTR change. The sanctioned API
   // table has clicks, impressions, CTR, and average position. Accept both and
-  // normalize them to the report's five stored columns.
+  // normalize them to the report's four stored columns. Average position is
+  // still located and validated when present — it anchors the right-edge
+  // metric detection and rejects junk lines — but it is not stored: the
+  // report dropped the column (operator decision, 17 Aug 2026).
   const comparisonTable = allMetricIndexes.length >= 7;
   const metricIndexes = comparisonTable
     ? allMetricIndexes.slice(-7)
@@ -151,7 +155,7 @@ function rowFromLine(words: TsvWord[], source: string): SearchOcrRow | null {
   ];
   const confidence = usedWords.reduce((sum, word) => sum + word.confidence, 0) / usedWords.length;
   return {
-    cells: [query, clicks, impressions, ctr, position],
+    cells: [query, clicks, impressions, ctr],
     confidence: Math.round(confidence),
     source,
   };
