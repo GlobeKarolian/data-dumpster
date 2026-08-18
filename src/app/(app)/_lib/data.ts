@@ -107,6 +107,13 @@ export async function loadTagPerformance(q: ScopedQuery) {
   }, []);
 }
 
+export async function loadTagSeries(q: ScopedQuery) {
+  return tryQuery(async () => {
+    const api = await metricsApi();
+    return api.getTagSeries(q);
+  }, []);
+}
+
 export async function loadPostTypePerformance(q: ScopedQuery) {
   return tryQuery(async () => {
     const api = await metricsApi();

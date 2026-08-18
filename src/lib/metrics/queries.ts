@@ -57,6 +57,7 @@ import type {
   SortKey,
   SummaryResult,
   TagRow,
+  TagSeriesRow,
   TopPostsQuery,
   TimeSeriesResult,
   UrlRow,
@@ -2284,6 +2285,69 @@ function aggregateTagPerformanceRows(rows: readonly TagQueryRow[]): TagRow[] {
  * them as a flat zero and quietly punish whichever tag happens to sit on the
  * channels we track least well.
  */
+/**
+ * Per-tag series: how a story rose and fell inside the selected window.
+ *
+ * Scoped exactly like every other analytics read — the landscape's companies,
+ * the window, the caller's platform/type filters — so a tag's curve counts the
+ * same posts the tables beside it count. Buckets use the report zone via
+ * date_trunc AT TIME ZONE, never the server clock, because a UTC server put
+ * Monday in the wrong week here once already.
+ *
+ * Only tags with a measured post in the window come back; a tag that did not
+ * fire is absent rather than a flat line of zeroes, which would read as "we
+ * covered this and nobody cared" instead of "this did not come up".
+ */
+export async function getTagSeries(
+  q: Scoped<AnalyticsQuery>,
+): Promise<TagSeriesRow[]> {
+  const scope = await resolveScope(q);
+  const range = rangeOf(q);
+  const g: Granularity = q.granularity ?? autoGranularity(range);
+  if (scope.companyIds.length === 0) return [];
+
+  const { rows } = await db.execute<{
+    tag_id: string; tag_name: string; tag_color: string | null;
+    bucket: string; post_count: string | number; engagement_total: string | number;
+  }>(sql`
+    SELECT t.id::text                AS tag_id,
+           t.name                    AS tag_name,
+           t.color                   AS tag_color,
+           date_trunc(${g}::text, p.posted_at AT TIME ZONE ${TZ})::date::text AS bucket,
+           count(DISTINCT p.id)::int AS post_count,
+           coalesce(sum(p.engagement_total), 0) AS engagement_total
+      FROM posts p
+      JOIN post_tag_assignments a ON a.post_id = p.id
+      JOIN post_tags t ON t.id = a.tag_id AND t.org_id = ${scope.orgId}::uuid
+     WHERE ${postWhere(scope, range, filtersOf(q))}
+     GROUP BY 1, 2, 3, 4`);
+
+  const byTag = new Map<string, TagSeriesRow>();
+  for (const r of rows) {
+    const existing = byTag.get(r.tag_id) ?? {
+      tag: { id: r.tag_id, name: r.tag_name, color: r.tag_color },
+      granularity: g,
+      points: [],
+    };
+    existing.points.push({
+      date: r.bucket,
+      posts: num(r.post_count),
+      engagement: num(r.engagement_total),
+    });
+    byTag.set(r.tag_id, existing);
+  }
+
+  // Fill the window so a gap is a visible zero inside the arc rather than a
+  // line that silently skips the day a story went quiet.
+  const buckets = bucketsFor(range, g);
+  for (const row of byTag.values()) {
+    const found = new Map(row.points.map((point) => [point.date, point]));
+    row.points = buckets.map((date) =>
+      found.get(date) ?? { date, posts: 0, engagement: 0 });
+  }
+  return [...byTag.values()];
+}
+
 export async function getTagPerformance(q: Scoped<AnalyticsQuery>): Promise<TagRow[]> {
   const scope = await resolveScope(q);
   if (scope.companyIds.length === 0) return [];
@@ -3179,6 +3243,7 @@ export const metrics: MetricsApi = {
   getTopPostsByPlatform,
   getPostedUrls,
   getTagPerformance,
+  getTagSeries,
   getPostTypePerformance,
   getPostingCadence,
   getFactSheet,

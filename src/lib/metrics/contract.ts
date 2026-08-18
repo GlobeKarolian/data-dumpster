@@ -150,6 +150,15 @@ export interface TimeSeriesResult {
   granularity: 'day' | 'week' | 'month';
 }
 
+export interface TagSeriesPoint { date: string; posts: number; engagement: number }
+
+/** One tag's arc across the selected window, bucketed in the report zone. */
+export interface TagSeriesRow {
+  tag: { id: string; name: string; color: string | null };
+  granularity: 'day' | 'week' | 'month';
+  points: TagSeriesPoint[];
+}
+
 export interface PostTypeRow {
   type: PostType;
   postCount: number;
@@ -219,6 +228,7 @@ export interface MetricsApi {
   getTopPostsByPlatform(q: TopPostsQuery): Promise<PostDto[]>;
   getPostedUrls(q: AnalyticsQuery & { groupBy?: 'domain' | 'url' }): Promise<UrlRow[]>;
   getTagPerformance(q: AnalyticsQuery): Promise<TagRow[]>;
+  getTagSeries(q: AnalyticsQuery): Promise<TagSeriesRow[]>;
   getPostTypePerformance(q: AnalyticsQuery): Promise<PostTypeRow[]>;
   getPostingCadence(q: AnalyticsQuery): Promise<PostingCadenceCell[]>;
   getFactSheet(q: AnalyticsQuery): Promise<FactSheet>;

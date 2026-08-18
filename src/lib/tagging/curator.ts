@@ -42,8 +42,17 @@ export const MIN_SUPPORT_POSTS = 4;
 export const MIN_SUPPORT_COMPANIES = 2;
 /** Groups ruled per pass; keeps one pass one completion. */
 export const GROUPS_PER_PASS = 6;
-/** Auto-creations allowed per org per day unless overridden. */
-export const AUTOCREATE_DAILY_DEFAULT = 3;
+/**
+ * Auto-creations allowed per org per day unless overridden.
+ *
+ * Raised from 3 once the curator had a track record: of its first 31 rulings
+ * it created 3 (Dan McKee, Elly De La Cruz, Luigi Mangione Case — all
+ * legitimate recurring subjects), deferred 13 to existing tags and rejected
+ * 15, while 69 more sat queued behind the cap. A governor that throttles good
+ * judgment just leaves the vocabulary stale in a different way. Retiring a
+ * bad tag is one edit and every creation is logged with its evidence.
+ */
+export const AUTOCREATE_DAILY_DEFAULT = 10;
 
 export const CURATION_SCHEMA = {
   type: 'object',

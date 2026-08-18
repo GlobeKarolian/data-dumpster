@@ -6,7 +6,8 @@ import { NoLandscape } from '@/components/common/no-landscape';
 import { TagPerformanceTable } from '@/components/tags/tag-performance-table';
 import { TagManager, type TagRecord } from '@/components/tags/tag-manager';
 import { analyticsQuery, resolveContext } from '../_lib/context';
-import { loadTagPerformance, query, type SearchParamsInput } from '../_lib/data';
+import { loadTagPerformance, loadTagSeries, query, type SearchParamsInput } from '../_lib/data';
+import { StoryLifecyclePanel } from '@/components/tags/story-lifecycle-panel';
 import { CrossChannelTabs } from '@/components/content/cross-channel-tabs';
 import { roleAtLeast } from '@/lib/roles';
 
@@ -68,8 +69,9 @@ export default async function PostTagsPage({
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
   const canManageTags = roleAtLeast(ctx.role, 'editor');
 
-  const [performance, tags, proposals, backlog, aiStatus] = await Promise.all([
+  const [performance, tagSeries, tags, proposals, backlog, aiStatus] = await Promise.all([
     loadTagPerformance(analyticsQuery(ctx)),
+    loadTagSeries(analyticsQuery(ctx)),
     canManageTags
       ? query<TagRow>(({ sql }) => sql`
           SELECT id, name, color, rule, ai_prompt
@@ -207,6 +209,20 @@ export default async function PostTagsPage({
           </Panel>
         </PageSection>
       ) : null}
+
+      {/*
+        * Volume tells you what a newsroom published; this tells you whether
+        * anyone was still reading. The two diverging — output steady, reaction
+        * gone — is the finding an editor can act on, so the reading names it.
+        */}
+      <PageSection
+        title="Story lifecycle"
+        description="How each story rose and fell in this window. Bars are engagement per day, with the peak filled in. Live stories are listed before bigger ones that have already ended."
+      >
+        <Panel title="Arcs in this window" error={tagSeries.error}>
+          <StoryLifecyclePanel rows={tagSeries.data} />
+        </Panel>
+      </PageSection>
 
       <PageSection
         title="Tag performance"
