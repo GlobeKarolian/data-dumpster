@@ -186,8 +186,11 @@ views, TikTok cover images and endpoint depth.
 
 ## What is built
 
-Cross-Channel and per-platform views, leaderboards, Social Posts, tags and AI
-tagging, Posted URLs, Story Cloud, Content Analysis, alerts, custom dashboards,
+Cross-Channel and per-platform views (including a Growth patterns section with
+stock-correct audience carry-forward), leaderboards, Social Posts, tags and AI
+tagging (LLM tagging is live: fingerprint-driven recompute, per-org spend
+ceiling, docs/AI-TAGGING.md), Posted URLs, Story Cloud, Content Analysis,
+alerts, custom dashboards,
 verified weekly briefs, exact-scope Ask, user and source administration,
 bring-your-own-model configuration, Weekly Reports, PowerPoint and sectioned CSV
 exports, email and tenant-bound Slack delivery, run-now, schedules and a delivery
@@ -210,9 +213,13 @@ person for review.
    release gate, not a later hardening task.
 2. Validate the full foundation, run the pooled-identity audit, apply
    every committed migration in `drizzle/` (currently `0000_collection_outcome.sql`
-   through `0021_truth_social_runner_recovery.sql`) via `npm run db:migrate`, deploy
+   through `0026_wikipedia_attention.sql`) via `npm run db:migrate`, deploy
    the matching application, then inspect health and collection outcomes in
-   production. Never reverse that migration-before-code order.
+   production. Never reverse that migration-before-code order. The migration
+   journal's `when` values must stay strictly increasing — 18 Aug 2026 found
+   three entries out of order being silently skipped by drizzle-kit while it
+   reported success; the ledger and journal are repaired and the next
+   workstream should take 0027.
 3. Resolved 17 August 2026: the official X API v2 is the chronological X
    source, adopted on pay-per-use billing. Watch the first weeks of spend via
    the ingestion audits and X's /2/usage/tweets endpoint.
@@ -221,6 +228,48 @@ person for review.
 5. Tune alerts with real newsroom use, activate only approved brief/report
    schedules, and finish the Post Library and remaining export/UX parity work.
 6. Resolve GBH News landscape membership as a product decision.
+
+
+## Session additions, 17-18 August 2026
+
+Landed on main and deployed, beyond the numbered priorities above:
+
+- X collection restored end to end via the official API (the fifth source
+  control point, `selectedPublicSourceKey`, was still planning Bright Data).
+  Spend is metered in `/api/health` alongside AI usage and Bright Data
+  delivered-record volume (labelled estimate).
+- Nightly off-Neon backups: every table as gzipped NDJSON to the private Blob
+  store, resumable, manifest-is-completion, staleness degrades health
+  (`src/lib/backup.ts`).
+- Weekly report search sections read screenshots with the org's vision model
+  (`/api/reports/search-screenshot`); rows save on arrival. Tesseract remains
+  only as history; its public/ocr assets are dead weight pending removal.
+- Adobe importer refuses cross-suite panels for any suite including STAT; the
+  contaminated 8/10-8/16 statReferral section was repaired from STAT's own
+  export (backup of the bad section in outputs/).
+- RivalIQ history imported: 7,465 follower readings into audience_snapshots
+  (visibility='rivaliq-import') and 7,760 brand-week flows into
+  external_brand_metrics, surfaced in Growth patterns.
+- Audience series carry stocks forward across mixed cadences (90-day bound);
+  bucket keys come from lib/dates bucketKey — the server-clock Monday drift
+  broke every week-granularity chart on UTC and passed locally in Eastern.
+- Facebook net-change rounding artifacts are flagged (≈) via
+  metrics/source-rounding; Boston 25's +106,894 was a vendor rounding-bucket
+  flip, not growth.
+- Election Center: per-candidate Wikipedia lookup attention (official
+  Wikimedia API, user traffic only), one year backfilled, daily refresh in the
+  recovery cron. Instagram/Threads posters now archive to Blob before their
+  signed URLs expire.
+- Landscapes: Globe New Hampshire Market and Globe Rhode Island Market created
+  with 69 verified channels (see git log for the rebrand notes: Coastal ABC,
+  Ocean State Media). MLB demands widened to Opening Day 2026-03-26.
+- OpenRouter is a first-class model provider (enum value, key shape, picker).
+
+Open decision awaiting the operator: window-scoped completeness for WoW
+deltas — the current gate conflates unfinished May backfill with an incomplete
+report week, but for 8/10-8/16 specifically it is also correctly masking the
+X outage hole in the prior week. Do not relax the gate without amending the
+contract note on `MetricRow.complete`.
 
 ## Working method
 
