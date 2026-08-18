@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 import {
   buildTaggingMessages,
   nextRetryDelayMs,
+  normalizeLabel,
   taxonomyFingerprint,
   validateAssignments,
+  validateSuggestions,
 } from './ai-tagger';
 
 const TAGS = [
@@ -60,6 +62,46 @@ describe('assignment validation', () => {
   });
 });
 
+describe('suggestion validation', () => {
+  it('keeps plausible labels, drops unknown posts and echoes of existing tags', () => {
+    const kept = validateSuggestions({
+      suggestions: [
+        { postId: 'p1', label: 'Karen Read' },
+        { postId: 'p1', label: 'CRIME' },              // existing tag, case-insensitive
+        { postId: 'p-unknown', label: 'Karen Read' },  // not a claimed post
+        { postId: 'p2', label: '' },                   // empty
+        { postId: 'p2', label: 'x'.repeat(60) },       // too long
+      ],
+    }, TAGS, POSTS);
+    assert.deepEqual(kept, [{ postId: 'p1', label: 'Karen Read', labelNorm: 'karen read' }]);
+  });
+
+  it('caps suggestions per post and dedupes normalized labels', () => {
+    const kept = validateSuggestions({
+      suggestions: [
+        { postId: 'p1', label: 'Karen Read' },
+        { postId: 'p1', label: 'karen  read' },  // same after normalization
+        { postId: 'p1', label: 'MBTA' },
+        { postId: 'p1', label: 'Steward Health' },  // third distinct: over the cap
+      ],
+    }, TAGS, POSTS);
+    assert.equal(kept.length, 2);
+    assert.deepEqual(kept.map((s) => s.labelNorm), ['karen read', 'mbta']);
+  });
+
+  it('treats a malformed payload as zero suggestions, never as an exception', () => {
+    assert.deepEqual(validateSuggestions(null, TAGS, POSTS), []);
+    assert.deepEqual(validateSuggestions({ suggestions: 'x' }, TAGS, POSTS), []);
+  });
+});
+
+describe('label normalization', () => {
+  it('ignores case, spacing and trivial punctuation', () => {
+    assert.equal(normalizeLabel('  Karen   Read! '), 'karen read');
+    assert.equal(normalizeLabel('“MBTA”'), 'mbta');
+  });
+});
+
 describe('prompt build', () => {
   it('carries every tag definition and every post id', () => {
     const [system, user] = buildTaggingMessages(TAGS, POSTS);
@@ -67,6 +109,18 @@ describe('prompt build', () => {
     assert.match(system.content, /Clancy murder trial/);
     assert.match(user.content, /POST p1/);
     assert.match(user.content, /POST p2/);
+  });
+
+  it('demands the full stack: general categories AND specific topics together', () => {
+    const [system] = buildTaggingMessages(TAGS, POSTS);
+    assert.match(system.content, /EVERY tag whose definition fits/);
+    assert.match(system.content, /never replace their general category/);
+  });
+
+  it('asks for suggestions only where the taxonomy has no word', () => {
+    const [system] = buildTaggingMessages(TAGS, POSTS);
+    assert.match(system.content, /NO adequate tag/);
+    assert.match(system.content, /At most 2 per post/);
   });
 
   it('never lets a single post flood the prompt', () => {

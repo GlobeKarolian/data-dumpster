@@ -14,7 +14,7 @@
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { postTagAssignments, postTags } from '@/db/schema';
+import { postTagAssignments, postTags, tagSuggestions } from '@/db/schema';
 import { complete } from '@/lib/ai/client';
 import { ModelError } from '@/lib/ai/types';
 import {
@@ -23,6 +23,7 @@ import {
   TAGGING_SCHEMA,
   taxonomyFingerprint,
   validateAssignments,
+  validateSuggestions,
   type AiTagDefinition,
   type TaggablePostContent,
 } from './ai-tagger';
@@ -335,6 +336,20 @@ async function runGroup(orgId: string, group: CompanyTagGroup): Promise<GroupRes
         })))
         .onConflictDoNothing();
       result.assignmentsWritten = assignments.length;
+    }
+    // 2b. Bank what the model wished it could say. Suggestions are evidence
+    //     for the curator, never assignments; the PK makes a re-run of this
+    //     batch (crash before settle) idempotent.
+    const suggestions = validateSuggestions(payload, tags, readable);
+    if (suggestions.length > 0) {
+      await db.insert(tagSuggestions)
+        .values(suggestions.map((s) => ({
+          orgId,
+          postId: s.postId,
+          label: s.label,
+          labelNorm: s.labelNorm,
+        })))
+        .onConflictDoNothing();
     }
     // 3. The cursor moves last.
     await settle(orgId, readableIds, fingerprint, 'succeeded', completion.model);

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { PageSection } from '@/components/shell/page-section';
 import { Panel } from '@/components/common/panel';
 import { NoLandscape } from '@/components/common/no-landscape';
@@ -28,6 +29,27 @@ type AiStatusRow = {
   spend_today_usd: string | number;
 };
 
+type ProposalRow = {
+  verdict: string;
+  label_norm: string;
+  name: string | null;
+  rationale: string | null;
+  support_posts: number;
+  support_companies: number;
+  covered_by_name: string | null;
+  created_tag_id: string | null;
+  created_at: string;
+};
+
+type SuggestionBacklogRow = { open_labels: string | number; open_sightings: string | number };
+
+const VERDICT_TONE: Record<string, string> = {
+  created: 'text-emerald-700 dark:text-emerald-400',
+  covered: 'text-zinc-500',
+  rejected: 'text-zinc-400',
+  queued: 'text-amber-700 dark:text-amber-400',
+};
+
 function StatusFigure({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-28">
@@ -46,7 +68,7 @@ export default async function PostTagsPage({
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
   const canManageTags = roleAtLeast(ctx.role, 'editor');
 
-  const [performance, tags, aiStatus] = await Promise.all([
+  const [performance, tags, proposals, backlog, aiStatus] = await Promise.all([
     loadTagPerformance(analyticsQuery(ctx)),
     canManageTags
       ? query<TagRow>(({ sql }) => sql`
@@ -56,6 +78,24 @@ export default async function PostTagsPage({
            ORDER BY name ASC
         `)
       : Promise.resolve({ data: [] as TagRow[], error: null }),
+    query<ProposalRow>(({ sql }) => sql`
+      SELECT pr.verdict, pr.label_norm, pr.name, pr.rationale,
+             pr.support_posts, pr.support_companies,
+             ct.name AS covered_by_name,
+             pr.created_tag_id::text AS created_tag_id,
+             pr.created_at::text AS created_at
+        FROM tag_proposals pr
+        LEFT JOIN post_tags ct ON ct.id = pr.covered_by_tag_id
+       WHERE pr.org_id = ${ctx.orgId}::uuid
+         AND pr.created_at > now() - interval '14 days'
+       ORDER BY pr.created_at DESC
+       LIMIT 12
+    `),
+    query<SuggestionBacklogRow>(({ sql }) => sql`
+      SELECT count(DISTINCT label_norm) AS open_labels, count(*) AS open_sightings
+        FROM tag_suggestions
+       WHERE org_id = ${ctx.orgId}::uuid AND status = 'open'
+    `),
     query<AiStatusRow>(({ sql }) => sql`
       SELECT
         (SELECT count(*) FROM ai_tag_state
@@ -93,8 +133,9 @@ export default async function PostTagsPage({
           title="AI tagging activity"
           description="The model reads every post in scope once, and re-reads when a tag's definition or scope changes. Refresh for current numbers."
           actions={(
-            <a
+            <Link
               href="/post-tags/live"
+              prefetch={false}
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               <span className="relative flex h-2 w-2">
@@ -102,7 +143,7 @@ export default async function PostTagsPage({
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
               </span>
               Watch live
-            </a>
+            </Link>
           )}
         >
           <Panel title="Pipeline" error={aiStatus.error}>
@@ -117,6 +158,56 @@ export default async function PostTagsPage({
           </Panel>
         </PageSection>
       ) : null}
+      {/*
+        * The vocabulary governs itself in public. The tagger flags topics the
+        * taxonomy has no word for; the curator model rules on each with the
+        * evidence shown here. Nothing in this panel is an assignment — it is
+        * the audit trail of how the tag list came to be what it is.
+        */}
+      {proposals.data.length > 0 || Number(backlog.data[0]?.open_labels ?? 0) > 0 ? (
+        <PageSection
+          title="Vocabulary curation"
+          description={
+            'The tagging model suggests topics it has no tag for; a stronger model rules on each once '
+            + 'enough evidence accumulates. Created tags start applying automatically and can be retired '
+            + 'by clearing their description. Open backlog: '
+            + Number(backlog.data[0]?.open_labels ?? 0).toLocaleString() + ' topics across '
+            + Number(backlog.data[0]?.open_sightings ?? 0).toLocaleString() + ' sightings.'
+          }
+        >
+          <Panel title="Recent rulings" error={proposals.error}>
+            {proposals.data.length === 0 ? (
+              <p className="px-1 py-2 text-xs text-zinc-500">
+                No rulings yet. The curator waits for a topic to be suggested on several posts
+                across several outlets before spending a judgment on it.
+              </p>
+            ) : (
+              <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                {proposals.data.map((p, i) => (
+                  <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-1 py-2 text-xs">
+                    <span className={'font-semibold uppercase tracking-wide ' + (VERDICT_TONE[p.verdict] ?? 'text-zinc-500')}>
+                      {p.verdict}
+                    </span>
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {p.name ?? p.label_norm}
+                    </span>
+                    {p.verdict === 'covered' && p.covered_by_name ? (
+                      <span className="text-zinc-500">→ {p.covered_by_name}</span>
+                    ) : null}
+                    <span className="text-zinc-400">
+                      {p.support_posts} posts · {p.support_companies} outlets
+                    </span>
+                    {p.rationale ? (
+                      <span className="w-full text-zinc-500 sm:w-auto sm:flex-1">{p.rationale}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </PageSection>
+      ) : null}
+
       <PageSection
         title="Tag performance"
         description="What each tag earned in this window, and whether posts carrying it beat the same brand’s own average. Lift is the column that matters: a tag can carry a lot of engagement simply because it is applied to a lot of posts."

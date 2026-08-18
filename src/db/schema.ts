@@ -1115,6 +1115,69 @@ export const aiTagState = pgTable('ai_tag_state', {
 ]);
 
 /**
+ * What the tagger wished it could say.
+ *
+ * While applying the org's taxonomy, the tagging model may name up to two
+ * topics per post that deserve a tag but have none ("Xander Bogaerts",
+ * "commercial real estate"). Suggestions are NEVER assignments — they carry
+ * no analytical weight and appear on no chart. They are evidence, keyed by
+ * normalized label so repeated sightings of the same topic pile up, and the
+ * curator pass turns piles into verdicts. This is the drift sensor: a story
+ * the taxonomy has no word for shows up here before anyone asks why the
+ * charts missed it.
+ */
+export const tagSuggestions = pgTable('tag_suggestions', {
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  postId: uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  /** The model's words, verbatim, for the audit trail. */
+  label: text('label').notNull(),
+  /** Lowercased/collapsed key that groups sightings of the same topic. */
+  labelNorm: text('label_norm').notNull(),
+  status: text('status').notNull().default('open'),
+  /** covered | created | rejected — how the curator resolved this sighting. */
+  resolution: text('resolution'),
+  resolvedTagId: uuid('resolved_tag_id').references(() => postTags.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+}, (t) => [
+  primaryKey({ name: 'tag_suggestions_pk', columns: [t.orgId, t.postId, t.labelNorm] }),
+  index('tag_suggestions_open_idx').on(t.orgId, t.status, t.labelNorm),
+]);
+
+/**
+ * The curator's rulings, one row per label it judged.
+ *
+ * A stronger model reads a suggestion group (label + evidence posts + the
+ * full existing taxonomy) and rules: covered by an existing tag, worth
+ * creating (with a drafted name, definition and parent), or rejected as
+ * one-off noise. Rulings are the audit trail for every auto-created tag —
+ * the evidence column holds the post ids and outlet spread that justified
+ * it, so "why does this tag exist" always has an answer.
+ */
+export const tagProposals = pgTable('tag_proposals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  labelNorm: text('label_norm').notNull(),
+  /** covered | created | rejected | queued (awaiting operator approval). */
+  verdict: text('verdict').notNull(),
+  name: text('name'),
+  definition: text('definition'),
+  parentTagId: uuid('parent_tag_id').references(() => postTags.id, { onDelete: 'set null' }),
+  coveredByTagId: uuid('covered_by_tag_id').references(() => postTags.id, { onDelete: 'set null' }),
+  confidence: doublePrecision('confidence'),
+  rationale: text('rationale'),
+  supportPosts: integer('support_posts').notNull().default(0),
+  supportCompanies: integer('support_companies').notNull().default(0),
+  evidence: jsonb('evidence'),
+  createdTagId: uuid('created_tag_id').references(() => postTags.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+}, (t) => [
+  index('tag_proposals_org_time_idx').on(t.orgId, t.createdAt),
+  index('tag_proposals_org_label_idx').on(t.orgId, t.labelNorm),
+]);
+
+/**
  * Daily Wikipedia pageviews per article, from the official Wikimedia API.
  *
  * This is LOOKUP ATTENTION, not search volume: how many humans opened the

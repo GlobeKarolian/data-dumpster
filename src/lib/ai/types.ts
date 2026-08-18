@@ -41,6 +41,15 @@ export interface CompletionRequest {
   temperature?: number;
   /** When set, the provider is asked for JSON matching this JSON Schema. */
   jsonSchema?: Record<string, unknown>;
+  /**
+   * Ask the connection's provider for a DIFFERENT model than the connection's
+   * default — same key, same endpoint, same metering. Exists for the tag
+   * curator, which needs a stronger head than the high-volume tagger on the
+   * same OpenRouter account. Honored by the OpenAI-dialect providers (OpenAI,
+   * OpenRouter, compatible endpoints); Azure routes by deployment URL and
+   * ignores it, as do Anthropic/Google direct connections.
+   */
+  model?: string;
   signal?: AbortSignal;
 }
 

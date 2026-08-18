@@ -88,7 +88,9 @@ export async function chatCompletion(
   conn: ResolvedModelConnection,
   req: CompletionRequest,
 ): Promise<CompletionResult> {
-  const reasoning = isReasoningModel(t.model);
+  // A per-call model override rides the same connection (see CompletionRequest.model).
+  const model = req.model || t.model;
+  const reasoning = isReasoningModel(model);
 
   /**
    * Reasoning models bill and consume internal reasoning tokens against the
@@ -110,7 +112,7 @@ export async function chatCompletion(
   const limit = reasoning ? Math.max(requested, conn.maxOutputTokens) : requested;
 
   const payload: Record<string, unknown> = {
-    model: t.model,
+    model,
     /*
      * A message with images becomes the OpenAI content-parts array; a plain
      * message stays a bare string. Both are valid in this dialect, and not
@@ -214,7 +216,7 @@ export async function chatCompletion(
     json,
     inputTokens: body.usage?.prompt_tokens ?? 0,
     outputTokens: body.usage?.completion_tokens ?? 0,
-    model: body.model ?? t.model,
+    model: body.model ?? model,
     latencyMs: Date.now() - started,
     ...(typeof reportedCost === 'number' && Number.isFinite(reportedCost) && reportedCost >= 0
       ? { reportedCostUsd: reportedCost }

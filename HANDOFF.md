@@ -278,6 +278,21 @@ Landed on main and deployed, beyond the numbered priorities above:
 - Every tag in the product links to the Social Posts explorer filtered to
   that tag with the viewer's scope carried (`TagLink`, plus name links on the
   performance table and manage list; `tags` was already an explorer filter).
+- The vocabulary governs itself (migration 0028 — NOTE: 0028 was reserved for
+  the other workstream but they had not landed it; their next free slot is
+  0029). The tagger now applies the FULL stack of applicable tags (general
+  category plus specific topic together) and may suggest up to two missing
+  topics per post; suggestions land in tag_suggestions as evidence, never as
+  assignments. A curator pass at the tail of the tag cron sends
+  well-supported suggestion groups to a stronger model
+  (`AI_TAG_CURATOR_MODEL`, default claude-sonnet-5 via the same connection)
+  which rules covered/create/reject; rulings audit in tag_proposals and
+  surface on /post-tags. Mode dial `AI_TAG_CURATION_MODE` (auto|queue,
+  default auto), caps `AI_TAG_AUTOCREATE_DAILY` (3) and
+  `AI_TAG_CURATION_DAILY_USD` (1). The operator deleted the original
+  taxonomy on 18 Aug; the seeded replacement (beats, stories, sports
+  families, teams, players by mention volume, business sub-beats, MLB set)
+  is in scripts/seed-taxonomy output — see tag_proposals and git log.
 
 Open decision awaiting the operator: window-scoped completeness for WoW
 deltas — the current gate conflates unfinished May backfill with an incomplete

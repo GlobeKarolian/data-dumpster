@@ -46,11 +46,15 @@ export function taxonomyFingerprint(tags: AiTagDefinition[]): string {
   return createHash('sha256').update(canon).digest('hex');
 }
 
-/** Strict response shape: assignments only, ids only, confidence required. */
+/**
+ * Strict response shape. Assignments reference ids only; suggestions are
+ * free-text labels for topics the taxonomy has no word for, and they never
+ * become assignments — they become evidence for the curator.
+ */
 export const TAGGING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['assignments'],
+  required: ['assignments', 'suggestions'],
   properties: {
     assignments: {
       type: 'array',
@@ -62,6 +66,18 @@ export const TAGGING_SCHEMA = {
           postId: { type: 'string' },
           tagId: { type: 'string' },
           confidence: { type: 'number' },
+        },
+      },
+    },
+    suggestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['postId', 'label'],
+        properties: {
+          postId: { type: 'string' },
+          label: { type: 'string' },
         },
       },
     },
@@ -82,12 +98,25 @@ export function buildTaggingMessages(
     'The available tags, with the definition an editor wrote for each:',
     ...tagLines,
     '',
-    'Rules:',
+    'Rules for assignments:',
     '1. Apply a tag ONLY when the post clearly matches its definition. When in doubt, do not tag.',
-    '2. A post may receive several tags, one, or none. Most posts match none; that is normal.',
-    '3. Use ONLY tag ids from the list above, and ONLY post ids from the input. Never invent ids.',
-    '4. confidence is your certainty the definition applies, from 0 to 1.',
-    '5. Judge from the post content alone. Do not guess at context you cannot see.',
+    '2. Apply EVERY tag whose definition fits — the general category AND the specific topics '
+      + 'together, never one instead of the other. A post about a Red Sox trade gets the sports '
+      + 'category, the baseball tag, the team tag, and the player’s tag if one is defined. '
+      + 'A biotech funding story gets the business category and the biotech tag. Specific tags '
+      + 'never replace their general category; they ride along with it.',
+    '3. A post may receive many tags, one, or none. Untaggable posts are normal.',
+    '4. Use ONLY tag ids from the list above, and ONLY post ids from the input. Never invent ids.',
+    '5. confidence is your certainty the definition applies, from 0 to 1.',
+    '6. Judge from the post content alone. Do not guess at context you cannot see.',
+    '',
+    'Rules for suggestions:',
+    '7. When a post’s clear primary subject — a person, team, company, industry, or running '
+      + 'story — has NO adequate tag in the list, add a suggestion: the post id and a short label '
+      + 'naming the subject (2 to 4 words, proper nouns preferred). At most 2 per post.',
+    '8. Suggest only subjects likely to recur in news coverage. Never suggest a subject an '
+      + 'existing tag already covers, and never use suggestions as a substitute for assignments.',
+    '9. If nothing is missing, return an empty suggestions array. Most batches need none.',
     'Return JSON matching the schema exactly.',
   ].join('\n');
 
@@ -143,6 +172,66 @@ export function validateAssignments(
     }
   }
   return { assignments: [...byKey.values()], dropped };
+}
+
+export interface ValidatedSuggestion {
+  postId: string;
+  label: string;
+  labelNorm: string;
+}
+
+/** Grouping key for a label: case, spacing and trivial punctuation ignored. */
+export function normalizeLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[.,'"“”‘’!?()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const MAX_SUGGESTIONS_PER_POST = 2;
+const MAX_LABEL_CHARS = 48;
+
+/**
+ * Keep only suggestions that name a claimed post and carry a plausible label.
+ *
+ * A label that case-insensitively equals an existing tag's name is dropped:
+ * the model was told those are covered, and letting them through would let
+ * the suggestion pile re-litigate the taxonomy it was given. Everything kept
+ * is evidence, never an assignment.
+ */
+export function validateSuggestions(
+  payload: unknown,
+  tags: AiTagDefinition[],
+  posts: TaggablePostContent[],
+): ValidatedSuggestion[] {
+  const postIds = new Set(posts.map((p) => p.id));
+  const tagNames = new Set(tags.map((t) => normalizeLabel(t.name)));
+  const perPost = new Map<string, number>();
+  const seen = new Set<string>();
+  const out: ValidatedSuggestion[] = [];
+
+  const list = (payload as { suggestions?: unknown })?.suggestions;
+  if (!Array.isArray(list)) return out;
+
+  for (const item of list) {
+    if (typeof item !== 'object' || item === null) continue;
+    const s = item as Record<string, unknown>;
+    const postId = typeof s.postId === 'string' ? s.postId : '';
+    const label = typeof s.label === 'string' ? s.label.trim() : '';
+    if (!postIds.has(postId)) continue;
+    if (!label || label.length > MAX_LABEL_CHARS) continue;
+    const labelNorm = normalizeLabel(label);
+    if (!labelNorm || tagNames.has(labelNorm)) continue;
+    const count = perPost.get(postId) ?? 0;
+    if (count >= MAX_SUGGESTIONS_PER_POST) continue;
+    const key = `${postId} ${labelNorm}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    perPost.set(postId, count + 1);
+    out.push({ postId, label, labelNorm });
+  }
+  return out;
 }
 
 /** Retry backoff: 10 minutes doubling, capped at a day. */
