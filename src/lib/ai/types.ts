@@ -12,9 +12,27 @@ export type ModelProviderId =
   | 'anthropic' | 'openai' | 'google' | 'azure_openai'
   | 'bedrock' | 'openrouter' | 'openai_compatible' | 'ollama';
 
+/**
+ * An image attached to a message.
+ *
+ * Kept as a sibling of `content` rather than turning `content` into a parts
+ * union, because every provider encodes image parts differently and a union
+ * would push that difference into every call site. Providers that cannot send
+ * images fail loudly in their own dialect instead of dropping the attachment,
+ * which would otherwise produce a confident answer about an image the model
+ * never saw.
+ */
+export interface ModelImage {
+  /** e.g. 'image/png'. */
+  mediaType: string;
+  /** Raw base64, no data: prefix. */
+  base64: string;
+}
+
 export interface ModelMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  images?: ModelImage[];
 }
 
 export interface CompletionRequest {

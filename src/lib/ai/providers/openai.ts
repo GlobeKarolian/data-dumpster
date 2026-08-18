@@ -103,7 +103,26 @@ export async function chatCompletion(
 
   const payload: Record<string, unknown> = {
     model: t.model,
-    messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+    /*
+     * A message with images becomes the OpenAI content-parts array; a plain
+     * message stays a bare string. Both are valid in this dialect, and not
+     * rewriting every message keeps the wire format identical to what it was
+     * before images existed for the overwhelming majority of calls.
+     */
+    messages: req.messages.map((m) => (
+      m.images?.length
+        ? {
+          role: m.role,
+          content: [
+            ...(m.content ? [{ type: 'text', text: m.content }] : []),
+            ...m.images.map((image) => ({
+              type: 'image_url',
+              image_url: { url: `data:${image.mediaType};base64,${image.base64}` },
+            })),
+          ],
+        }
+        : { role: m.role, content: m.content }
+    )),
   };
   if (reasoning) payload.max_completion_tokens = limit;
   else {

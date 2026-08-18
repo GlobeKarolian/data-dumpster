@@ -1,7 +1,13 @@
-/** Query, URL clicks, impressions, CTR — matching the section's columns. */
+/**
+ * Query, URL clicks, impressions, CTR — matching the section's columns.
+ *
+ * `confidence` is null when the rows came from a vision model, which scores
+ * the response as a whole rather than per row. Null means "not scored", and
+ * the review grid treats it as such instead of showing a fake certainty.
+ */
 export type SearchOcrRow = {
   cells: [string, string, string, string];
-  confidence: number;
+  confidence: number | null;
   source: string;
 };
 

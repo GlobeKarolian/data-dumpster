@@ -52,9 +52,11 @@ function errorMessage(status: number, body: string): string {
   return body.trim().slice(0, 400) || `HTTP ${status}`;
 }
 
+type AnthropicContent = string | AnthropicBlock[];
+
 function splitSystem(messages: ModelMessage[]): {
   system: string;
-  turns: { role: 'user' | 'assistant'; content: string }[];
+  turns: { role: 'user' | 'assistant'; content: AnthropicContent }[];
 } {
   const system = messages
     .filter((m) => m.role === 'system')
@@ -62,12 +64,29 @@ function splitSystem(messages: ModelMessage[]): {
     .filter(Boolean)
     .join('\n\n');
 
-  const turns: { role: 'user' | 'assistant'; content: string }[] = [];
+  const turns: { role: 'user' | 'assistant'; content: AnthropicContent }[] = [];
+  const blocksFor = (m: ModelMessage): AnthropicContent => (
+    m.images?.length
+      ? [
+        ...(m.content ? [{ type: 'text' as const, text: m.content }] : []),
+        ...m.images.map((image) => ({
+          type: 'image' as const,
+          source: { type: 'base64' as const, media_type: image.mediaType, data: image.base64 },
+        })),
+      ] as AnthropicBlock[]
+      : m.content
+  );
   for (const m of messages) {
     if (m.role === 'system') continue;
     const last = turns[turns.length - 1];
-    if (last && last.role === m.role) last.content = `${last.content}\n\n${m.content}`;
-    else turns.push({ role: m.role, content: m.content });
+    // Only coalesce plain text turns. Concatenating a block array with a
+    // string would silently drop the image blocks.
+    if (last && last.role === m.role
+      && typeof last.content === 'string' && !m.images?.length) {
+      last.content = `${last.content}\n\n${m.content}`;
+    } else {
+      turns.push({ role: m.role, content: blocksFor(m) });
+    }
   }
   if (turns.length === 0 || turns[0].role !== 'user') {
     turns.unshift({ role: 'user', content: 'Proceed.' });

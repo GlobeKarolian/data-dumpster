@@ -4,11 +4,7 @@ import * as React from 'react';
 import { AlertTriangle, FileImage, Loader2, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import {
-  mergeSearchOcrRows,
-  searchRowsFromTsv,
-  type SearchOcrRow,
-} from '@/lib/reports/search-screenshot-ocr';
+import type { SearchOcrRow } from '@/lib/reports/search-screenshot-ocr';
 import type { ManualSectionSpec, ManualTable } from '@/lib/reports/types';
 import { rowsToTsv } from '@/lib/reports/tsv';
 
@@ -19,8 +15,20 @@ const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 type ImportState =
   | { status: 'idle' }
   | { status: 'reading'; fileName: string; fileIndex: number; fileCount: number; progress: number }
-  | { status: 'review'; rows: SearchOcrRow[]; fileNames: string[] }
+  | { status: 'review'; rows: SearchOcrRow[]; fileNames: string[]; rejected: string[] }
   | { status: 'error'; message: string };
+
+/** Files are sent as base64 to the reader; nothing is stored server-side. */
+async function toBase64(file: File): Promise<{ mediaType: string; base64: string }> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const CHUNK = 0x8000; // Avoid blowing the argument limit on large captures.
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return { mediaType: file.type, base64: btoa(binary) };
+}
 
 export function SearchScreenshotImport({
   spec,
@@ -54,62 +62,57 @@ export function SearchScreenshotImport({
       return;
     }
 
-    let activeIndex = 0;
     setState({
       status: 'reading',
-      fileName: incoming[0].name,
+      fileName: incoming.length === 1 ? incoming[0].name : `${incoming.length} screenshots`,
       fileIndex: 0,
       fileCount: incoming.length,
       progress: 0,
     });
 
-    let worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | null = null;
     try {
-      const { createWorker, OEM, PSM } = await import('tesseract.js');
-      worker = await createWorker('eng', OEM.LSTM_ONLY, {
-        workerPath: '/ocr/worker.min.js',
-        corePath: '/ocr/tesseract-core-lstm.wasm.js',
-        langPath: '/ocr',
-        logger: (message) => {
-          const progress = Number.isFinite(message.progress) ? message.progress : 0;
-          setState({
-            status: 'reading',
-            fileName: incoming[activeIndex]?.name ?? 'screenshot',
-            fileIndex: activeIndex,
-            fileCount: incoming.length,
-            progress: Math.max(0, Math.min(1, (activeIndex + progress) / incoming.length)),
-          });
-        },
+      const images = await Promise.all(incoming.map(toBase64));
+      /*
+       * All captures go in one request. They are pages of a single table, and
+       * reading them together lets the model keep the row order across a page
+       * break instead of us stitching two independent guesses afterwards.
+       */
+      const response = await fetch('/api/reports/search-screenshot', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ images }),
       });
-      await worker.setParameters({
-        tessedit_pageseg_mode: PSM.AUTO,
-        preserve_interword_spaces: '1',
-        user_defined_dpi: '200',
-      });
+      const payload = await response.json().catch(() => null) as {
+        rows?: SearchOcrRow[];
+        rejected?: string[];
+        error?: string;
+        message?: string;
+      } | null;
 
-      const groups: SearchOcrRow[][] = [];
-      for (activeIndex = 0; activeIndex < incoming.length; activeIndex += 1) {
-        const file = incoming[activeIndex];
-        setState({
-          status: 'reading',
-          fileName: file.name,
-          fileIndex: activeIndex,
-          fileCount: incoming.length,
-          progress: activeIndex / incoming.length,
-        });
-        const result = await worker.recognize(file, {}, { text: true, tsv: true });
-        groups.push(searchRowsFromTsv(result.data.tsv ?? '', file.name));
-      }
-
-      const rows = mergeSearchOcrRows(groups);
-      if (rows.length === 0) {
+      if (!response.ok) {
         setState({
           status: 'error',
-          message: 'No complete Query, URL Clicks, Impressions, and URL CTR rows were found. Crop closer to the table and try again.',
+          message: payload?.message
+            ?? payload?.error
+            ?? `The screenshots could not be read (${response.status}).`,
         });
         return;
       }
-      setState({ status: 'review', rows, fileNames: incoming.map((file) => file.name) });
+
+      const rows = payload?.rows ?? [];
+      if (rows.length === 0) {
+        setState({
+          status: 'error',
+          message: 'No Query, URL Clicks, Impressions, and URL CTR rows were found. Crop closer to the table and try again.',
+        });
+        return;
+      }
+      setState({
+        status: 'review',
+        rows,
+        fileNames: incoming.map((file) => file.name),
+        rejected: payload?.rejected ?? [],
+      });
     } catch (error) {
       setState({
         status: 'error',
@@ -117,8 +120,6 @@ export function SearchScreenshotImport({
           ? `The screenshots could not be read: ${error.message}`
           : 'The screenshots could not be read.',
       });
-    } finally {
-      await worker?.terminate().catch(() => undefined);
     }
   };
 
@@ -143,7 +144,8 @@ export function SearchScreenshotImport({
   };
 
   if (state.status === 'review') {
-    const lowConfidence = state.rows.filter((row) => row.confidence < 70).length;
+    // null means the reader does not score rows; only a real number can be low.
+    const lowConfidence = state.rows.filter((row) => row.confidence !== null && row.confidence < 70).length;
     return (
       <div className="space-y-3 rounded-md border border-sky-200 bg-sky-50/60 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -152,7 +154,7 @@ export function SearchScreenshotImport({
               Review {state.rows.length} extracted {state.rows.length === 1 ? 'row' : 'rows'}
             </p>
             <p className="mt-0.5 text-[11px] text-zinc-600 dark:text-zinc-400">
-              From {state.fileNames.length} {state.fileNames.length === 1 ? 'image' : 'images'}. Correct any OCR mistakes before using these rows.
+              From {state.fileNames.length} {state.fileNames.length === 1 ? 'image' : 'images'}. Check the figures against the screenshot before using them.
             </p>
           </div>
           <div className="flex gap-2">
@@ -178,6 +180,22 @@ export function SearchScreenshotImport({
             {lowConfidence} {lowConfidence === 1 ? 'row has' : 'rows have'} low OCR confidence. Check the highlighted row before accepting it.
           </div>
         ) : null}
+        {/*
+          * The whole point of the rewrite. The old parser dropped unreadable
+          * rows silently, so a table missing a third of its clicks looked
+          * exactly like a complete one. Anything discarded is named here.
+          */}
+        {state.rejected.length > 0 ? (
+          <div className="flex gap-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              {state.rejected.length} {state.rejected.length === 1 ? 'row was' : 'rows were'} discarded as unreadable
+              {' '}({state.rejected.slice(0, 3).join('; ')}
+              {state.rejected.length > 3 ? `; and ${state.rejected.length - 3} more` : ''}).
+              Compare against the screenshot and add anything missing by hand.
+            </span>
+          </div>
+        ) : null}
         <div className="overflow-x-auto rounded border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <table className="w-full min-w-[760px] border-collapse">
             <thead className="border-b border-zinc-200 dark:border-zinc-800">
@@ -195,7 +213,7 @@ export function SearchScreenshotImport({
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
               {state.rows.map((row, rowIndex) => (
-                <tr key={`${row.source}-${rowIndex}`} className={row.confidence < 70 ? 'bg-amber-50/70 dark:bg-amber-950/20' : undefined}>
+                <tr key={`${row.source}-${rowIndex}`} className={row.confidence !== null && row.confidence < 70 ? 'bg-amber-50/70 dark:bg-amber-950/20' : undefined}>
                   {spec.columns.map((column, cellIndex) => (
                     <td key={column.key} className="px-1 py-1">
                       <input
@@ -304,7 +322,7 @@ export function SearchScreenshotImport({
       </div>
       <div className="mt-2 flex items-start gap-1.5 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
         <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
-        OCR runs in this browser. The screenshots are not uploaded or stored. Extracted rows are not saved until you accept the review table.
+        The screenshot is sent to the AI model configured for this workspace, which reads the table directly. It is used for that one request and is never stored. Extracted rows are not saved until you accept the review table.
       </div>
       {state.status === 'error' ? (
         <div role="alert" className="mt-2 flex gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
