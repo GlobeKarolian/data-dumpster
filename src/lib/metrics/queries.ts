@@ -43,7 +43,7 @@ import {
   type PostType,
   type TimeSeriesPoint,
 } from '@/lib/types';
-import { autoGranularity, daysIn, parseLocalDay, previousRange, toDayString, addZoneDays, endOfZoneMonth, startOfZoneDay } from '@/lib/dates';
+import { autoGranularity, bucketKey, daysIn, parseLocalDay, previousRange, toDayString, addZoneDays, endOfZoneMonth, startOfZoneDay } from '@/lib/dates';
 import { changeIsRounded } from './source-rounding';
 import type {
   FactSheet,
@@ -1239,29 +1239,28 @@ type BucketRow = {
  */
 const AUDIENCE_CARRY_DAYS = 90;
 
-/** Buckets the window itself, so a chart renders empty periods as zero, not as a gap. */
+/**
+ * Buckets the window itself, so a chart renders empty periods as zero, not as
+ * a gap.
+ *
+ * Keys come from lib/dates' bucketKey, which computes on the REPORT ZONE's
+ * calendar, never the server's. The previous local implementation used
+ * local-time getters; on a UTC server its Monday drifted one day off
+ * Postgres's date_trunc('week'), every SQL row missed its JS bucket, and
+ * week-granularity charts rendered audience as "no measured values" and
+ * engagement as silent zeros — while passing on any laptop in Eastern time.
+ * One clock owns bucketing now.
+ */
 function bucketsFor(range: DateRange, g: Granularity): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  const cursor = new Date(range.start.getTime());
+  let cursor = new Date(range.start.getTime());
   while (cursor <= range.end) {
-    const key = g === 'day'
-      ? toDayString(cursor)
-      : g === 'week'
-        ? toDayString(startOfIsoWeek(cursor))
-        : `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-01`;
+    const key = bucketKey(cursor, g);
     if (!seen.has(key)) { seen.add(key); out.push(key); }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor = addZoneDays(cursor, 1);
   }
   return out;
-}
-
-/** Monday-start week, matching Postgres `date_trunc('week', ...)` exactly. */
-function startOfIsoWeek(d: Date): Date {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const dow = (x.getDay() + 6) % 7; // Monday = 0
-  x.setDate(x.getDate() - dow);
-  return x;
 }
 
 /**
