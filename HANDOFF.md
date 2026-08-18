@@ -263,7 +263,21 @@ Landed on main and deployed, beyond the numbered priorities above:
 - Landscapes: Globe New Hampshire Market and Globe Rhode Island Market created
   with 69 verified channels (see git log for the rebrand notes: Coastal ABC,
   Ocean State Media). MLB demands widened to Opening Day 2026-03-26.
-- OpenRouter is a first-class model provider (enum value, key shape, picker).
+- OpenRouter is a first-class model provider (enum value, key shape, picker),
+  and its completions meter the provider-reported charged cost (usage
+  accounting via `usage:{include:true}`), preferred over the per-Mtok
+  estimate. Before this, every OpenRouter row wrote cost_usd=0 and the
+  AI_TAGGING_DAILY_USD ceiling never bound. Rows metered before the fix
+  (about 1,100 on 18 Aug) still read zero; their token counts are real, and
+  OpenRouter's dashboard remains ground truth for the gap.
+- AI tagging is observable: `/post-tags` carries a pipeline strip, and
+  `/post-tags/live` animates settles as they happen (4s poll). The live page
+  server-renders real numbers into the first paint — a session whose client
+  JS never runs still sees the truth — via `lib/tagging/activity.ts`, shared
+  with `/api/tags/activity`.
+- Every tag in the product links to the Social Posts explorer filtered to
+  that tag with the viewer's scope carried (`TagLink`, plus name links on the
+  performance table and manage list; `tags` was already an explorer filter).
 
 Open decision awaiting the operator: window-scoped completeness for WoW
 deltas — the current gate conflates unfinished May backfill with an incomplete
