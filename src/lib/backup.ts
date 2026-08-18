@@ -84,11 +84,13 @@ async function exportTable(table: string, day: string): Promise<{ rows: number; 
   // Concatenated gzip members are a valid gzip stream (RFC 1952 § 2.2).
   const body = Buffer.concat(chunks.length > 0 ? chunks : [gzipSync(Buffer.alloc(0))]);
   await put(datePath(day, table), body, {
-    access: 'public',
+    // The store is private, which is exactly right for a database export:
+    // these blobs are reachable only with the store token, never by URL.
+    access: 'private',
     contentType: 'application/gzip',
     addRandomSuffix: false,
     allowOverwrite: true,
-  });
+  } as never);
   return { rows: rowCount, bytes: body.byteLength };
 }
 
@@ -123,11 +125,11 @@ export async function runBackupSlice(budgetMs: number): Promise<BackupRunResult>
       completedAt: new Date().toISOString(),
     };
     await put(`${PREFIX}/${day}/manifest.json`, JSON.stringify(manifest, null, 2), {
-      access: 'public',
+      access: 'private',
       contentType: 'application/json',
       addRandomSuffix: false,
       allowOverwrite: true,
-    });
+    } as never);
   }
   return { day, completedThisRun, remaining: stillRemaining, finished };
 }
