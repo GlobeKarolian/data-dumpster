@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/ingest?mode=recover&limit=250&postLimit=500",
       "schedule": "5,15,25,35,45,55 * * * *"
+    },
+    {
+      "path": "/api/cron/tag",
+      "schedule": "8,18,28,38,48,58 * * * *"
     }
   ]
 }

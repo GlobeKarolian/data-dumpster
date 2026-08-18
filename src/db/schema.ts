@@ -1054,3 +1054,36 @@ export const externalBrandMetrics = pgTable('external_brand_metrics', {
   index('external_brand_metrics_period_idx').on(t.periodStart),
   check('external_brand_metrics_period_days_ck', sql`${t.periodDays} > 0`),
 ]);
+
+/**
+ * Durable AI-tagging state, one row per (org, post).
+ *
+ * Posts are pooled; taxonomies are per-org, so "has the model read this post"
+ * is an org-scoped fact. The row records WHICH taxonomy the answer was for:
+ * `taxonomy_fingerprint` hashes the org's AI-eligible tags (id, name,
+ * aiPrompt, sorted), and any edit to the taxonomy moves the fingerprint,
+ * making every older row stale. The tag cron drains stale rows newest-post
+ * first within a daily spend ceiling — that is the entire recompute story,
+ * with no invalidation bookkeeping to forget.
+ *
+ * Assignments themselves stay in post_tag_assignments with source='ai'; this
+ * table is only the queue and the audit of what was read when, by which
+ * model, against which taxonomy. See docs/AI-TAGGING.md.
+ */
+export const aiTagState = pgTable('ai_tag_state', {
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  postId: uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  taxonomyFingerprint: text('taxonomy_fingerprint').notNull(),
+  model: text('model'),
+  status: ingestStatusEnum('status').notNull().default('queued'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+  taggedAt: timestamp('tagged_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'ai_tag_state_pk', columns: [t.orgId, t.postId] }),
+  index('ai_tag_state_org_fingerprint_idx').on(t.orgId, t.taxonomyFingerprint),
+  index('ai_tag_state_next_attempt_idx').on(t.nextAttemptAt),
+]);
