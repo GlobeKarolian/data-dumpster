@@ -390,7 +390,13 @@ export function ReportBuilder({
 
       {computed ? (
         <>
-          <PerformanceSection computed={computed} />
+          {/*
+            * Coverage notes are off here too, by operator instruction — the
+            * report surface shows the numbers, and collection health lives in
+            * /api/health and the at-a-glance notices instead. A withheld
+            * figure still renders blank, so nothing hidden changes a number.
+            */}
+          <PerformanceSection computed={computed} showCoverageNotes={false} />
           <div className="space-y-3">
             <BrandsSection computed={computed} />
             <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
