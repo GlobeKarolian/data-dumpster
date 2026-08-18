@@ -1063,6 +1063,25 @@ export const externalBrandMetrics = pgTable('external_brand_metrics', {
 ]);
 
 /**
+ * Landscape scoping for tags: which landscapes a tag applies to.
+ *
+ * No rows means org-wide, which keeps every existing tag's behavior. Rows
+ * restrict: a "Sports" beat scoped to the news landscapes never fires on an
+ * MLB team's feed, where tagging every post "Sports" is trivially true,
+ * analytically useless, and a budget furnace. The junction shape (rather than
+ * a single landscape column) is what lets one beat serve several news
+ * landscapes without duplicating the tag and splitting its analytics.
+ */
+export const postTagLandscapes = pgTable('post_tag_landscapes', {
+  tagId: uuid('tag_id').notNull().references(() => postTags.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').notNull().references(() => landscapes.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'post_tag_landscapes_pk', columns: [t.tagId, t.landscapeId] }),
+  index('post_tag_landscapes_landscape_idx').on(t.landscapeId),
+]);
+
+/**
  * Durable AI-tagging state, one row per (org, post).
  *
  * Posts are pooled; taxonomies are per-org, so "has the model read this post"

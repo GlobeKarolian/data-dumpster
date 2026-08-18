@@ -55,14 +55,67 @@ export async function orgsWithAiTags(): Promise<string[]> {
 }
 
 export async function aiTagsForOrg(orgId: string): Promise<AiTagDefinition[]> {
-  const rows = await db
-    .select({ id: postTags.id, name: postTags.name, aiPrompt: postTags.aiPrompt })
-    .from(postTags)
-    .where(and(
-      eq(postTags.orgId, orgId),
-      sql`${postTags.aiPrompt} IS NOT NULL AND btrim(${postTags.aiPrompt}) <> ''`,
-    ));
-  return rows.map((r) => ({ id: r.id, name: r.name, aiPrompt: r.aiPrompt ?? '' }));
+  const { rows } = await db.execute<{
+    id: string; name: string; ai_prompt: string | null; landscape_ids: unknown;
+  }>(sql`
+    SELECT t.id::text AS id, t.name, t.ai_prompt,
+           coalesce(json_agg(ptl.landscape_id::text) FILTER (WHERE ptl.landscape_id IS NOT NULL), '[]'::json)
+             AS landscape_ids
+      FROM post_tags t
+      LEFT JOIN post_tag_landscapes ptl ON ptl.tag_id = t.id
+     WHERE t.org_id = ${orgId}
+       AND t.ai_prompt IS NOT NULL AND btrim(t.ai_prompt) <> ''
+     GROUP BY t.id, t.name, t.ai_prompt`);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    aiPrompt: r.ai_prompt ?? '',
+    landscapeIds: Array.isArray(r.landscape_ids)
+      ? r.landscape_ids.filter((x): x is string => typeof x === 'string')
+      : [],
+  }));
+}
+
+/**
+ * Companies grouped by their applicable tag set.
+ *
+ * A tag applies to a company when the tag is unscoped, or when any of the
+ * tag's landscapes contains the company. Companies sharing an identical
+ * applicable set batch together under that set's fingerprint — which is what
+ * makes an MLB feed and a news feed never share a prompt, and makes
+ * re-scoping a tag automatically stale exactly the posts it gained or lost.
+ */
+export interface CompanyTagGroup {
+  fingerprint: string;
+  tags: AiTagDefinition[];
+  companyIds: string[];
+}
+
+export async function companyTagGroups(
+  orgId: string,
+  tags: AiTagDefinition[],
+): Promise<CompanyTagGroup[]> {
+  const { rows } = await db.execute<{ company_id: string; landscape_ids: unknown }>(sql`
+    SELECT lc.company_id::text AS company_id,
+           json_agg(DISTINCT l.id::text) AS landscape_ids
+      FROM landscape_companies lc
+      JOIN landscapes l ON l.id = lc.landscape_id AND l.org_id = ${orgId}
+     GROUP BY lc.company_id`);
+  const groups = new Map<string, CompanyTagGroup>();
+  for (const row of rows) {
+    const memberOf = new Set(Array.isArray(row.landscape_ids)
+      ? row.landscape_ids.filter((x): x is string => typeof x === 'string')
+      : []);
+    const applicable = tags.filter((t) =>
+      t.landscapeIds.length === 0 || t.landscapeIds.some((id) => memberOf.has(id)));
+    if (applicable.length === 0) continue;
+    const fingerprint = taxonomyFingerprint(applicable);
+    const group = groups.get(fingerprint)
+      ?? { fingerprint, tags: applicable, companyIds: [] };
+    group.companyIds.push(row.company_id);
+    groups.set(fingerprint, group);
+  }
+  return [...groups.values()];
 }
 
 async function spentTodayUsd(orgId: string): Promise<number> {
@@ -92,6 +145,7 @@ function dailyBudgetUsd(): number {
 async function claimPosts(
   orgId: string,
   fingerprint: string,
+  companyIds: string[],
   limit: number,
 ): Promise<string[]> {
   /*
@@ -105,11 +159,7 @@ async function claimPosts(
       SELECT p.id AS post_id
         FROM posts p
         LEFT JOIN ai_tag_state s ON s.post_id = p.id AND s.org_id = ${orgId}
-       WHERE EXISTS (
-               SELECT 1 FROM landscape_companies lc
-               JOIN landscapes l ON l.id = lc.landscape_id
-              WHERE lc.company_id = p.company_id AND l.org_id = ${orgId}
-             )
+       WHERE p.company_id = ANY(${uuidArray(companyIds)})
          AND (
                s.post_id IS NULL
             OR (s.taxonomy_fingerprint <> ${fingerprint}
@@ -195,9 +245,8 @@ async function settle(
 /** One org's tick: claim → complete → validate → write → settle. */
 export async function runTaggingTick(orgId: string): Promise<TagTickResult> {
   const tags = await aiTagsForOrg(orgId);
-  const fingerprint = taxonomyFingerprint(tags);
   const base: TagTickResult = {
-    orgId, fingerprint, claimed: 0, tagged: 0, assignmentsWritten: 0,
+    orgId, fingerprint: '', claimed: 0, tagged: 0, assignmentsWritten: 0,
     droppedByValidation: 0, failed: 0, spentUsd: 0, budgetExhausted: false,
   };
   if (tags.length === 0) return { ...base, skipped: 'no AI-eligible tags' };
@@ -207,22 +256,48 @@ export async function runTaggingTick(orgId: string): Promise<TagTickResult> {
     return { ...base, spentUsd: spent, budgetExhausted: true, skipped: 'daily budget reached' };
   }
 
-  const claimed = await claimPosts(orgId, fingerprint, POSTS_PER_COMPLETION);
-  base.claimed = claimed.length;
-  if (claimed.length === 0) return base;
+  const groups = await companyTagGroups(orgId, tags);
+  if (groups.length === 0) return { ...base, skipped: 'no companies with applicable tags' };
+  for (const group of groups) {
+    const groupResult = await runGroup(orgId, group);
+    base.claimed += groupResult.claimed;
+    base.tagged += groupResult.tagged;
+    base.assignmentsWritten += groupResult.assignmentsWritten;
+    base.droppedByValidation += groupResult.droppedByValidation;
+    base.failed += groupResult.failed;
+    base.spentUsd += groupResult.spentUsd;
+    if (base.spentUsd + spent >= dailyBudgetUsd()) { base.budgetExhausted = true; break; }
+  }
+  return base;
+}
+
+interface GroupResult {
+  claimed: number; tagged: number; assignmentsWritten: number;
+  droppedByValidation: number; failed: number; spentUsd: number;
+}
+
+/** One completion for one company group's applicable taxonomy. */
+async function runGroup(orgId: string, group: CompanyTagGroup): Promise<GroupResult> {
+  const { fingerprint, tags } = group;
+  const result: GroupResult = {
+    claimed: 0, tagged: 0, assignmentsWritten: 0,
+    droppedByValidation: 0, failed: 0, spentUsd: 0,
+  };
+  const claimed = await claimPosts(orgId, fingerprint, group.companyIds, POSTS_PER_COMPLETION);
+  result.claimed = claimed.length;
+  if (claimed.length === 0) return result;
 
   const posts = await loadPostContent(claimed);
   const readable = posts.filter((p) => (p.text ?? '').trim() || p.hashtags.length > 0);
   const unreadable = claimed.filter((id) => !readable.some((p) => p.id === id));
   // Nothing to read is a measured result, not a failure: settle and move on.
   await settle(orgId, unreadable, fingerprint, 'succeeded', null);
+  result.tagged += unreadable.length;
 
-  if (readable.length === 0) {
-    return { ...base, tagged: unreadable.length };
-  }
+  if (readable.length === 0) return result;
 
   try {
-    const result = await complete(
+    const completion = await complete(
       orgId,
       {
         messages: buildTaggingMessages(tags, readable),
@@ -232,18 +307,20 @@ export async function runTaggingTick(orgId: string): Promise<TagTickResult> {
       },
       { feature: 'post-tagging' },
     );
-    const payload = result.json ?? safeParse(result.text);
+    const payload = completion.json ?? safeParse(completion.text);
     const { assignments, dropped } = validateAssignments(payload, tags, readable);
-    base.droppedByValidation = dropped;
-    base.spentUsd = result.costUsd;
+    result.droppedByValidation = dropped;
+    result.spentUsd = completion.costUsd;
 
     const readableIds = readable.map((p) => p.id);
-    const orgTagIds = tags.map((t) => t.id);
-    // 1. Clear this org's previous AI opinions on these posts. Manual and rule
-    //    assignments are untouched by the source predicate.
+    // Clear only THIS group's tags: an assignment from a tag scoped to some
+    // other landscape set is a different taxonomy's opinion and stays.
+    const groupTagIds = tags.map((t) => t.id);
+    // 1. Clear previous AI opinions for these posts within this taxonomy.
+    //    Manual and rule assignments are untouched by the source predicate.
     await db.delete(postTagAssignments).where(and(
       inArray(postTagAssignments.postId, readableIds),
-      inArray(postTagAssignments.tagId, orgTagIds),
+      inArray(postTagAssignments.tagId, groupTagIds),
       eq(postTagAssignments.source, 'ai'),
     ));
     // 2. Write the new opinions. DO NOTHING on conflict: an existing manual or
@@ -257,17 +334,17 @@ export async function runTaggingTick(orgId: string): Promise<TagTickResult> {
           confidence: a.confidence,
         })))
         .onConflictDoNothing();
-      base.assignmentsWritten = assignments.length;
+      result.assignmentsWritten = assignments.length;
     }
     // 3. The cursor moves last.
-    await settle(orgId, readableIds, fingerprint, 'succeeded', result.model);
-    base.tagged = readableIds.length + unreadable.length;
-    return base;
+    await settle(orgId, readableIds, fingerprint, 'succeeded', completion.model);
+    result.tagged += readableIds.length;
+    return result;
   } catch (err) {
     const message = err instanceof ModelError ? err.message : String(err);
     await settle(orgId, readable.map((p) => p.id), fingerprint, 'failed', null, message.slice(0, 500));
-    base.failed = readable.length;
-    return base;
+    result.failed = readable.length;
+    return result;
   }
 }
 

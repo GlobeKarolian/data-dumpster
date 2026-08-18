@@ -8,8 +8,8 @@ import {
 } from './ai-tagger';
 
 const TAGS = [
-  { id: 't-crime', name: 'Crime', aiPrompt: 'Crime, courts, police activity in Greater Boston.' },
-  { id: 't-clancy', name: 'Clancy trial', aiPrompt: 'The Lindsay Clancy murder trial specifically.' },
+  { id: 't-crime', name: 'Crime', aiPrompt: 'Crime, courts, police activity in Greater Boston.', landscapeIds: [] },
+  { id: 't-clancy', name: 'Clancy trial', aiPrompt: 'The Lindsay Clancy murder trial specifically.', landscapeIds: [] },
 ];
 const POSTS = [
   { id: 'p1', platform: 'twitter', type: 'link', text: 'Clancy trial day 4', hashtags: [], urls: [] },

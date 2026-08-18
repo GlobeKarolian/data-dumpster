@@ -117,3 +117,29 @@ database.
   confidence visible.
 - No cross-org batching, ever: one org's taxonomy must not appear in another
   org's prompt.
+
+## Landscape scoping (added 18 August 2026)
+
+Taxonomies are per-landscape-set, not just per-org. `post_tag_landscapes`
+scopes a tag to specific landscapes; no rows means org-wide, which preserved
+every existing tag's behavior on migration. A "Sports" beat scoped to the news
+landscapes never fires on an MLB team's feed, where tagging every post
+"Sports" is trivially true, analytically useless, and pure spend.
+
+Mechanically, the queue computes each COMPANY's applicable tag set (unscoped
+tags plus tags whose landscapes contain the company), groups companies with
+identical sets, and runs one batch per group under that set's fingerprint.
+Three consequences fall out with no extra machinery:
+
+- Companies with an empty applicable set are never claimed at all — excluded
+  feeds cost zero.
+- Re-scoping a tag changes the affected groups' fingerprints, staling exactly
+  the posts that gained or lost the tag. Scope edits ARE recompute triggers,
+  same as definition edits.
+- One org's MLB group and news group never share a prompt, so a baseball
+  taxonomy can be written in baseball terms without hedging against news.
+
+Retiring a tag without losing history: clear its description. It leaves every
+applicable set (fingerprints move, nothing new is written) while its existing
+assignments remain readable — deletion is for mistakes, clearing is for
+retirement.

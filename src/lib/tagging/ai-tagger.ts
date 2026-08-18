@@ -13,6 +13,8 @@ export interface AiTagDefinition {
   name: string;
   /** The tag's meaning, in the operator's words. This IS the classifier. */
   aiPrompt: string;
+  /** Landscapes this tag applies to; empty means the whole org. */
+  landscapeIds: string[];
 }
 
 export interface TaggablePostContent {
