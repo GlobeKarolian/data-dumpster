@@ -318,6 +318,13 @@ export const electionCandidates = pgTable('election_candidates', {
   companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'restrict' }),
   party: text('party'),
   candidateStatus: text('candidate_status').notNull().default('tracking'),
+  /**
+   * Canonical English Wikipedia article title, e.g. "Cory_Booker". Resolved
+   * once through the Wikipedia search API and stored so attention data joins
+   * on a stable key; null means no article was confidently matched and the
+   * candidate simply has no attention series rather than a guessed one.
+   */
+  wikipediaTitle: text('wikipedia_title'),
   incumbent: boolean('incumbent'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1086,4 +1093,26 @@ export const aiTagState = pgTable('ai_tag_state', {
   primaryKey({ name: 'ai_tag_state_pk', columns: [t.orgId, t.postId] }),
   index('ai_tag_state_org_fingerprint_idx').on(t.orgId, t.taxonomyFingerprint),
   index('ai_tag_state_next_attempt_idx').on(t.nextAttemptAt),
+]);
+
+/**
+ * Daily Wikipedia pageviews per article, from the official Wikimedia API.
+ *
+ * This is LOOKUP ATTENTION, not search volume: how many humans opened the
+ * article that day. The API's "user" agent filter excludes bots and spiders —
+ * without it, crawler storms register as public interest. Keyed by article
+ * title rather than candidate so two races tracking the same person share one
+ * series, the same pooling argument the rest of the schema makes. Data is a
+ * republication of Wikimedia's own numbers and can be rebuilt from their API
+ * at any time; rows exist so charts do not re-fetch a year of history per
+ * page load.
+ */
+export const wikipediaAttention = pgTable('wikipedia_attention', {
+  pageTitle: text('page_title').notNull(),
+  day: date('day').notNull(),
+  views: bigint('views', { mode: 'number' }).notNull(),
+  capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'wikipedia_attention_pk', columns: [t.pageTitle, t.day] }),
+  index('wikipedia_attention_day_idx').on(t.day),
 ]);

@@ -84,5 +84,7 @@ export interface ElectionRaceAnalytics {
   engagementSeries: TimeSeriesResult;
   postSeries: TimeSeriesResult;
   viewSeries: TimeSeriesResult;
+  /** Daily Wikipedia article views per candidate: lookup attention, not search volume. */
+  attentionSeries: TimeSeriesResult;
   topPosts: PostDto[];
 }

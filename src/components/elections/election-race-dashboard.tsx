@@ -351,6 +351,15 @@ function OverviewView({ race, analytics }: {
           companyIds={rankedCompanyIds}
           emptyText="Engagement trends appear after posts are collected."
         />
+
+        <TrendChart
+          title="Lookup attention (Wikipedia)"
+          description="Daily human views of each candidate's Wikipedia article, from the official Wikimedia API with bot traffic excluded. A proxy for name interest — people hear a name and look it up — not search volume or polling."
+          result={analytics.attentionSeries}
+          race={race}
+          companyIds={rankedCompanyIds}
+          emptyText="Attention data appears once candidates are mapped to their Wikipedia articles."
+        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">

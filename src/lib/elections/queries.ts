@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql as dsql } from 'drizzle-orm';
 import { db } from '@/db';
 import { electionRaces } from '@/db/schema';
 import { hasRole, type OrgContext } from '@/lib/session';
@@ -15,9 +15,10 @@ import type {
   ElectionRaceSummary,
 } from './types';
 import type { Platform } from '@/lib/types';
-import type { DateRange } from '@/lib/types';
+import type { DateRange, Granularity } from '@/lib/types';
+import type { TimeSeriesResult } from '@/lib/metrics/contract';
 import { getLeaderboard, getTimeSeries, getTopPostsByPlatform } from '@/lib/metrics/queries';
-import { autoGranularity, daysIn, presetRange, toDayString } from '@/lib/dates';
+import { autoGranularity, bucketKey, daysIn, presetRange, toDayString } from '@/lib/dates';
 
 type RaceSummaryRow = {
   id: string;
@@ -254,6 +255,7 @@ export async function getElectionRaceAnalytics(
       engagementSeries: { series: [], companies: [], granularity: 'day' },
       postSeries: { series: [], companies: [], granularity: 'day' },
       viewSeries: { series: [], companies: [], granularity: 'day' },
+      attentionSeries: { series: [], companies: [], granularity: 'day' },
       topPosts: [],
     };
   }
@@ -274,6 +276,7 @@ export async function getElectionRaceAnalytics(
     engagementSeries,
     postSeries,
     viewSeries,
+    attentionSeries,
     topPosts,
   ] = await Promise.all([
     getLeaderboard({ ...base, metric: 'audience', compare: true }),
@@ -285,6 +288,7 @@ export async function getElectionRaceAnalytics(
     getTimeSeries({ ...base, metric: 'engagementTotal', granularity: autoGranularity(range) }),
     getTimeSeries({ ...base, metric: 'posts', granularity: autoGranularity(range) }),
     getTimeSeries({ ...base, metric: 'views', granularity: autoGranularity(range) }),
+    getWikipediaAttentionSeries(race, range, autoGranularity(range)),
     getTopPostsByPlatform({ ...base, perPlatform: 3 }),
   ]);
   return {
@@ -302,6 +306,7 @@ export async function getElectionRaceAnalytics(
     engagementSeries,
     postSeries,
     viewSeries,
+    attentionSeries,
     topPosts,
   };
 }
@@ -313,4 +318,61 @@ export async function findElectionRaceId(slug: string, orgId: string): Promise<s
     eq(electionRaces.orgId, orgId),
   )).limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * Wikipedia lookup attention as a race time series.
+ *
+ * Views are flows, so bucket totals are honest sums — the one aggregation an
+ * audience stock forbids is fine here. Rows come pre-bucketed daily from the
+ * wikipedia_attention cache; aggregation to the chart's granularity happens
+ * here with the same bucketKey the chart grid uses, because two clocks
+ * disagreeing about Monday is a bug this codebase has already paid for once.
+ * A candidate without a mapped article contributes nulls, which the chart
+ * omits — absent, not zero.
+ */
+export async function getWikipediaAttentionSeries(
+  race: ElectionRaceDetail,
+  range: DateRange,
+  granularity: Granularity,
+): Promise<TimeSeriesResult> {
+  const candidates = race.candidates.filter((c) => c.companyId);
+  const companies = candidates.map((c) => ({
+    id: c.companyId,
+    name: c.name,
+    slug: c.companyId,
+    logoUrl: c.logoUrl,
+    color: c.color,
+    segment: null,
+  }));
+  const empty: TimeSeriesResult = { series: [], companies, granularity };
+  if (candidates.length === 0) return empty;
+
+  const { rows } = await db.execute<{ company_id: string; day: string; views: string | number }>(dsql`
+    SELECT ec.company_id::text AS company_id, w.day::text AS day, w.views
+      FROM election_candidates ec
+      JOIN wikipedia_attention w ON w.page_title = ec.wikipedia_title
+     WHERE ec.race_id = ${race.id}
+       AND ec.wikipedia_title IS NOT NULL
+       AND w.day >= ${toDayString(range.start)}
+       AND w.day <= ${toDayString(range.end)}`);
+
+  const byBucket = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const key = bucketKey(new Date(`${r.day}T12:00:00Z`), granularity);
+    const bucket = byBucket.get(key) ?? new Map<string, number>();
+    bucket.set(r.company_id, (bucket.get(r.company_id) ?? 0) + Number(r.views));
+    byBucket.set(key, bucket);
+  }
+
+  const mapped = new Set(candidates.filter((c) => rows.some((r) => r.company_id === c.companyId)).map((c) => c.companyId));
+  const series = [...byBucket.keys()].sort().map((date) => {
+    const point: Record<string, string | number | null> = { date };
+    const bucket = byBucket.get(date);
+    for (const company of companies) {
+      point[company.id] = mapped.has(company.id) ? bucket?.get(company.id) ?? 0 : null;
+    }
+    return point as TimeSeriesResult['series'][number];
+  });
+  return { series, companies, granularity };
 }

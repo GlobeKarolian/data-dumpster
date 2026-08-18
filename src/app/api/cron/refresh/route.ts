@@ -52,6 +52,26 @@ async function handle(req: NextRequest): Promise<Response> {
       });
     }
   });
+  // Candidate lookup attention: one free Wikimedia request per candidate,
+  // once per UTC day. Wikimedia finalizes a day a few hours after it ends,
+  // so the first tick past finalization pulls it and every later tick skips.
+  after(async () => {
+    try {
+      const { sql: dsql } = await import('drizzle-orm');
+      const { db: database } = await import('@/db');
+      const { rows } = await database.execute<{ behind: boolean }>(dsql`
+        SELECT coalesce(max(day) < (now() - interval '1 day')::date, true) AS behind
+          FROM wikipedia_attention`);
+      if (!rows[0]?.behind) return;
+      const wiki = await import('@/lib/elections/wikipedia-attention');
+      const result = await wiki.refreshCandidateAttention();
+      console.info('[data-dumpster:cron/refresh] wikipedia attention refresh', result);
+    } catch (error) {
+      console.error('[data-dumpster:cron/refresh] wikipedia attention refresh failed', {
+        error: error instanceof Error ? error.message : 'Unknown attention failure.',
+      });
+    }
+  });
   return cronJson({ accepted: jobId ? 1 : 0 }, 202);
 }
 
