@@ -122,11 +122,15 @@ function FeedCard({ item, fresh }: { item: FeedItem; fresh: boolean }) {
   );
 }
 
-export function TaggingLiveFeed() {
-  const [items, setItems] = React.useState<FeedItem[]>([]);
-  const [totals, setTotals] = React.useState<Totals>({ postsRead: 0, tagsApplied: 0, spendUsd: 0, lastHour: 0 });
+export function TaggingLiveFeed({ initial }: {
+  initial: { totals: Totals; recent: FeedItem[] };
+}) {
+  // Seeded from the server render: the first paint is already true, and a
+  // session where this component's effects never run still shows real data.
+  const [items, setItems] = React.useState<FeedItem[]>(initial.recent);
+  const [totals, setTotals] = React.useState<Totals>(initial.totals);
   const [error, setError] = React.useState<string | null>(null);
-  const seenRef = React.useRef<Set<string>>(new Set());
+  const seenRef = React.useRef<Set<string>>(new Set(initial.recent.map((r) => r.id)));
   const freshRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
@@ -193,7 +197,7 @@ export function TaggingLiveFeed() {
         ))}
         {items.length === 0 && !error ? (
           <p className="col-span-full py-16 text-center text-sm text-zinc-500">
-            Waiting for the next batch to settle. The cron reads every ten minutes; backfills stream continuously.
+            Nothing settled in the last two hours. The cron reads every ten minutes; backfills stream continuously.
           </p>
         ) : null}
       </div>
