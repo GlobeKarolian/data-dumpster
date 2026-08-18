@@ -14,6 +14,7 @@ import { DeltaBadge } from '@/components/ui/delta-badge';
 import { formatMetric } from '@/components/ui/format';
 import { MetricLabel } from '@/components/ui/metric-label';
 import { PlatformIcon } from '@/components/ui/platform-icon';
+import { Tooltip } from '@/components/ui/tooltip';
 
 export interface CrossChannelGlanceProps {
   summary: SummaryResult | null;
@@ -32,6 +33,7 @@ function MetricColumn({
 }) {
   const available = stat?.available === true;
   const complete = available && stat?.complete !== false;
+  const withheld = available && !complete;
   const previousLabel =
     complete && stat?.previousAvailable && stat.previousComplete !== false && stat.previousValue !== null
       ? formatMetric(stat.previousValue, metric, 'full')
@@ -46,15 +48,36 @@ function MetricColumn({
         <span className="pb-num text-2xl font-semibold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
           {formatMetric(available ? stat.value : null, metric)}
         </span>
-        <DeltaBadge
-          changePct={available ? stat.changePct : null}
-          previousLabel={previousLabel}
-        />
+        {/*
+          * A withheld comparison says so once, quietly, underneath — not twice
+          * and not in alarm colours. The old treatment printed "n/a" beside
+          * the headline figure AND an amber warning below it, so the first
+          * thing anyone saw on the landing screen was two thirds of the
+          * numbers apparently broken. The measurement is fine; only the
+          * week-over-week comparison is unavailable, and that is a footnote.
+          */}
+        {withheld ? null : (
+          <DeltaBadge
+            changePct={available ? stat.changePct : null}
+            previousLabel={previousLabel}
+          />
+        )}
       </div>
-      {available && !complete ? (
-        <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-          Partial coverage · WoW withheld
-        </p>
+      {withheld ? (
+        <Tooltip
+          side="bottom"
+          content={
+            'Some profiles in this window are still collecting, so a week-over-week change would '
+            + 'compare unlike periods. The figure above is measured and correct; only the comparison is held back.'
+          }
+        >
+          <p
+            tabIndex={0}
+            className="mt-1 w-fit cursor-help border-b border-dotted border-zinc-300 text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+          >
+            No week-over-week comparison
+          </p>
+        </Tooltip>
       ) : null}
       <div className="mt-auto pt-3">
         {available && stat.spark.length > 0 ? (

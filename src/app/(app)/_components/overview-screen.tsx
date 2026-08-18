@@ -7,6 +7,9 @@ import { NoLandscape } from '@/components/common/no-landscape';
 import { GlanceRow, ComparisonNote } from '@/components/overview/glance';
 import { RedditAccountGlance } from '@/components/overview/reddit-account-glance';
 import { CrossChannelGlance } from '@/components/overview/cross-channel-glance';
+import { WeekHeadline } from '@/components/overview/week-headline';
+import { buildWeekHeadlines } from '@/lib/metrics/week-headline';
+import { daysIn } from '@/lib/dates';
 import { LeaderboardPanel } from '@/components/overview/leaderboard-panel';
 import { OverviewBenchmarkPanel } from '@/components/overview/overview-benchmark-panel';
 import { PlatformMixPanel } from '@/components/overview/platform-mix';
@@ -73,6 +76,14 @@ function OverviewJumpNav() {
  * guarantees the Instagram page and the cross-channel page cannot quietly
  * disagree about how engagement rate was computed.
  */
+/** Plain phrasing for the selected window, used as the lede's eyebrow. */
+function windowLabelFor(days: number): string {
+  if (days <= 1) return 'Today';
+  if (days === 7) return 'This week';
+  if (days === 28 || days === 30) return 'This month';
+  return `Last ${days} days`;
+}
+
 export async function OverviewScreen({
   ctx,
   platform,
@@ -171,8 +182,28 @@ export async function OverviewScreen({
     ?.map((metric) => metric.error)
     .find((error): error is string => Boolean(error)) ?? null;
 
+  /*
+   * The lede. Computed from rows this screen already loaded, so it costs no
+   * query and cannot disagree with the charts beneath it. See
+   * lib/metrics/week-headline.ts for why each finding is chosen.
+   */
+  const headlineScope = new URLSearchParams();
+  if (ctx.landscape) headlineScope.set('landscape', ctx.landscape.id);
+  const findings = buildWeekHeadlines({
+    focusCompanyId: focusCompanyId ?? null,
+    focusName,
+    engagement: engagement.data,
+    topPosts: topPosts.data,
+    days: daysIn(ctx.range),
+    scopeQuery: headlineScope.toString(),
+  });
+
   return (
     <div className="space-y-4">
+      <WeekHeadline
+        findings={findings}
+        windowLabel={windowLabelFor(daysIn(ctx.range))}
+      />
       <OverviewJumpNav />
 
       {platform ? (
