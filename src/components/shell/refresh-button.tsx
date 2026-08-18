@@ -120,8 +120,7 @@ export function RefreshButton({
   const [attachedScope, setAttachedScope] = React.useState<string | null>(null);
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [panelPosition, setPanelPosition] = React.useState({ top: 64, left: 16, maxHeight: 640 });
-  // Per-profile worker activity is diagnostic detail, collapsed until asked for.
-  const [activityOpen, setActivityOpen] = React.useState(false);
+  const [activityOpen, setActivityOpen] = React.useState(true);
   const [starting, setStarting] = React.useState(false);
   const [startError, setStartError] = React.useState<string | null>(null);
   const anchorRef = React.useRef<HTMLDivElement>(null);
@@ -182,16 +181,11 @@ export function RefreshButton({
       platforms: queryPlatforms.length > 0 ? queryPlatforms : undefined,
     }, { signal: controller.signal }).then((found) => {
       if (!controller.signal.aborted) {
-        /*
-         * Discovering a running job does NOT open the panel. It used to, and
-         * the result was that anyone landing on a page mid-refresh got a
-         * 24rem overlay of worker rows and queue internals covering the
-         * content they came for — the engine talking about itself over the
-         * product. The button already reports progress inline ("Refreshing ·
-         * 21/140"), which is the right amount of signal for something nobody
-         * asked to watch. The panel opens when a person opens it.
-         */
         acceptJob(found);
+        if (found) {
+          openPanel();
+          setActivityOpen(true);
+        }
       }
     }).catch((cause: unknown) => {
       if (cause instanceof Error && cause.name === 'AbortError') return;
