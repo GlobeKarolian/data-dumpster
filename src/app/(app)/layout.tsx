@@ -4,6 +4,7 @@ import { AppShell, type ShellLandscape } from '@/components/shell/app-shell';
 import { canTriggerManualRefresh } from '@/lib/manual-refresh-policy';
 import type { Role } from '@/lib/roles';
 import { query } from './_lib/data';
+import { visibleLandscapesQuery } from './_lib/landscapes';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,29 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const [landscapes, members, pendingAccess] = await Promise.all([
-    query<LandscapeRow>(({ sql }) => sql`
-      SELECT l.id, l.name, l.slug, l.focus_company_id,
-             fc.name AS focus_company_name,
-             count(lc.company_id) AS company_count
-        FROM landscapes l
-        LEFT JOIN companies fc ON fc.id = l.focus_company_id
-        LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
-       WHERE l.org_id = ${orgId}::uuid
-         AND NOT EXISTS (
-           SELECT 1 FROM election_races er WHERE er.landscape_id = l.id
-         )
-         AND (
-           ${role === 'admin' || role === 'owner'}
-           OR EXISTS (
-             SELECT 1
-               FROM user_landscape_access ula
-              WHERE ula.landscape_id = l.id
-                AND ula.user_id = ${userId}::uuid
-           )
-         )
-       GROUP BY l.id, l.name, l.slug, l.focus_company_id, fc.name
-       ORDER BY l.name ASC
-    `),
+    query<LandscapeRow>(() => visibleLandscapesQuery({ orgId, userId, role })),
     query<MemberRow>(({ sql }) => sql`
       SELECT lc.landscape_id, c.id, c.name, c.color
         FROM landscape_companies lc

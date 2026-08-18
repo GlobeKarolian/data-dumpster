@@ -24,11 +24,29 @@ describe('landscape access policy', () => {
   it('enforces grants in both the shell and the server-side context', () => {
     const layout = source('src/app/(app)/layout.tsx');
     const context = source('src/app/(app)/_lib/context.ts');
+    const visibility = source('src/app/(app)/_lib/landscapes.ts');
     const session = source('src/lib/session.ts');
-    for (const file of [layout, context, session]) {
-      assert.match(file, /user_landscape_access|userLandscapeAccess/);
+
+    // The shell and the context must read the SAME list. They used to hold
+    // separate copies of this query, and the copies drifted.
+    for (const file of [layout, context]) {
+      assert.match(file, /visibleLandscapesQuery/);
+      assert.doesNotMatch(file, /FROM landscapes l/);
     }
+    assert.match(visibility, /user_landscape_access/);
+    assert.match(session, /user_landscape_access|userLandscapeAccess/);
     assert.match(session, /assertLandscapeAccessible/);
+  });
+
+  it('keeps the switcher and the page on one landscape list', () => {
+    const visibility = source('src/app/(app)/_lib/landscapes.ts');
+    // Election-race landscapes are excluded from the analytics picker. When
+    // only the shell excluded them, a URL with no ?landscape= labelled the
+    // page with the shell's first landscape while querying the context's
+    // first landscape — a page headed "BGM" full of election candidates.
+    assert.match(visibility, /NOT EXISTS\s*\(\s*\n?\s*SELECT 1 FROM election_races/);
+    // Both sides order identically, so "first landscape" means one thing.
+    assert.match(visibility, /ORDER BY l\.name ASC/);
   });
 
   it('supports creating a landscape with a new focus company in one request', () => {

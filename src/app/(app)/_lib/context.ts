@@ -1,10 +1,11 @@
 import { PLATFORMS, POST_TYPES, type CompanyRef, type Platform, type PostType } from '@/lib/types';
 import { autoGranularity, daysIn, parseRangeParams, previousRange } from '@/lib/dates';
 import type { AnalyticsQuery, DateRange } from '@/lib/types';
-import { roleAtLeast, type Role } from '@/lib/roles';
+import type { Role } from '@/lib/roles';
 import { companiesInScope, effectiveFocusCompanyId } from '@/lib/analytics-scope';
 import type { LandscapeOption } from '@/components/shell/landscape-switcher';
 import { query, type SearchParamsInput } from './data';
+import { visibleLandscapesQuery } from './landscapes';
 
 export interface LandscapeRecord extends LandscapeOption {
   focusCompanyId: string | null;
@@ -81,29 +82,12 @@ export async function resolveContext(input: SearchParamsInput): Promise<AppConte
   const session = await requireOrg();
   const sp = toUrlSearchParams(input);
 
-  const landscapesResult = await query<LandscapeRow>(({ sql }) => sql`
-    SELECT l.id,
-           l.name,
-           l.slug,
-           l.focus_company_id,
-           fc.name AS focus_company_name,
-           count(lc.company_id) AS company_count
-      FROM landscapes l
-      LEFT JOIN companies fc ON fc.id = l.focus_company_id
-      LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
-     WHERE l.org_id = ${session.orgId}::uuid
-       AND (
-         ${roleAtLeast(session.role, 'admin')}
-         OR EXISTS (
-           SELECT 1
-             FROM user_landscape_access ula
-            WHERE ula.landscape_id = l.id
-              AND ula.user_id = ${session.userId}::uuid
-         )
-       )
-     GROUP BY l.id, l.name, l.slug, l.focus_company_id, fc.name
-     ORDER BY l.name ASC
-  `);
+  // One definition, shared with the layout that renders the switcher: if
+  // these two lists ever disagree, a page can label itself with one
+  // landscape and query another. See _lib/landscapes.ts.
+  const landscapesResult = await query<LandscapeRow>(() => visibleLandscapesQuery({
+    orgId: session.orgId, userId: session.userId, role: session.role,
+  }));
 
   const landscapes: LandscapeRecord[] = landscapesResult.data.map((r) => ({
     id: r.id,
