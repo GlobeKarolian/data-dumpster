@@ -305,7 +305,10 @@ export async function complete(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const result = await provider.complete(conn, req);
-      const costUsd = estimateCost(conn, result.inputTokens, result.outputTokens);
+      // The provider's own charged amount when it reports one (OpenRouter
+      // usage accounting); our per-Mtok estimate only as the fallback.
+      const costUsd = result.reportedCostUsd
+        ?? estimateCost(conn, result.inputTokens, result.outputTokens);
       const latencyMs = Date.now() - startedAt;
       await recordUsage({
         orgId,

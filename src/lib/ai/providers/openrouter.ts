@@ -67,6 +67,12 @@ export const openrouterProvider: ModelProvider = {
       provider: 'openrouter' as const,
       label: 'OpenRouter',
       url: OPENROUTER_URL,
+      // Ask for usage accounting: the response then carries the USD actually
+      // charged, so the spend ledger records OpenRouter's number, not an
+      // estimate from per-Mtok rates nobody filled in. Before this flag, every
+      // OpenRouter completion metered $0.00 and the daily tagging ceiling
+      // never bound — 1.2M tokens of tagging were invisible to the ledger.
+      requestsCostReporting: true,
       headers: {
         authorization: `Bearer ${conn.apiKey}`,
         // App attribution, per OpenRouter's docs. Optional, never identifying:

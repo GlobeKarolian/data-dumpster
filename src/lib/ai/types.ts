@@ -52,6 +52,13 @@ export interface CompletionResult {
   latencyMs: number;
   /** Populated when jsonSchema was supplied and parsing succeeded. */
   json?: unknown;
+  /**
+   * The provider's own statement of what this completion cost, in USD.
+   * OpenRouter reports it when asked (usage accounting); most providers don't.
+   * When present it beats any per-Mtok estimate: it is the charged amount,
+   * discounts and provider routing included, not our arithmetic about it.
+   */
+  reportedCostUsd?: number;
 }
 
 /** Runtime config for one configured connection, after decryption. */

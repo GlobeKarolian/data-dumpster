@@ -28,7 +28,8 @@ interface ChatChoice { message?: { content?: string | null }; finish_reason?: st
 interface ChatBody {
   model?: string;
   choices?: ChatChoice[];
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  /** `cost` is OpenRouter's usage accounting: USD actually charged, only present when requested. */
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number };
 }
 
 export function retryableStatus(status: number): boolean {
@@ -71,6 +72,13 @@ export interface ChatTransport {
   model: string;
   /** Some self-hosted servers 400 on response_format; let callers opt out. */
   supportsJsonSchema?: boolean;
+  /**
+   * Ask the endpoint to report the charged cost in `usage.cost` (OpenRouter's
+   * usage accounting). Only OpenRouter understands the request-body flag, so
+   * only the OpenRouter provider sets this — a strict OpenAI-shaped server
+   * could reject the unknown field.
+   */
+  requestsCostReporting?: boolean;
   /** Prefix used in error messages the user will actually read. */
   label: string;
 }
@@ -129,6 +137,7 @@ export async function chatCompletion(
     payload.max_tokens = limit;
     payload.temperature = req.temperature ?? 0.2;
   }
+  if (t.requestsCostReporting) payload.usage = { include: true };
 
   if (req.jsonSchema) {
     payload.response_format = t.supportsJsonSchema === false
@@ -199,6 +208,7 @@ export async function chatCompletion(
     }
   }
 
+  const reportedCost = body.usage?.cost;
   return {
     text,
     json,
@@ -206,6 +216,9 @@ export async function chatCompletion(
     outputTokens: body.usage?.completion_tokens ?? 0,
     model: body.model ?? t.model,
     latencyMs: Date.now() - started,
+    ...(typeof reportedCost === 'number' && Number.isFinite(reportedCost) && reportedCost >= 0
+      ? { reportedCostUsd: reportedCost }
+      : {}),
   };
 }
 
