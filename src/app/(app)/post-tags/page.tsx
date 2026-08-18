@@ -92,6 +92,18 @@ export default async function PostTagsPage({
         <PageSection
           title="AI tagging activity"
           description="The model reads every post in scope once, and re-reads when a tag's definition or scope changes. Refresh for current numbers."
+          actions={(
+            <a
+              href="/post-tags/live"
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+              Watch live
+            </a>
+          )}
         >
           <Panel title="Pipeline" error={aiStatus.error}>
             <div className="flex flex-wrap gap-x-8 gap-y-3 px-1 py-1">
