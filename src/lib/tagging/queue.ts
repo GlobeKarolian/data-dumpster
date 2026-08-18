@@ -303,7 +303,12 @@ async function runGroup(orgId: string, group: CompanyTagGroup): Promise<GroupRes
       {
         messages: buildTaggingMessages(tags, readable),
         jsonSchema: TAGGING_SCHEMA as unknown as Record<string, unknown>,
-        maxTokens: 4_000,
+        // Stacked tagging multiplied output: twenty posts each carrying a
+        // category, a sport, a team, a player and two suggestions clipped a
+        // 4k budget mid-JSON, which surfaced as "malformed JSON despite a
+        // schema". The ceiling is a safety net, not a target; unused tokens
+        // cost nothing.
+        maxTokens: 10_000,
         temperature: 0,
       },
       { feature: 'post-tagging' },
