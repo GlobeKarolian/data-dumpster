@@ -185,9 +185,11 @@ export function PasteBox({
               <SearchScreenshotImport
                 spec={spec}
                 disabled={disabled}
-                onApply={(next) => {
+                onApply={(next, opts) => {
                   onChange(next);
-                  setMode('grid');
+                  // Rows are saved on arrival; the panel stays open for review
+                  // and only collapses once the editor says they are done.
+                  if (opts?.done) setMode('grid');
                 }}
               />
               <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500">

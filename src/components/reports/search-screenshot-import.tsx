@@ -30,6 +30,17 @@ async function toBase64(file: File): Promise<{ mediaType: string; base64: string
   return { mediaType: file.type, base64: btoa(binary) };
 }
 
+/**
+ * Rows reach the report as soon as they are read, not when a button is found.
+ *
+ * The review grid used to be a required second click: the model returned the
+ * right rows, the editor saw them on screen, and the section underneath still
+ * said "Nothing imported yet" because nothing had been applied. Data visibly
+ * present but silently unsaved is the same failure this whole rewrite was
+ * about, moved one step later in the flow. So every read applies immediately
+ * and every correction re-applies; `done` only controls whether the panel
+ * collapses back to the table view.
+ */
 export function SearchScreenshotImport({
   spec,
   disabled,
@@ -37,12 +48,21 @@ export function SearchScreenshotImport({
 }: {
   spec: ManualSectionSpec;
   disabled?: boolean;
-  onApply: (table: ManualTable) => void;
+  onApply: (table: ManualTable, opts?: { done?: boolean }) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dragDepth = React.useRef(0);
   const [over, setOver] = React.useState(false);
   const [state, setState] = React.useState<ImportState>({ status: 'idle' });
+
+  /** Push the current rows into the report. `done` collapses the panel. */
+  const applyRows = (rows: SearchOcrRow[], done?: boolean) => {
+    const cells = rows.map((row) => [...row.cells]);
+    onApply(
+      { raw: rowsToTsv(cells), rows: cells, updatedAt: new Date().toISOString() },
+      done ? { done: true } : undefined,
+    );
+  };
 
   const readFiles = async (incoming: File[]) => {
     if (disabled) return;
@@ -113,6 +133,9 @@ export function SearchScreenshotImport({
         fileNames: incoming.map((file) => file.name),
         rejected: payload?.rejected ?? [],
       });
+      // Saved the moment they are read. The grid below is for correcting them,
+      // not for deciding whether they count.
+      applyRows(rows);
     } catch (error) {
       setState({
         status: 'error',
@@ -130,17 +153,19 @@ export function SearchScreenshotImport({
 
   const setCell = (rowIndex: number, cellIndex: number, value: string) => {
     if (state.status !== 'review') return;
-    setState({
-      ...state,
-      rows: state.rows.map((row, index) => index === rowIndex
-        ? { ...row, cells: row.cells.map((cell, i) => i === cellIndex ? value : cell) as SearchOcrRow['cells'] }
-        : row),
-    });
+    const rows = state.rows.map((row, index) => index === rowIndex
+      ? { ...row, cells: row.cells.map((cell, i) => i === cellIndex ? value : cell) as SearchOcrRow['cells'] }
+      : row);
+    setState({ ...state, rows });
+    // A correction that only lives in this panel is the stranded-data bug again.
+    applyRows(rows);
   };
 
   const removeRow = (rowIndex: number) => {
     if (state.status !== 'review') return;
-    setState({ ...state, rows: state.rows.filter((_, index) => index !== rowIndex) });
+    const rows = state.rows.filter((_, index) => index !== rowIndex);
+    setState({ ...state, rows });
+    applyRows(rows);
   };
 
   if (state.status === 'review') {
@@ -151,10 +176,10 @@ export function SearchScreenshotImport({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              Review {state.rows.length} extracted {state.rows.length === 1 ? 'row' : 'rows'}
+              Saved {state.rows.length} {state.rows.length === 1 ? 'row' : 'rows'}, review below
             </p>
             <p className="mt-0.5 text-[11px] text-zinc-600 dark:text-zinc-400">
-              From {state.fileNames.length} {state.fileNames.length === 1 ? 'image' : 'images'}. Check the figures against the screenshot before using them.
+              From {state.fileNames.length} {state.fileNames.length === 1 ? 'image' : 'images'}. Already saved to the section below; edits here save as you make them.
             </p>
           </div>
           <div className="flex gap-2">
@@ -165,12 +190,9 @@ export function SearchScreenshotImport({
               size="sm"
               variant="primary"
               disabled={disabled || state.rows.length === 0}
-              onClick={() => {
-                const rows = state.rows.map((row) => [...row.cells]);
-                onApply({ raw: rowsToTsv(rows), rows, updatedAt: new Date().toISOString() });
-              }}
+              onClick={() => applyRows(state.rows, true)}
             >
-              Use {state.rows.length} {state.rows.length === 1 ? 'row' : 'rows'}
+              Done, {state.rows.length} {state.rows.length === 1 ? 'row' : 'rows'} saved
             </Button>
           </div>
         </div>
@@ -299,7 +321,7 @@ export function SearchScreenshotImport({
         ) : (
           <>
             <p className="max-w-lg text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-              JPEG, PNG, or WebP · up to {MAX_FILES} images · include the five column headers when possible
+              JPEG, PNG, or WebP · up to {MAX_FILES} images · include the column headers when possible
             </p>
             <Button size="sm" variant="secondary" onClick={() => inputRef.current?.click()} disabled={disabled}>
               <Upload className="h-3.5 w-3.5" aria-hidden />
