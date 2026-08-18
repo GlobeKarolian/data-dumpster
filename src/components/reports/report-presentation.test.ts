@@ -43,8 +43,10 @@ describe('weekly report presentation', () => {
     );
 
     assert.match(presentation, /const isSharedReport = reportShareToken !== undefined/);
-    assert.match(presentation, /!isSharedReport && doc\.computed\.caveats\.length > 0/);
-    assert.match(presentation, /showCoverageNotes=\{!isSharedReport\}/);
+    // Coverage and measurement notes are editing furniture: the presented
+    // report (View and share alike) must not carry them.
+    assert.doesNotMatch(presentation, /doc\.computed\.caveats\.map/);
+    assert.match(presentation, /showCoverageNotes=\{false\}/);
     assert.match(panel, /<PostDetailDialog/);
     assert.match(panel, /role="button"/);
     assert.match(publicDetail, /sharedReportContainsPost\(report\.computed, id\)/);
@@ -56,7 +58,7 @@ describe('weekly report presentation', () => {
       'utf8',
     );
 
-    assert.match(presentation, /<PerformanceSection[\s\S]*showCoverageNotes=\{!isSharedReport\}/);
+    assert.match(presentation, /<PerformanceSection[\s\S]*showCoverageNotes=\{false\}/);
     assert.match(presentation, /<BrandsSection computed=\{doc\.computed\} \/>/);
     assert.match(presentation, /hasVisualBrandMetrics \? <BrandScorecards/);
     assert.ok(

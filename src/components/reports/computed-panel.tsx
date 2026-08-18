@@ -256,6 +256,23 @@ export function BrandsSection({ computed }: { computed: ComputedBlock }) {
                       : '')}
                 >
                   {formatSignedCount(b.netChange)}
+                  {/*
+                    * A source that pre-rounds its follower counts can book a
+                    * whole bucket as a week's growth. Boston 25's Facebook page
+                    * read 1,300,000 for a week and 1,400,000 the next, with no
+                    * value in between, which is most of a +106,894 headline.
+                    * The figure stays, marked, because the level is real even
+                    * when the movement is an artifact.
+                    */}
+                  {b.netChangeFromRoundedSource && b.netChange !== null ? (
+                    <span
+                      title="One or more platforms report this brand's followers rounded (Facebook rounds large pages to the nearest 100,000). This change may be a rounding step rather than real growth."
+                      className="ml-1 cursor-help font-normal text-amber-600 dark:text-amber-400"
+                      aria-label="Change may be a source rounding artifact"
+                    >
+                      ≈
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap justify-end gap-1.5">

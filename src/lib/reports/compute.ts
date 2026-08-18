@@ -223,6 +223,8 @@ export async function computeWeeklyReport(
       totalFollowers: row.available ? row.value : null,
       previousTotalFollowers: row.previousAvailable ? row.previousValue ?? null : null,
       netChange: net?.available ? net.value : null,
+      netChangeFromRoundedSource: net?.changeFromRoundedSource === true
+        || row.changeFromRoundedSource === true,
       changePct: row.changePct ?? null,
       byPlatform: platformSplit(row),
       netChangeByPlatform: net ? platformSplit(net) : {},

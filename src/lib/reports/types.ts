@@ -68,6 +68,12 @@ export type BrandRow = {
   previousTotalFollowers: number | null;
   /** Followers gained inside the window, last observation minus first. */
   netChange: number | null;
+  /**
+   * The audience endpoints behind `netChange` came from a source that had
+   * already rounded them, so the movement may be a bucket flip rather than
+   * growth. Kept visible and marked; see lib/metrics/source-rounding.
+   */
+  netChangeFromRoundedSource?: boolean;
   changePct: number | null;
   byPlatform: Partial<Record<ReportPlatform, number>>;
   /** Signed follower change by platform for the report window. */

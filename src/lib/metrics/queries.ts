@@ -44,6 +44,7 @@ import {
   type TimeSeriesPoint,
 } from '@/lib/types';
 import { autoGranularity, daysIn, parseLocalDay, previousRange, toDayString, addZoneDays, endOfZoneMonth, startOfZoneDay } from '@/lib/dates';
+import { changeIsRounded } from './source-rounding';
 import type {
   FactSheet,
   HeadlineStat,
@@ -938,6 +939,26 @@ function usesLandscapeDenominator(key: MetricKey): boolean {
  * every metric in the product; `definitions.ts` describes these formulas in prose
  * and the two must always agree.
  */
+/**
+ * Did any channel's audience endpoints arrive pre-rounded by their source?
+ *
+ * Judged per platform, because rounding is a property of one vendor's feed:
+ * Facebook rounds large pages to 100k while X and Instagram report exact
+ * figures for the same brand. A single rounded platform is enough to make the
+ * brand's total movement suspect, since that platform's bucket flip lands
+ * whole in the sum.
+ */
+function audienceChangeIsRounded(a: CompanyAgg, key: MetricKey): boolean {
+  if (key !== 'audience' && key !== 'audienceNetChange' && key !== 'audienceGrowthRate') {
+    return false;
+  }
+  for (const platform of a.byPlatform.values()) {
+    if (platform.followersLast <= 0 || platform.followersFirst <= 0) continue;
+    if (changeIsRounded(platform.followersFirst, platform.followersLast)) return true;
+  }
+  return false;
+}
+
 function metricAvailable(a: CompanyAgg, key: MetricKey): boolean {
   if (key === 'audience') {
     return a.audienceTrackedChannels > 0
@@ -1172,6 +1193,7 @@ export async function getLeaderboard(
       rank: 0,
       breakdown: breakdownOf(agg, q.metric, days, totals),
       breakdownAvailability: breakdownAvailabilityOf(agg, q.metric),
+      changeFromRoundedSource: audienceChangeIsRounded(agg, q.metric),
     });
   }
 

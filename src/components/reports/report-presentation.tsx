@@ -82,7 +82,11 @@ export function ReportPresentation({
           <>
             <PerformanceSection
               computed={doc.computed}
-              showCoverageNotes={!isSharedReport}
+              // Coverage notes are an editing tool, not part of the finished
+              // report: a reader opening View or a share link is being handed a
+              // document, not a collection audit. They remain in Edit mode,
+              // where someone can act on them.
+              showCoverageNotes={false}
             />
             {hasVisualBrandMetrics ? (
               <PortfolioCharts computed={doc.computed} />
@@ -142,18 +146,12 @@ export function ReportPresentation({
           <>
             <CohortSection computed={doc.computed} />
             <Narrative title="Competitive context" text={doc.narrative.cohort} />
-            {!isSharedReport && doc.computed.caveats.length > 0 ? (
-              <details className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-                <summary className="cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-                  {'Measurement notes (' + doc.computed.caveats.length + ')'}
-                </summary>
-                <ul className="mt-3 grid gap-2 lg:grid-cols-2">
-                  {doc.computed.caveats.map((note) => (
-                    <li key={note} className="text-xs leading-relaxed text-zinc-500">{note}</li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
+            {/*
+              * Measurement notes are likewise editing furniture and stay out
+              * of the presented report. Nothing is hidden that changes a
+              * figure: a number that could not be certified is already blank
+              * rather than annotated, and that blank is visible here.
+              */}
           </>
         ) : null}
       </div>

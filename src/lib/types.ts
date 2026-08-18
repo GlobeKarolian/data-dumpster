@@ -70,6 +70,14 @@ export interface MetricRow {
   previousComplete?: boolean;
   /** Fractional change, e.g. 0.27 for +27%. Null when the prior period is zero. */
   changePct?: number | null;
+  /**
+   * True when at least one channel's endpoints came from a source that had
+   * already rounded them, so the movement may be a rounding-bucket flip rather
+   * than real change. Facebook page counts do this above ~500k: a page reads
+   * 1,300,000 for a week and 1,400,000 the next, booking a phantom +100,000.
+   * The value stays visible and the UI marks it; see metrics/source-rounding.
+   */
+  changeFromRoundedSource?: boolean;
   rank: number;
   /** Optional per-platform split for cross-channel views. */
   breakdown?: Partial<Record<Platform, number>>;
