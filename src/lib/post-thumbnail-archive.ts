@@ -278,6 +278,146 @@ async function archiveFacebookPost(post: FacebookPostSource): Promise<'archived'
   }
 }
 
+/*
+ * ------------------------------------------------------------ direct CDN
+ *
+ * Instagram and Threads store their posters on signed scontent CDN URLs that
+ * expire in days, and some edges refuse hotlinked fetches outright. Unlike
+ * Facebook there is no public HTML page worth scraping for a fresh URL — the
+ * only reliable moment to save the image is while the stored URL still
+ * answers. Same store, same retry ledger, same private access as Facebook;
+ * only the fetch differs: straight to the stored URL with the platform's own
+ * referer, following redirects only within the same CDN.
+ */
+const DIRECT_REFERERS: Partial<Record<string, string>> = {
+  instagram: 'https://www.instagram.com/',
+  threads: 'https://www.threads.net/',
+};
+
+function sameRegistrableHost(from: string, location: string | null): string | null {
+  if (!location) return null;
+  try {
+    const next = new URL(location, from);
+    const a = new URL(from).hostname.split('.').slice(-2).join('.');
+    const b = next.hostname.split('.').slice(-2).join('.');
+    return next.protocol === 'https:' && a === b ? next.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDirectPoster(
+  source: string,
+  referer: string,
+  signal: AbortSignal,
+): Promise<ResolvedPostThumbnail | null> {
+  let current = source;
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+    let response: Response;
+    try {
+      response = await fetch(current, {
+        redirect: 'manual',
+        signal,
+        cache: 'no-store',
+        headers: {
+          accept: 'image/avif,image/webp,image/png,image/jpeg',
+          referer,
+          'user-agent': 'Mozilla/5.0 (compatible; DataDumpsterPreview/1.0)',
+        },
+      });
+    } catch {
+      return null;
+    }
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const next = sameRegistrableHost(current, response.headers.get('location'));
+      await cancelBody(response);
+      if (!next || redirects === MAX_REDIRECTS) return null;
+      current = next;
+      continue;
+    }
+    const contentType = normalizedContentType(response.headers.get('content-type'));
+    if (!response.ok || !POSTER_CONTENT_TYPES.has(contentType)) {
+      await cancelBody(response);
+      return null;
+    }
+    const body = await readBounded(response, MAX_POSTER_BYTES);
+    return body ? { body, contentType } : null;
+  }
+  return null;
+}
+
+/** Engagement-first archive batch for platforms with expiring direct URLs. */
+export async function archiveDirectPostThumbnails(options?: {
+  limit?: number;
+  concurrency?: number;
+}): Promise<{ attempted: number; archived: number; unavailable: number; skipped: boolean }> {
+  if (!postThumbnailArchiveConfigured()) {
+    return { attempted: 0, archived: 0, unavailable: 0, skipped: true };
+  }
+  const limit = Math.max(1, Math.min(options?.limit ?? 12, 40));
+  const concurrency = Math.max(1, Math.min(options?.concurrency ?? 3, 6));
+  const now = Date.now();
+  const retryBefore = new Date(now - ARCHIVE_RETRY_HOURS * 60 * 60 * 1000);
+  const postedAfter = new Date(now - ARCHIVE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const candidates = await db.select({
+    id: posts.id,
+    platform: posts.platform,
+    thumbnailUrl: posts.thumbnailUrl,
+    mediaUrl: posts.mediaUrl,
+  }).from(posts).where(and(
+    sql`${posts.platform} IN ('instagram', 'threads')`,
+    isNull(posts.archivedThumbnailUrl),
+    gte(posts.postedAt, postedAfter),
+    isNotNull(posts.thumbnailUrl),
+    lt(posts.thumbnailArchiveAttempts, ARCHIVE_MAX_ATTEMPTS),
+    or(
+      isNull(posts.thumbnailArchiveAttemptedAt),
+      lte(posts.thumbnailArchiveAttemptedAt, retryBefore),
+    ),
+  )).orderBy(desc(posts.engagementTotal), desc(posts.postedAt)).limit(limit);
+
+  let cursor = 0;
+  let archived = 0;
+  let unavailable = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, candidates.length) }, async () => {
+    while (cursor < candidates.length) {
+      const post = candidates[cursor++];
+      const attemptedAt = new Date();
+      await db.update(posts).set({
+        thumbnailArchiveAttemptedAt: attemptedAt,
+        thumbnailArchiveAttempts: sql`${posts.thumbnailArchiveAttempts} + 1`,
+        thumbnailArchiveError: null,
+      }).where(eq(posts.id, post.id));
+      try {
+        const referer = DIRECT_REFERERS[post.platform] ?? 'https://www.instagram.com/';
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+        let resolved: ResolvedPostThumbnail | null = null;
+        try {
+          for (const candidate of [post.thumbnailUrl, post.mediaUrl]) {
+            if (!candidate) continue;
+            resolved = await fetchDirectPoster(candidate, referer, controller.signal);
+            if (resolved) break;
+          }
+        } finally {
+          clearTimeout(timeout);
+        }
+        if (!resolved) throw new Error('The stored CDN URL no longer answers with an image.');
+        const archivedUrl = await persistPostThumbnail(post.id, resolved);
+        if (!archivedUrl) throw new Error('Private thumbnail storage is not configured.');
+        archived += 1;
+      } catch (error) {
+        await db.update(posts).set({
+          thumbnailArchiveAttemptedAt: attemptedAt,
+          thumbnailArchiveError: compactError(error),
+        }).where(eq(posts.id, post.id));
+        unavailable += 1;
+      }
+    }
+  }));
+  return { attempted: candidates.length, archived, unavailable, skipped: false };
+}
+
 /**
  * Drain a small, engagement-first Facebook archive batch. The existing
  * ten-minute recovery cron calls this without opening a paid vendor refresh.

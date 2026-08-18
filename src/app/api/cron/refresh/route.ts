@@ -36,9 +36,14 @@ async function handle(req: NextRequest): Promise<Response> {
   after(async () => {
     try {
       const media = await import('@/lib/post-thumbnail-archive');
-      const result = await media.archiveFacebookPostThumbnails({ limit: 4, concurrency: 2 });
-      if (!result.skipped && (result.archived > 0 || result.unavailable > 0)) {
-        console.info('[data-dumpster:cron/refresh] thumbnail archive sweep', result);
+      const facebook = await media.archiveFacebookPostThumbnails({ limit: 8, concurrency: 2 });
+      // Instagram and Threads posters live on signed CDN URLs that expire in
+      // days; archiving them while the URL still answers is the only chance.
+      const direct = await media.archiveDirectPostThumbnails({ limit: 12, concurrency: 3 });
+      for (const [label, result] of [['facebook', facebook], ['direct', direct]] as const) {
+        if (!result.skipped && (result.archived > 0 || result.unavailable > 0)) {
+          console.info(`[data-dumpster:cron/refresh] thumbnail archive sweep (${label})`, result);
+        }
       }
     } catch (error) {
       // Refresh recovery remains independent from media retention.
