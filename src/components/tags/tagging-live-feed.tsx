@@ -10,9 +10,10 @@
  * because a delightful lie about a data pipeline is still a lie.
  */
 import * as React from 'react';
+import Link from 'next/link';
 import { Radio } from 'lucide-react';
 
-interface FeedTag { name: string; color: string | null; confidence: number | null }
+interface FeedTag { id: string; name: string; color: string | null; confidence: number | null }
 interface FeedItem {
   id: string; at: string; company: string; platform: string;
   text: string | null; tags: FeedTag[];
@@ -64,8 +65,11 @@ function TagChip({ tag, delayMs }: { tag: FeedTag; delayMs: number }) {
     return () => clearTimeout(timer);
   }, [delayMs]);
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-all duration-300"
+    <Link
+      href={`/posts?tags=${tag.id}`}
+      prefetch={false}
+      title={`All posts tagged “${tag.name}”`}
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-all duration-300 hover:opacity-70"
       style={{
         borderColor: tag.color ?? '#71717a',
         color: tag.color ?? '#71717a',
@@ -77,7 +81,7 @@ function TagChip({ tag, delayMs }: { tag: FeedTag; delayMs: number }) {
       {tag.confidence !== null ? (
         <span className="pb-num opacity-60">{Math.round(tag.confidence * 100)}%</span>
       ) : null}
-    </span>
+    </Link>
   );
 }
 
@@ -127,11 +131,14 @@ export function TaggingLiveFeed({ initial }: {
 }) {
   // Seeded from the server render: the first paint is already true, and a
   // session where this component's effects never run still shows real data.
-  const [items, setItems] = React.useState<FeedItem[]>(initial.recent);
+  // Freshness is computed when a poll lands (never during render) and stored
+  // alongside each item, so render is a pure read of state.
+  const [items, setItems] = React.useState<{ item: FeedItem; fresh: boolean }[]>(
+    initial.recent.map((item) => ({ item, fresh: false })),
+  );
   const [totals, setTotals] = React.useState<Totals>(initial.totals);
   const [error, setError] = React.useState<string | null>(null);
   const seenRef = React.useRef<Set<string>>(new Set(initial.recent.map((r) => r.id)));
-  const freshRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     let alive = true;
@@ -141,18 +148,15 @@ export function TaggingLiveFeed({ initial }: {
         if (!res.ok) throw new Error(`activity ${res.status}`);
         const body = await res.json() as { totals: Totals; recent: FeedItem[] };
         if (!alive) return;
+        const known = seenRef.current;
+        const next = body.recent.map((item) => {
+          const fresh = !known.has(item.id);
+          if (fresh) known.add(item.id);
+          return { item, fresh };
+        });
         setTotals(body.totals);
         setError(null);
-        setItems((prev) => {
-          const known = seenRef.current;
-          const fresh = new Set<string>();
-          for (const item of body.recent) {
-            if (!known.has(item.id)) { fresh.add(item.id); known.add(item.id); }
-          }
-          freshRef.current = fresh;
-          void prev;
-          return body.recent;
-        });
+        setItems(next);
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'unreachable');
       }
@@ -192,8 +196,8 @@ export function TaggingLiveFeed({ initial }: {
       ) : null}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
-          <FeedCard key={item.id} item={item} fresh={freshRef.current.has(item.id)} />
+        {items.map(({ item, fresh }) => (
+          <FeedCard key={item.id} item={item} fresh={fresh} />
         ))}
         {items.length === 0 && !error ? (
           <p className="col-span-full py-16 text-center text-sm text-zinc-500">

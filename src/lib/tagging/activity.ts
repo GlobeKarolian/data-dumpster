@@ -10,7 +10,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 
-export interface ActivityTag { name: string; color: string | null; confidence: number | null }
+export interface ActivityTag { id: string; name: string; color: string | null; confidence: number | null }
 export interface ActivityItem {
   id: string; at: string; company: string; platform: string;
   text: string | null; tags: ActivityTag[];
@@ -29,7 +29,7 @@ export async function getTagActivity(orgId: string): Promise<TagActivity> {
            co.name AS company, p.platform::text AS platform,
            left(coalesce(p.text, ''), 140) AS text,
            coalesce(json_agg(json_build_object(
-             'name', t.name, 'color', t.color, 'confidence', a.confidence
+             'id', t.id, 'name', t.name, 'color', t.color, 'confidence', a.confidence
            ) ORDER BY a.confidence DESC) FILTER (WHERE t.id IS NOT NULL), '[]'::json) AS tags
       FROM ai_tag_state s
       JOIN posts p ON p.id = s.post_id

@@ -1,8 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Pencil, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { hrefWithGlobalParams } from '@/components/common/use-url-state';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,6 +41,7 @@ function splitList(value: string): string[] {
  */
 export function TagManager({ tags }: { tags: TagRecord[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [editing, setEditing] = React.useState<TagRecord | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -121,7 +124,14 @@ export function TagManager({ tags }: { tags: TagRecord[] }) {
               />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{tag.name}</span>
+                  <Link
+                    href={hrefWithGlobalParams('/posts', searchParams, { tags: tag.id })}
+                    prefetch={false}
+                    title={'All posts tagged “' + tag.name + '”'}
+                    className="text-xs font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+                  >
+                    {tag.name}
+                  </Link>
                   {tag.aiPrompt ? (
                     <Badge tone="accent">
                       <Sparkles className="h-2.5 w-2.5" aria-hidden />

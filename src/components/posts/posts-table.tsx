@@ -6,7 +6,8 @@ import type { PostDto, SortKey } from '@/lib/metrics/contract';
 import { postPosterUrl } from '@/lib/post-preview-url';
 import { platformMetricLabel } from '@/lib/platform-language';
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
-import { Badge, PlatformBadge } from '@/components/ui/badge';
+import { PlatformBadge } from '@/components/ui/badge';
+import { TagLink } from '@/components/tags/tag-link';
 import { DataTable, type Column, type SortDirection } from '@/components/ui/table';
 import { MetricLabel } from '@/components/ui/metric-label';
 import { formatDateTime, formatMetric, truncate } from '@/components/ui/format';
@@ -178,7 +179,7 @@ export function PostsTable({
                     </span>
                   ) : null}
                   {p.tags.slice(0, 3).map((t) => (
-                    <Badge key={t.id} tone="outline">{t.name}</Badge>
+                    <TagLink key={t.id} tag={t} />
                   ))}
                 </div>
               ) : null}

@@ -1,8 +1,11 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Tag } from 'lucide-react';
 import type { TagRow } from '@/lib/metrics/contract';
+import { hrefWithGlobalParams } from '@/components/common/use-url-state';
 import { percent } from '@/lib/utils';
 import { DataTable, type Column } from '@/components/ui/table';
 import { MetricLabel } from '@/components/ui/metric-label';
@@ -26,21 +29,32 @@ function LiftCell({ lift }: { lift: number | null }) {
 }
 
 export function TagPerformanceTable({ rows }: { rows: TagRow[] }) {
+  const searchParams = useSearchParams();
   const columns: Column<TagRow>[] = React.useMemo(
     () => [
       {
         id: 'tag',
         header: 'Tag',
         sortValue: (r) => r.tag.name,
+        // The row is the summary; the name is the door. Clicking through lands
+        // on Social Posts filtered to this tag in the same scope and window,
+        // where every post behind these numbers is individually inspectable.
         cell: (r) => (
-          <span className="inline-flex items-center gap-2">
+          <Link
+            href={hrefWithGlobalParams('/posts', searchParams, { tags: r.tag.id })}
+            prefetch={false}
+            title={`All posts tagged “${r.tag.name}”`}
+            className="group inline-flex items-center gap-2"
+          >
             <span
               aria-hidden
               className="h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: r.tag.color ?? '#71717a' }}
             />
-            <span className="font-medium text-zinc-900 dark:text-zinc-100">{r.tag.name}</span>
-          </span>
+            <span className="font-medium text-zinc-900 underline-offset-2 group-hover:underline dark:text-zinc-100">
+              {r.tag.name}
+            </span>
+          </Link>
         ),
       },
       {
@@ -111,7 +125,7 @@ export function TagPerformanceTable({ rows }: { rows: TagRow[] }) {
         cell: (r) => <LiftCell lift={r.lift} />,
       },
     ],
-    [],
+    [searchParams],
   );
 
   return (

@@ -5,6 +5,7 @@ import { postPosterUrl } from '@/lib/post-preview-url';
 import { platformMetricLabel } from '@/lib/platform-language';
 import { cn, compactNumber } from '@/lib/utils';
 import { Badge, PlatformBadge } from '@/components/ui/badge';
+import { TagLink } from '@/components/tags/tag-link';
 import { Tooltip } from '@/components/ui/tooltip';
 import { formatDateTime, formatMetric, truncate } from '@/components/ui/format';
 
@@ -156,7 +157,7 @@ export function PostCard({
         <ul className="mt-2 flex flex-wrap gap-1">
           {post.tags.slice(0, 4).map((t) => (
             <li key={t.id}>
-              <Badge tone="outline">{t.name}</Badge>
+              <TagLink tag={t} />
             </li>
           ))}
         </ul>

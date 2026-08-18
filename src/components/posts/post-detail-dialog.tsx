@@ -30,6 +30,7 @@ import { postPosterUrl, postVideoUrl } from '@/lib/post-preview-url';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge, PlatformBadge } from '@/components/ui/badge';
+import { TagLink } from '@/components/tags/tag-link';
 import { Dialog } from '@/components/ui/dialog';
 import { MetricLabel } from '@/components/ui/metric-label';
 import { formatDateTime, formatInteger, formatMetric } from '@/components/ui/format';
@@ -523,7 +524,7 @@ export function PostDetailDialog({
                   {tags.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {tags.map((tag) => (
-                        <Badge key={tag.id} tone="outline">{tag.name}</Badge>
+                        <TagLink key={tag.id} tag={tag} />
                       ))}
                     </div>
                   ) : null}
