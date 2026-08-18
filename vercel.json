@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/tag",
       "schedule": "8,18,28,38,48,58 * * * *"
+    },
+    {
+      "path": "/api/cron/backup",
+      "schedule": "0 7 * * *"
     }
   ]
 }

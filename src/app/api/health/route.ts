@@ -19,6 +19,8 @@ import { db } from '@/db';
 import { apiHandler } from '@/lib/session';
 import { recentCoverage, type DayCoverage } from '@/lib/metrics/daily-coverage';
 import { isScheduledCoverageFailure } from '@/lib/metrics/daily-coverage-summary';
+import { backupStatus, type BackupStatus } from '@/lib/backup';
+import { spendReport, type SpendReport } from '@/lib/spend';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -91,6 +93,20 @@ export const GET = apiHandler(async () => {
     console.error('[pressbox:health] database check failed', err);
   }
 
+  /*
+   * Spend and backups are reported best-effort and never take health down:
+   * an unreachable usage API is a line in the payload, not a 503. Backup
+   * staleness DOES degrade, because "the only copy is the provider's" is a
+   * condition someone should be paged about before the day it matters.
+   */
+  let spend: SpendReport | null = null;
+  let backups: BackupStatus | null = null;
+  try {
+    [spend, backups] = await Promise.all([spendReport(), backupStatus()]);
+  } catch (err) {
+    console.error('[pressbox:health] spend/backup meters failed', err);
+  }
+
   const configured = Object.values(config).every(Boolean);
   /*
    * A closed day that was never fully collected is the failure worth paging on.
@@ -102,9 +118,11 @@ export const GET = apiHandler(async () => {
    */
   const closedDays = coverage.slice(1);
   const incompleteClosedDays = closedDays.filter(isScheduledCoverageFailure).length;
+  const backupsStale = backups !== null && backups.stale;
   const status = !database
     ? 'down'
-    : (!configured || overdue > 0 || incompleteClosedDays > 0) ? 'degraded' : 'ok';
+    : (!configured || overdue > 0 || incompleteClosedDays > 0 || backupsStale)
+      ? 'degraded' : 'ok';
 
   return Response.json(
     {
@@ -128,6 +146,8 @@ export const GET = apiHandler(async () => {
         incompleteClosedDays,
         days: coverage,
       },
+      spend,
+      backups,
       checkedAt: new Date().toISOString(),
     },
     { status: database ? 200 : 503, headers: { 'cache-control': 'no-store' } },
