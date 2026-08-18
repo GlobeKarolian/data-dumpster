@@ -19,6 +19,24 @@ type TagRow = {
   ai_prompt: string | null;
 }
 
+type AiStatusRow = {
+  posts_read: string | number;
+  read_last_hour: string | number;
+  in_flight: string | number;
+  awaiting_retry: string | number;
+  ai_assignments: string | number;
+  spend_today_usd: string | number;
+};
+
+function StatusFigure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-28">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="pb-num mt-0.5 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{value}</p>
+    </div>
+  );
+}
+
 export default async function PostTagsPage({
   searchParams,
 }: {
@@ -28,7 +46,7 @@ export default async function PostTagsPage({
   if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
   const canManageTags = roleAtLeast(ctx.role, 'editor');
 
-  const [performance, tags] = await Promise.all([
+  const [performance, tags, aiStatus] = await Promise.all([
     loadTagPerformance(analyticsQuery(ctx)),
     canManageTags
       ? query<TagRow>(({ sql }) => sql`
@@ -38,11 +56,55 @@ export default async function PostTagsPage({
            ORDER BY name ASC
         `)
       : Promise.resolve({ data: [] as TagRow[], error: null }),
+    query<AiStatusRow>(({ sql }) => sql`
+      SELECT
+        (SELECT count(*) FROM ai_tag_state
+          WHERE org_id = ${ctx.orgId}::uuid AND status = 'succeeded') AS posts_read,
+        (SELECT count(*) FROM ai_tag_state
+          WHERE org_id = ${ctx.orgId}::uuid AND status = 'succeeded'
+            AND tagged_at > now() - interval '1 hour') AS read_last_hour,
+        (SELECT count(*) FROM ai_tag_state
+          WHERE org_id = ${ctx.orgId}::uuid AND status = 'running'
+            AND next_attempt_at > now()) AS in_flight,
+        (SELECT count(*) FROM ai_tag_state
+          WHERE org_id = ${ctx.orgId}::uuid AND status = 'failed') AS awaiting_retry,
+        (SELECT count(*) FROM post_tag_assignments a
+          JOIN post_tags t ON t.id = a.tag_id
+          WHERE t.org_id = ${ctx.orgId}::uuid AND a.source = 'ai') AS ai_assignments,
+        (SELECT coalesce(sum(cost_usd), 0) FROM ai_usage
+          WHERE org_id = ${ctx.orgId}::uuid AND feature = 'post-tagging'
+            AND created_at >= date_trunc('day', now())) AS spend_today_usd
+    `),
   ]);
+  const status = aiStatus.data?.[0];
 
   return (
     <div className="space-y-6">
       <CrossChannelTabs />
+      {/*
+        * The tagging pipeline was invisible: the model read thousands of posts
+        * and the only evidence was counts quietly changing. This strip is the
+        * window — reads, throughput, retries and today's spend, straight from
+        * the queue and usage tables. Refresh to update; numbers move whenever
+        * the ten-minute cron or a backfill is working.
+        */}
+      {status ? (
+        <PageSection
+          title="AI tagging activity"
+          description="The model reads every post in scope once, and re-reads when a tag's definition or scope changes. Refresh for current numbers."
+        >
+          <Panel title="Pipeline" error={aiStatus.error}>
+            <div className="flex flex-wrap gap-x-8 gap-y-3 px-1 py-1">
+              <StatusFigure label="Posts read" value={Number(status.posts_read).toLocaleString()} />
+              <StatusFigure label="Last hour" value={Number(status.read_last_hour).toLocaleString()} />
+              <StatusFigure label="In flight" value={Number(status.in_flight).toLocaleString()} />
+              <StatusFigure label="Awaiting retry" value={Number(status.awaiting_retry).toLocaleString()} />
+              <StatusFigure label="Tags applied" value={Number(status.ai_assignments).toLocaleString()} />
+              <StatusFigure label="Spend today" value={'$' + Number(status.spend_today_usd).toFixed(2)} />
+            </div>
+          </Panel>
+        </PageSection>
+      ) : null}
       <PageSection
         title="Tag performance"
         description="What each tag earned in this window, and whether posts carrying it beat the same brand’s own average. Lift is the column that matters: a tag can carry a lot of engagement simply because it is applied to a lot of posts."
