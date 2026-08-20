@@ -30,6 +30,25 @@ const MAX_ATTEMPTS = 6;
  */
 const ACCESS_REFUSAL = /private|not (a )?(public|member)|members[- ]only|access denied|permission|log ?in required|restricted/i;
 
+/**
+ * Vendor spend governor: how far back and how many posts we buy per group.
+ *
+ * Deliberately small. Collection runs every six hours, so a two-day window
+ * overlaps itself and nothing is missed, while the per-run bill stays in cents
+ * rather than the ~$50 an unbounded group snapshot cost. Group View is a
+ * "what is being discussed now" tool; history accrues from our own daily
+ * collection rather than being bought back.
+ */
+const WINDOW_DAYS = 2;
+const POSTS_PER_GROUP = 50;
+
+/** MM-DD-YYYY, the format this dataset's date inputs expect. */
+function windowStart(): string {
+  const d = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return p(d.getMonth() + 1) + '-' + p(d.getDate()) + '-' + d.getFullYear();
+}
+
 export interface GroupCollectResult {
   groupsClaimed: number;
   postsWritten: number;
@@ -174,8 +193,19 @@ async function writePosts(orgId: string, groupId: string, rows: RawGroupPost[]):
     .filter((v): v is NonNullable<typeof v> => v !== null);
 
   if (values.length === 0) return 0;
-  await db.insert(groupPosts).values(values).onConflictDoNothing();
-  return values.length;
+
+  // A busy group returns tens of thousands of rows in one snapshot. Passing
+  // them to a single INSERT exceeded both the JS call stack and Postgres's
+  // 65,535 bind-parameter ceiling, so every row was lost. Fourteen columns per
+  // row means 500 rows is ~7,000 parameters: comfortably inside both limits.
+  const CHUNK = 500;
+  let written = 0;
+  for (let i = 0; i < values.length; i += CHUNK) {
+    const chunk = values.slice(i, i + CHUNK);
+    await db.insert(groupPosts).values(chunk).onConflictDoNothing();
+    written += chunk.length;
+  }
+  return written;
 }
 
 /** One org's group-collection tick. */
@@ -191,9 +221,19 @@ export async function runGroupCollection(orgId: string, apiKey: string): Promise
       // This dataset is url_collection only: the group URL IS the input and
       // Bright Data returns that group's posts. It rejects discovery mode
       // (type=discover_new) with an HTTP 400, so no discoverBy here.
+      //
+      // The window is not optional. Unbounded, one busy group returned 33,226
+      // records in a single snapshot, which is roughly $50 at $1.50/1,000 —
+      // per group, per collection, every six hours. Group View is a "what is
+      // being discussed now" tool, so it buys a recent window and nothing more.
       const rows = await scrapeSync<RawGroupPost>(
         DATASETS.facebookGroupPosts,
-        [{ url: group.url }],
+        [{
+          url: group.url,
+          start_date: windowStart(),
+          end_date: '',
+          num_of_posts: POSTS_PER_GROUP,
+        }],
         {
           apiKey,
           platform: 'facebook',
