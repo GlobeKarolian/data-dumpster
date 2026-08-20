@@ -16,12 +16,19 @@
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { groupPosts } from '@/db/schema';
-import { scrapeSync, DATASETS } from '@/lib/vendors/brightdata';
+import { scrapeSync, DATASETS, rowError } from '@/lib/vendors/brightdata';
 import { PendingSnapshotError } from '@/lib/vendors/brightdata';
 
 const LEASE_MINUTES = 8;
 const GROUPS_PER_TICK = 8;
 const MAX_ATTEMPTS = 6;
+
+/**
+ * Vendor error text that actually establishes the group cannot be read, as
+ * opposed to a scrape that has not finished. Nothing else may be reported to a
+ * user as "private".
+ */
+const ACCESS_REFUSAL = /private|not (a )?(public|member)|members[- ]only|access denied|permission|log ?in required|restricted/i;
 
 export interface GroupCollectResult {
   groupsClaimed: number;
@@ -194,11 +201,23 @@ export async function runGroupCollection(orgId: string, apiKey: string): Promise
           timeoutMs: 60_000,
         },
       );
-      // A public group with no returned rows is empty or unreadable; a
-      // members-only group is the latter, and neither is a failure to retry.
-      if (rows.length === 0) {
-        await settle(group.id, 'ineligible', { error: 'No public posts returned for this group URL.' });
+      // Only the vendor saying so establishes that a group is unreachable.
+      // Zero rows does NOT: a slow snapshot, a transient vendor hiccup and a
+      // genuinely members-only group all produce it, and calling all three
+      // "private" put a false claim on the screen for public groups. So an
+      // access refusal is read from the vendor's own error text, and anything
+      // else retries.
+      const refusal = rows.map(rowError).find((m) => m && ACCESS_REFUSAL.test(m));
+      if (refusal) {
+        await settle(group.id, 'ineligible', { error: refusal.slice(0, 500) });
         result.ineligible += 1;
+        continue;
+      }
+      if (rows.length === 0) {
+        await settle(group.id, 'failed', {
+          error: 'Bright Data returned no rows for this group yet. Retrying.',
+        });
+        result.failed += 1;
         continue;
       }
       const written = await writePosts(orgId, group.id, rows);

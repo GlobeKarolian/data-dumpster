@@ -20,7 +20,7 @@ export interface GroupRecord {
 const OUTCOME_STYLE: Record<string, { label: string; className: string }> = {
   covered: { label: 'Collecting', className: 'text-emerald-700 dark:text-emerald-400' },
   collecting: { label: 'In progress', className: 'text-blue-700 dark:text-blue-400' },
-  ineligible: { label: 'Private — not collectible', className: 'text-amber-700 dark:text-amber-400' },
+  ineligible: { label: 'Source refused — not collectible', className: 'text-amber-700 dark:text-amber-400' },
   failed: { label: 'Retrying', className: 'text-zinc-500' },
 };
 

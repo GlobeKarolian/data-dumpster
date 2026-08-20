@@ -251,7 +251,17 @@ async function awaitSnapshot(
         opts,
         deadline,
       );
-      return Array.isArray(rows) ? rows : [];
+      if (Array.isArray(rows)) return rows;
+
+      // The download endpoint answers 202 with {status:"running"} when progress
+      // has flipped to ready but the file is not materialized yet. That is a
+      // 2xx, so it reaches here as a record rather than an array. Returning []
+      // for it told callers "this source has no posts", which is a different
+      // and much more damaging claim than "not finished". Keep polling instead.
+      if (isRecord(rows) && typeof rows.status === 'string' && rows.status !== 'ready') {
+        continue;
+      }
+      return [];
     }
   } catch (err) {
     if (!(err instanceof OperationDeadlineExceeded)) throw err;
