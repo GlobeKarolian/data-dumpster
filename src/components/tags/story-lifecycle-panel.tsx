@@ -92,6 +92,9 @@ function Arc({ points, color, peakDate, maturingFrom }: {
             key={point.date}
             wide
             side="top"
+            // The wrapper IS the flex child here; without this the arc
+            // collapses to the intrinsic width of its bars.
+            wrapperClassName="flex-1 items-end self-stretch"
             content={(
               <span className="block space-y-1.5">
                 <span className="block font-medium text-zinc-900 dark:text-zinc-100">
@@ -130,7 +133,7 @@ function Arc({ points, color, peakDate, maturingFrom }: {
           >
             <span
               tabIndex={0}
-              className="min-w-[3px] flex-1 cursor-help rounded-sm transition-opacity hover:opacity-100"
+              className="block w-full cursor-help self-end rounded-sm transition-opacity hover:opacity-100"
               style={{
                 height,
                 backgroundColor: color,
@@ -194,6 +197,7 @@ export function StoryLifecyclePanel({ rows }: { rows: TagSeriesRow[] }) {
               <Tooltip
                 wide
                 side="bottom"
+                wrapperClassName="mt-0.5 flex"
                 content={(
                   <span className="block space-y-1.5">
                     <span className="block font-medium text-zinc-900 dark:text-zinc-100">
@@ -215,7 +219,7 @@ export function StoryLifecyclePanel({ rows }: { rows: TagSeriesRow[] }) {
               >
                 <p
                   tabIndex={0}
-                  className={'mt-0.5 w-fit cursor-help text-[10px] font-semibold uppercase tracking-wider ' + phase.className}
+                  className={'w-fit cursor-help text-[10px] font-semibold uppercase tracking-wider ' + phase.className}
                 >
                   {phase.label}
                 </p>
@@ -233,6 +237,7 @@ export function StoryLifecyclePanel({ rows }: { rows: TagSeriesRow[] }) {
 
             <Tooltip
               side="bottom"
+              wrapperClassName="w-24 shrink-0"
               content={
                 `Every post carrying this tag in the selected window, across the whole landscape: `
                 + `${reading.totalPosts.toLocaleString()} posts earning `
@@ -240,7 +245,7 @@ export function StoryLifecyclePanel({ rows }: { rows: TagSeriesRow[] }) {
                 + 'Includes the most recent days, whose reaction is still accruing.'
               }
             >
-              <div tabIndex={0} className="w-24 shrink-0 cursor-help text-right">
+              <div tabIndex={0} className="w-full cursor-help text-right">
                 <p className="pb-num text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
                   {compact(reading.totalEngagement)}
                 </p>
