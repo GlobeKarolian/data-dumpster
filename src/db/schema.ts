@@ -1145,6 +1145,90 @@ export const tagSuggestions = pgTable('tag_suggestions', {
 ]);
 
 /**
+ * Group View: local Facebook groups a newsroom watches for community signal.
+ *
+ * These are PUBLIC groups. Bright Data's group dataset reads public group
+ * posts and cannot reach a members-only group; a private URL registered here
+ * settles as `ineligible` rather than being worked around. See
+ * docs/GROUP-VIEW.md.
+ *
+ * Groups are org-private, unlike the pooled brand `channels`: a group one
+ * newsroom finds worth watching is that newsroom's editorial choice, and the
+ * post records collected from it are stored per-org rather than shared.
+ */
+export const watchedGroups = pgTable('watched_groups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  /** The group's public Facebook URL, the collection input. */
+  url: text('url').notNull(),
+  /** Editor-supplied label, e.g. "Somerville Neighborhood News". */
+  name: text('name').notNull(),
+  /** Optional grouping, e.g. a town or neighborhood, for roll-ups. */
+  area: text('area'),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('watched_groups_org_url_idx').on(t.orgId, t.url),
+  index('watched_groups_org_active_idx').on(t.orgId, t.active),
+]);
+
+/**
+ * A post collected from a watched group.
+ *
+ * Full records are stored, including author identity, because that is the
+ * decision the operator made. Display of identity is a separate concern: the
+ * Group View surfaces are aggregate by default, and any screen that shows an
+ * author name or profile link is gated behind the admin role AND the
+ * GROUP_IDENTITIES_VISIBLE flag, so "we collected it" and "anyone browsed it"
+ * are distinct facts with distinct controls. `raw` keeps the untouched vendor
+ * record for audit.
+ */
+export const groupPosts = pgTable('group_posts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  groupId: uuid('group_id').notNull().references(() => watchedGroups.id, { onDelete: 'cascade' }),
+  /** Bright Data's stable id for the post, the idempotency key. */
+  externalId: text('external_id').notNull(),
+  postedAt: timestamp('posted_at', { withTimezone: true }),
+  content: text('content'),
+  /** Author display name and profile URL, stored, display-gated. */
+  authorName: text('author_name'),
+  authorProfileUrl: text('author_profile_url'),
+  likes: integer('likes').notNull().default(0),
+  comments: integer('comments').notNull().default(0),
+  shares: integer('shares').notNull().default(0),
+  permalink: text('permalink'),
+  /** Outbound links found in the post, for distribution analysis. */
+  urls: jsonb('urls').notNull().default(sql`'[]'::jsonb`),
+  raw: jsonb('raw'),
+  collectedAt: timestamp('collected_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('group_posts_dedupe_idx').on(t.orgId, t.groupId, t.externalId),
+  index('group_posts_group_time_idx').on(t.groupId, t.postedAt),
+]);
+
+/**
+ * Durable collection state for one watched group, mirroring the shape proven by
+ * channel_collection_state: claim under a lease, settle with an outcome, resume
+ * an unfinished Bright Data snapshot by its receipt.
+ */
+export const groupCollectionState = pgTable('group_collection_state', {
+  groupId: uuid('group_id').primaryKey().references(() => watchedGroups.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('idle'),
+  /** covered | ineligible | failed | collecting — the last settled outcome. */
+  outcome: text('outcome'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+  /** Bright Data snapshot receipt for a run that outlived its invocation. */
+  resumeSnapshotId: text('resume_snapshot_id'),
+  lastError: text('last_error'),
+  lastCollectedAt: timestamp('last_collected_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('group_collection_state_next_idx').on(t.nextAttemptAt),
+]);
+
+/**
  * What drove one day of one story, in words.
  *
  * A bar on a lifecycle chart says a day was big; it cannot say why. These

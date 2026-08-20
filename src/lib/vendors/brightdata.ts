@@ -45,6 +45,11 @@ export const DATASETS = {
   twitterPosts: 'gd_lwxkxvnf1cynvib9co',
   linkedinCompany: 'gd_l1vikfnt1wgvvqz95w',
   linkedinCompanyPosts: 'gd_lyy3tktm25m4avu764',
+  // Facebook posts collected by group URL. Bright Data's group dataset returns
+  // PUBLIC group posts only; a members-only group is not reachable through it,
+  // and Group View surfaces that as an ineligible source rather than working
+  // around it. See docs/GROUP-VIEW.md.
+  facebookGroupPosts: 'gd_lz11l67o2cb3r0lkj3',
 } as const;
 
 /** Bright Data accepts at most 20 inputs per trigger for these datasets. */
