@@ -25,10 +25,10 @@ describe('the prompt', () => {
     assert.match(system.content, /trial, testimony, attorneys, verdict/);
   });
 
-  it('forbids numbers in the strongest terms, because counts are rendered in code', () => {
+  it('forbids claims about our measurements, while allowing facts from the posts', () => {
     const [system] = buildNarrativeMessages(req);
-    assert.match(system.content, /State NO numbers/);
-    assert.match(system.content, /not "the top post"/);
+    assert.match(system.content, /Never state how much coverage there was/);
+    assert.match(system.content, /Facts reported IN the posts are fine/);
   });
 
   it('forbids outside knowledge and prediction', () => {
@@ -65,21 +65,41 @@ describe('validation', () => {
     assert.match(text, /^The prosecution rested/);
   });
 
-  it('rejects a narrative containing any figure, rather than scrubbing it', () => {
-    // A sentence built around a number becomes nonsense with the number cut,
-    // and nonsense beside real counts reads as broken data.
-    assert.equal(validateNarrative({ narrative: 'The jury heard from 4 witnesses about her state of mind that week.' }), null);
+  it('rejects claims about our own measurements', () => {
     assert.equal(validateNarrative({ narrative: 'Coverage rose about 30% as the trial reached its second week of testimony.' }), null);
+    assert.equal(validateNarrative({ narrative: 'The ruling drew 12,000 engagements across the market during the afternoon session.' }), null);
+    assert.equal(validateNarrative({ narrative: 'The testimony accounted for 40 posts from newsrooms across the state that day.' }), null);
+    assert.equal(validateNarrative({ narrative: 'Most of the coverage focused on the judge’s ruling about the question posed.' }), null);
   });
 
-  it('rejects the quantity words a model reaches for when told not to count', () => {
-    assert.equal(validateNarrative({ narrative: 'Several outlets covered the testimony of her mother and sister at length.' }), null);
-    assert.equal(validateNarrative({ narrative: 'Most of the coverage focused on the judge’s ruling about the question posed.' }), null);
+  it('allows facts the posts themselves report, including numerals', () => {
+    // The first validator rejected any digit and threw away three quarters of
+    // good narratives. A career milestone is a fact about the world.
+    const a = validateNarrative({
+      narrative: 'Willson Contreras tied his career home run mark in the Game 2 win, and outlets '
+        + 'also followed an in-game error that drew reaction from fans.',
+    });
+    assert.ok(a, 'a milestone and a game number are facts from the posts');
+    const b = validateNarrative({
+      narrative: 'Testimony resumed on August 17 with the defence psychologist describing her state '
+        + 'of mind, before the judge adjourned the session early.',
+    });
+    assert.ok(b, 'a date is not a claim about our data');
+  });
+
+  it('accepts two full sentences about a busy day', () => {
+    const text = validateNarrative({
+      narrative: 'Coverage centered on the Red Sox defeating the Blue Jays, highlighted by a '
+        + 'dominant pitching performance from Payton Tolle, a grand slam from Caleb Durbin, and '
+        + 'Garrett Whitlock heading to the injured list. Additional attention went to Bridgewater '
+        + 'advancing in its tournament run and to reaction from around the league.',
+    });
+    assert.ok(text, 'a two-thread day needs room; the old 320 cap rejected these');
   });
 
   it('rejects an empty, stubby or runaway answer', () => {
     assert.equal(validateNarrative({ narrative: 'Trial news.' }), null);
-    assert.equal(validateNarrative({ narrative: 'x'.repeat(400) }), null);
+    assert.equal(validateNarrative({ narrative: 'x'.repeat(700) }), null);
     assert.equal(validateNarrative({}), null);
     assert.equal(validateNarrative(null), null);
   });
