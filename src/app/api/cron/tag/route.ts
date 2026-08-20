@@ -15,6 +15,7 @@ import { apiHandler } from '@/lib/session';
 import { assertCronAuthorized, cronJson } from '../../_lib/cron';
 import { orgsWithAiTags, runTaggingTick, type TagTickResult } from '@/lib/tagging/queue';
 import { runCurationPass, type CurationPassResult } from '@/lib/tagging/curation';
+import { runNarrativeTick, type NarrativeTickResult } from '@/lib/tagging/narrative-jobs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const orgIds = await orgsWithAiTags();
   const results: TagTickResult[] = [];
   const curation: CurationPassResult[] = [];
+  const narratives: NarrativeTickResult[] = [];
   for (const orgId of orgIds) {
     try {
       results.push(await runTaggingTick(orgId));
@@ -48,6 +50,17 @@ async function handle(req: NextRequest): Promise<Response> {
         error: error instanceof Error ? error.message : 'Unknown curation failure.',
       });
     }
+    try {
+      // Day narratives: what drove each day of each running story. Budgeted
+      // separately and skipped cheaply when nothing has changed.
+      const pass = await runNarrativeTick(orgId);
+      if (pass.written > 0 || pass.candidates > 0) narratives.push(pass);
+    } catch (error) {
+      console.error('[data-dumpster:cron/tag] narrative tick failed', {
+        orgId,
+        error: error instanceof Error ? error.message : 'Unknown narrative failure.',
+      });
+    }
   }
   return cronJson({
     orgs: orgIds.length,
@@ -61,6 +74,14 @@ async function handle(req: NextRequest): Promise<Response> {
       spentUsd: Number(r.spentUsd.toFixed(4)),
       ...(r.budgetExhausted ? { budgetExhausted: true } : {}),
       ...(r.skipped ? { skipped: r.skipped } : {}),
+    })),
+    narratives: narratives.map((n) => ({
+      orgId: n.orgId,
+      candidates: n.candidates,
+      written: n.written,
+      rejected: n.rejected,
+      spentUsd: Number(n.spentUsd.toFixed(4)),
+      ...(n.skipped ? { skipped: n.skipped } : {}),
     })),
     curation: curation.map((c) => ({
       orgId: c.orgId,

@@ -1145,6 +1145,38 @@ export const tagSuggestions = pgTable('tag_suggestions', {
 ]);
 
 /**
+ * What drove one day of one story, in words.
+ *
+ * A bar on a lifecycle chart says a day was big; it cannot say why. These
+ * narratives are written by a model that reads every post carrying the tag
+ * that day and summarises what moved — the testimony, the ruling, the trade,
+ * the storm — so a reader hovering a spike gets the reason rather than a
+ * number they must go and investigate.
+ *
+ * Stored rather than generated on read for three reasons: the same day is
+ * re-read by every window that contains it, a page render must not wait on a
+ * model, and a day's posts stop changing once they mature, so the answer is
+ * stable. `posts_considered` and `engagement_at_write` record what the
+ * narrative was based on, which is how staleness is detected when a day is
+ * still accruing.
+ */
+export const storyNarratives = pgTable('story_narratives', {
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  tagId: uuid('tag_id').notNull().references(() => postTags.id, { onDelete: 'cascade' }),
+  /** Report-zone bucket this narrative describes. */
+  bucketDate: date('bucket_date').notNull(),
+  granularity: text('granularity').notNull().default('day'),
+  narrative: text('narrative').notNull(),
+  postsConsidered: integer('posts_considered').notNull().default(0),
+  engagementAtWrite: doublePrecision('engagement_at_write').notNull().default(0),
+  model: text('model'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'story_narratives_pk', columns: [t.orgId, t.tagId, t.bucketDate, t.granularity] }),
+  index('story_narratives_lookup_idx').on(t.orgId, t.granularity, t.bucketDate),
+]);
+
+/**
  * The curator's rulings, one row per label it judged.
  *
  * A stronger model reads a suggestion group (label + evidence posts + the

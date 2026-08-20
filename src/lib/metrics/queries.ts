@@ -2337,13 +2337,40 @@ export async function getTagSeries(
     byTag.set(r.tag_id, existing);
   }
 
+  /*
+   * What drove each bucket, in words.
+   *
+   * A bar height says something happened, not what. Narratives are written
+   * ahead of time by a model that reads ALL of a day's posts for the story
+   * (see lib/tagging/narrative.ts) and stored, so this read is an indexed
+   * lookup rather than the per-bucket DISTINCT ON scan it replaced — that
+   * version cost twelve seconds on a seven-day window.
+   */
+  const { rows: narratives } = await db.execute<{
+    tag_id: string; bucket: string; narrative: string; posts_considered: number;
+  }>(sql`
+    SELECT tag_id::text, bucket_date::text AS bucket, narrative, posts_considered
+      FROM story_narratives
+     WHERE org_id = ${scope.orgId}::uuid
+       AND granularity = ${g}
+       AND bucket_date >= ${dayParam(range.start)}
+       AND bucket_date <= ${dayParam(range.end)}`);
+  const narrativeBy = new Map(
+    narratives.map((n) => [`${n.tag_id} ${n.bucket}`, {
+      text: n.narrative, postsConsidered: Number(n.posts_considered),
+    }]),
+  );
+
   // Fill the window so a gap is a visible zero inside the arc rather than a
   // line that silently skips the day a story went quiet.
   const buckets = bucketsFor(range, g);
   for (const row of byTag.values()) {
     const found = new Map(row.points.map((point) => [point.date, point]));
-    row.points = buckets.map((date) =>
-      found.get(date) ?? { date, posts: 0, engagement: 0 });
+    row.points = buckets.map((date) => {
+      const point = found.get(date) ?? { date, posts: 0, engagement: 0 };
+      const narrative = narrativeBy.get(`${row.tag.id} ${date}`);
+      return narrative ? { ...point, narrative } : point;
+    });
   }
   return [...byTag.values()];
 }

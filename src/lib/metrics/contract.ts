@@ -150,7 +150,13 @@ export interface TimeSeriesResult {
   granularity: 'day' | 'week' | 'month';
 }
 
-export interface TagSeriesPoint { date: string; posts: number; engagement: number }
+export interface TagSeriesPoint {
+  date: string;
+  posts: number;
+  engagement: number;
+  /** What drove this day, written by a model that read the day's posts. */
+  narrative?: { text: string; postsConsidered: number };
+}
 
 /** One tag's arc across the selected window, bucketed in the report zone. */
 export interface TagSeriesRow {
