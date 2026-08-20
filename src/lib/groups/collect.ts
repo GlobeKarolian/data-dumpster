@@ -181,13 +181,15 @@ export async function runGroupCollection(orgId: string, apiKey: string): Promise
 
   for (const group of groups) {
     try {
+      // This dataset is url_collection only: the group URL IS the input and
+      // Bright Data returns that group's posts. It rejects discovery mode
+      // (type=discover_new) with an HTTP 400, so no discoverBy here.
       const rows = await scrapeSync<RawGroupPost>(
         DATASETS.facebookGroupPosts,
         [{ url: group.url }],
         {
           apiKey,
           platform: 'facebook',
-          discoverBy: 'url',
           resumeSnapshotId: group.resume ?? undefined,
           timeoutMs: 60_000,
         },
