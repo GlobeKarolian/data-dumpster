@@ -46,6 +46,7 @@ test('production opens exactly two collection windows and recovery cannot enqueu
     // AI tagging reads posts already collected and bills the org's own model.
     // It is not a collection window: it can never create vendor demand.
     { path: '/api/cron/tag', schedule: '8,18,28,38,48,58 * * * *' },
+    { path: '/api/cron/narrate', schedule: '3,13,23,33,43,53 * * * *' },
     // The nightly backup reads the database and writes to Blob storage. It
     // is not a collection window either: no vendor is ever called.
     { path: '/api/cron/backup', schedule: '0 7 * * *' },

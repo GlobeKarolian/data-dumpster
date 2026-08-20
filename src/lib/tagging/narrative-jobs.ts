@@ -1,7 +1,8 @@
 /**
  * Writing the day narratives: choose, read, write, store.
  *
- * Runs on the tag cron behind its own budget. The selection rule is the whole
+ * Runs on its own cron (/api/cron/narrate) behind its own budget, so a deep
+ * backlog can never starve tagging. The selection rule is the whole
  * design: narrate the days a reader will actually hover, newest and biggest
  * first, and never re-narrate a day whose posts have not changed.
  *
@@ -23,8 +24,16 @@ import {
   type NarrativePost,
 } from './narrative';
 
-/** Days narrated per tick. One completion each; the cron runs every ten minutes. */
-const DAYS_PER_TICK = 12;
+/**
+ * Days narrated per tick, bounded by wall clock rather than by count.
+ *
+ * Each day is one completion of a few seconds, and the cron has five minutes,
+ * so the useful limit is time, not a guessed number. The ceiling stops a
+ * pathological run; TICK_MS_BUDGET is what actually ends a tick, leaving room
+ * for the response to be written before the platform's own timeout.
+ */
+const DAYS_PER_TICK = 60;
+const TICK_MS_BUDGET = 240_000;
 /** How far back to bother narrating. */
 const LOOKBACK_DAYS = 30;
 /** Re-narrate when a day's engagement has moved by more than this share. */
@@ -155,9 +164,14 @@ export async function runNarrativeTick(orgId: string): Promise<NarrativeTickResu
   if (days.length === 0) return { ...base, skipped: 'no days need narrating' };
 
   let spentThisTick = 0;
+  const startedAt = Date.now();
   for (const day of days) {
     if (spent + spentThisTick >= dailyBudgetUsd()) {
       base.skipped = 'narrative budget reached mid-tick';
+      break;
+    }
+    if (Date.now() - startedAt > TICK_MS_BUDGET) {
+      base.skipped = 'tick time budget reached';
       break;
     }
     const posts = await postsForDay(orgId, day.tagId, day.bucket);
