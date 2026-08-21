@@ -30,6 +30,9 @@ const MAX_ATTEMPTS = 6;
  */
 const ACCESS_REFUSAL = /private|not (a )?(public|member)|members[- ]only|access denied|permission|log ?in required|restricted/i;
 
+/** Platform media/CDN hosts, which are attachments rather than shared links. */
+const MEDIA_HOST = /(^|\.)(fbcdn\.net|cdninstagram\.com|akamaihd\.net|licdn\.com|twimg\.com|ytimg\.com)$/i;
+
 /**
  * Vendor spend governor: how far back and how many posts we buy per group.
  *
@@ -99,6 +102,10 @@ function extractUrls(content: string | null, attachments: unknown): { url: strin
       const u = new URL(raw);
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
       const domain = u.hostname.replace(/^www\./, '');
+      // Platform media hosts are not "links that travel". Every photo in every
+      // post carries an fbcdn URL, so counting them buried real publisher
+      // domains under nine CDN shards and made the panel meaningless.
+      if (MEDIA_HOST.test(domain)) return;
       if (!found.has(u.href)) found.set(u.href, domain);
     } catch { /* not a URL */ }
   };
@@ -187,7 +194,11 @@ async function writePosts(orgId: string, groupId: string, rows: RawGroupPost[]):
         shares: int(r.num_shares),
         permalink: str(r.url),
         urls: extractUrls(content, r.attachments),
-        raw: r as Record<string, unknown>,
+        // The full vendor record is deliberately not retained. Keeping it grew
+        // group_posts to 238MB for 59k rows, on a database that hit its storage
+        // ceiling earlier this month, and every field the product reads is
+        // already extracted into typed columns above.
+        raw: null,
       };
     })
     .filter((v): v is NonNullable<typeof v> => v !== null);

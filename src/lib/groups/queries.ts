@@ -85,10 +85,17 @@ export async function sharedDomains(orgId: string, days: number, ownedDomains: s
   const { rows } = await db.execute<{ domain: string; shares: string | number }>(sql`
     SELECT lower(u->>'domain') AS domain, count(*) AS shares
       FROM group_posts gp
-      CROSS JOIN LATERAL jsonb_array_elements(gp.urls) AS u
+      -- jsonb_array_elements raises on a non-array, which takes the whole
+      -- screen down for one malformed row. The guard keeps a bad row a missing
+      -- row rather than an outage.
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(gp.urls) = 'array' THEN gp.urls ELSE '[]'::jsonb END
+      ) AS u
      WHERE gp.org_id = ${orgId}
        AND gp.posted_at > now() - make_interval(days => ${days})
        AND coalesce(u->>'domain', '') <> ''
+       -- Attachment CDNs are media, not shared links.
+       AND lower(u->>'domain') !~ '(^|\.)(fbcdn\.net|cdninstagram\.com|akamaihd\.net|licdn\.com|twimg\.com|ytimg\.com)$'
      GROUP BY lower(u->>'domain')
      ORDER BY count(*) DESC
      LIMIT 40`);
