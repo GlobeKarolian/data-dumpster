@@ -181,11 +181,10 @@ export function RefreshButton({
       platforms: queryPlatforms.length > 0 ? queryPlatforms : undefined,
     }, { signal: controller.signal }).then((found) => {
       if (!controller.signal.aborted) {
+        // Attach silently. The pill in the top bar already reports progress;
+        // auto-expanding the full panel on every page load hogged the screen
+        // for the entire duration of a refresh. The panel opens on click.
         acceptJob(found);
-        if (found) {
-          openPanel();
-          setActivityOpen(true);
-        }
       }
     }).catch((cause: unknown) => {
       if (cause instanceof Error && cause.name === 'AbortError') return;
