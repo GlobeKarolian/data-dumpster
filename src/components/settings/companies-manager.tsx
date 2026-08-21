@@ -117,7 +117,7 @@ export function CompaniesManager({
     : companies;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[16.5rem,1fr]">
+    <div className="grid gap-4 lg:grid-cols-[16.5rem_1fr]">
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2 px-0.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
