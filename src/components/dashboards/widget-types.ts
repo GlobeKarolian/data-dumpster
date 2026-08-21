@@ -18,6 +18,7 @@ export const WIDGET_TYPES = [
   'platformMix',
   'topPosts',
   'cadence',
+  'tagTop',
   'note',
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
@@ -46,6 +47,7 @@ export const WIDGET_CATALOG: { type: WidgetType; label: string; description: str
   { type: 'platformMix', label: 'Platform mix', description: 'Where the focus company’s weight sits, by channel.', defaultSpan: 4 },
   { type: 'topPosts', label: 'Top posts', description: 'The best post on each channel in the window.', defaultSpan: 12 },
   { type: 'cadence', label: 'Posting cadence', description: 'Seven days by twenty-four hours, by volume.', defaultSpan: 6 },
+  { type: 'tagTop', label: 'Top story tags', description: 'What the coverage in this window was actually about, ranked by tagged posts.', defaultSpan: 6 },
   { type: 'note', label: 'Note', description: 'Written context so a dashboard can carry its own explanation.', defaultSpan: 6 },
 ];
 

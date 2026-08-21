@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatRelative } from '@/components/ui/format';
 import { CreateDashboard } from '@/components/dashboards/create-dashboard';
+import { DashboardRowActions } from '@/components/dashboards/dashboard-row-actions';
 import { roleAtLeast } from '@/lib/roles';
 import { resolveContext } from '../_lib/context';
 import { query, type SearchParamsInput } from '../_lib/data';
@@ -18,6 +19,7 @@ type DashboardRow = {
   updated_at: string;
   widget_count: number | string;
   is_shared: boolean;
+  landscape_id: string | null;
   landscape_name: string | null;
 };
 
@@ -33,6 +35,7 @@ export default async function DashboardsPage({
     SELECT d.id, d.name, d.updated_at,
            jsonb_array_length(d.widgets) AS widget_count,
            (d.share_token IS NOT NULL) AS is_shared,
+           d.landscape_id,
            l.name AS landscape_name
       FROM dashboards d
       LEFT JOIN landscapes l ON l.id = d.landscape_id
@@ -113,6 +116,13 @@ export default async function DashboardsPage({
                       <Link2 className="h-2.5 w-2.5" aria-hidden />
                       Shared
                     </Badge>
+                  ) : null}
+                  {roleAtLeast(ctx.role, 'editor') ? (
+                    <DashboardRowActions
+                      dashboardId={d.id}
+                      name={d.name}
+                      landscapeId={d.landscape_id}
+                    />
                   ) : null}
                 </Link>
               </li>

@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { LayoutDashboard } from 'lucide-react';
+import { sql } from 'drizzle-orm';
+import { db } from '@/db';
 import type { AnalyticsQuery, CompanyRef, MetricKey, MetricRow } from '@/lib/types';
 import type { HeadlineStat, MetricsApi, SummaryResult, TimeSeriesResult } from '@/lib/metrics/contract';
 import { METRIC_DEFS } from '@/lib/metrics/definitions';
@@ -57,6 +59,96 @@ function seriesDefs(companies: CompanyRef[], focusCompanyId: string | null) {
 interface WidgetLoad<T> {
   data: T;
   error: string | null;
+}
+
+interface TagTopRow {
+  id: string;
+  name: string;
+  color: string | null;
+  posts: number;
+}
+
+/**
+ * Top tags for the window, scoped to the landscape's member companies.
+ *
+ * Queried directly rather than through MetricsApi: tags are the AI layer's
+ * output, not a metric, and the metric contract should not grow a tagging
+ * dependency. The landscape id is the authorization scope — both callers of
+ * WidgetGrid (the signed-in dashboard and the share page) have already proved
+ * the viewer may see this landscape before rendering any widget.
+ */
+async function loadTopTags(
+  query: WidgetGridProps['query'],
+  platform: WidgetDef['platform'],
+  limit = 12,
+): Promise<WidgetLoad<TagTopRow[]>> {
+  try {
+    const { rows } = await db.execute<{
+      id: string; name: string; color: string | null; posts: string | number;
+    }>(sql`
+      SELECT t.id::text AS id, t.name, t.color, count(DISTINCT p.id) AS posts
+        FROM post_tag_assignments a
+        JOIN posts p ON p.id = a.post_id
+        JOIN landscape_companies lc
+          ON lc.company_id = p.company_id
+         AND lc.landscape_id = ${query.landscapeId}::uuid
+        JOIN post_tags t ON t.id = a.tag_id
+       WHERE p.posted_at >= ${query.start.toISOString()}
+         AND p.posted_at < ${query.end.toISOString()}
+         ${platform ? sql`AND p.platform = ${platform}` : sql``}
+         ${query.companyIds && query.companyIds.length > 0
+           ? sql`AND p.company_id = ANY(${query.companyIds}::uuid[])`
+           : sql``}
+       GROUP BY t.id, t.name, t.color
+       ORDER BY count(DISTINCT p.id) DESC
+       LIMIT ${limit}`);
+    return {
+      data: rows.map((r) => ({
+        id: r.id, name: r.name, color: r.color, posts: Number(r.posts),
+      })),
+      error: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Tag query failed';
+    console.error('[pressbox] dashboard tag widget failed:', message);
+    return { data: [], error: message };
+  }
+}
+
+function TagTopList({ rows }: { rows: TagTopRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="py-2 text-xs text-zinc-500">
+        No tagged posts in this window yet. Tags appear as the AI pipeline reads the corpus.
+      </p>
+    );
+  }
+  const max = rows[0]?.posts ?? 1;
+  return (
+    <ul className="space-y-1.5">
+      {rows.map((tag) => (
+        <li key={tag.id} className="flex items-center gap-3 text-sm">
+          <span
+            aria-hidden
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: tag.color ?? '#71717a' }}
+          />
+          <span className="w-44 shrink-0 truncate text-zinc-800 dark:text-zinc-200" title={tag.name}>
+            {tag.name}
+          </span>
+          <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <span
+              className="block h-full rounded-full bg-accent-600/80"
+              style={{ width: Math.max(2, (tag.posts / max) * 100) + '%' }}
+            />
+          </span>
+          <span className="pb-num w-12 shrink-0 text-right text-xs tabular-nums text-zinc-500">
+            {tag.posts.toLocaleString()}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 async function loadWidget<T>(query: Promise<T>, fallback: T): Promise<WidgetLoad<T>> {
@@ -444,6 +536,23 @@ export async function WidgetGrid({
             landscapeId={query.landscapeId}
             perPlatform={1}
           />
+        );
+      }
+
+      if (widget.type === 'tagTop') {
+        const result = await loadTopTags(scopedQuery(widget), widget.platform);
+        return (
+          <Panel
+            key={widget.id}
+            title={
+              widget.title
+              ?? 'Top story tags' + (widget.platform ? ' on ' + PLATFORM_LABELS[widget.platform] : '')
+            }
+            description="What the coverage in this window was about, ranked by posts the AI pipeline tagged."
+            error={result.error}
+          >
+            <TagTopList rows={result.data} />
+          </Panel>
         );
       }
 

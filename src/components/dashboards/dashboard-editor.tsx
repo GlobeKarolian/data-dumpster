@@ -18,7 +18,7 @@ import { METRIC_DEFS } from '@/lib/metrics/definitions';
 import { ADAPTER_SUPPORTED_PLATFORMS } from '@/lib/adapters/supported-platforms';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/input';
+import { Field, Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
 import { WIDGET_CATALOG, type WidgetDef, type WidgetType } from './widget-types';
@@ -31,11 +31,17 @@ const SPANS: { value: string; label: string }[] = [
   { value: '12', label: 'Full width' },
 ];
 
+/** Ids only need uniqueness within one dashboard's widget list. */
+function makeWidgetId(type: string): string {
+  return type + '-' + Date.now().toString(36);
+}
+
 const METRIC_FREE = new Set<WidgetType>([
   'focusSummary',
   'platformMix',
   'topPosts',
   'cadence',
+  'tagTop',
   'note',
 ]);
 const PLATFORM_FREE = new Set<WidgetType>(['platformMix', 'note']);
@@ -51,17 +57,22 @@ const DASHBOARD_PLATFORMS: Platform[] = [...ADAPTER_SUPPORTED_PLATFORMS];
  */
 export function DashboardEditor({
   dashboardId,
+  dashboardName,
   widgets,
   isShared,
   shareUrl,
 }: {
   dashboardId: string;
+  dashboardName: string;
   widgets: WidgetDef[];
   isShared: boolean;
   shareUrl: string | null;
 }) {
   const router = useRouter();
   const [items, setItems] = React.useState(widgets);
+  const [renaming, setRenaming] = React.useState(false);
+  const [name, setName] = React.useState(dashboardName);
+  const [deleting, setDeleting] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [type, setType] = React.useState<WidgetType>('leaderboard');
@@ -165,6 +176,54 @@ export function DashboardEditor({
     }
   };
 
+  const duplicateWidget = async (index: number) => {
+    const source = items[index];
+    if (!source) return;
+    const copy: WidgetDef = { ...source, id: makeWidgetId(source.type) };
+    const next = [...items.slice(0, index + 1), copy, ...items.slice(index + 1)];
+    await save(next);
+  };
+
+  const renameDashboard = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === dashboardName) {
+      setName(dashboardName);
+      setRenaming(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/dashboards/' + dashboardId, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error('Rename failed with status ' + res.status + '.');
+      setRenaming(false);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not rename the dashboard.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteDashboard = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/dashboards/' + dashboardId, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('Delete failed with status ' + res.status + '.');
+      router.push('/dashboards');
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the dashboard.');
+      setBusy(false);
+      setDeleting(false);
+    }
+  };
+
   const toggleShare = async (enabled: boolean) => {
     setSharing(true);
     setError(null);
@@ -189,18 +248,69 @@ export function DashboardEditor({
   return (
     <Card className="mb-4">
       <CardHeader>
-        <div>
-          <CardTitle>Layout</CardTitle>
+        <div className="min-w-0">
+          {renaming ? (
+            <form
+              onSubmit={(e) => { e.preventDefault(); void renameDashboard(); }}
+              className="flex items-center gap-2"
+            >
+              <Input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => void renameDashboard()}
+                className="h-7 max-w-xs text-sm"
+                aria-label="Dashboard name"
+              />
+            </form>
+          ) : (
+            <CardTitle className="inline-flex items-center gap-1.5">
+              Layout
+              <button
+                type="button"
+                onClick={() => setRenaming(true)}
+                className="text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
+                aria-label="Rename this dashboard"
+                title="Rename this dashboard"
+              >
+                <Pencil className="h-3 w-3" aria-hidden />
+              </button>
+            </CardTitle>
+          )}
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
             {items.length + (items.length === 1 ? ' widget' : ' widgets') +
-              '. Edit or reorder any saved widget. All widgets inherit the landscape and window from the top bar.'}
+              '. Edit, duplicate or reorder any saved widget. All widgets inherit the landscape and window from the top bar.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="primary" onClick={beginCreate} disabled={busy}>
-            <Plus className="h-3 w-3" aria-hidden />
-            Add widget
-          </Button>
+          {deleting ? (
+            <>
+              <span className="text-xs text-zinc-600 dark:text-zinc-300">Delete this dashboard?</span>
+              <Button size="sm" variant="danger" onClick={() => void deleteDashboard()} disabled={busy}>
+                Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDeleting(false)} disabled={busy}>
+                Keep
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Delete this dashboard"
+                title="Delete this dashboard"
+                onClick={() => setDeleting(true)}
+                disabled={busy}
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+              <Button size="sm" variant="primary" onClick={beginCreate} disabled={busy}>
+                <Plus className="h-3 w-3" aria-hidden />
+                Add widget
+              </Button>
+            </>
+          )}
         </div>
       </CardHeader>
 
@@ -283,7 +393,12 @@ export function DashboardEditor({
 
           {type === 'note' ? (
             <Field label="Note text" hint="Context that belongs with the numbers, not in a separate doc.">
-              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Read the rate column first; totals are not comparable across these brands." />
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={3}
+                placeholder="Read the rate column first; totals are not comparable across these brands."
+              />
             </Field>
           ) : null}
 
@@ -333,6 +448,16 @@ export function DashboardEditor({
                 onClick={() => beginEdit(w)}
               >
                 <Pencil className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={'Duplicate ' + (w.title ?? w.type)}
+                title="Duplicate"
+                disabled={busy}
+                onClick={() => void duplicateWidget(index)}
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden />
               </Button>
               <Button
                 size="icon"

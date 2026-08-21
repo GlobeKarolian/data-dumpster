@@ -139,6 +139,7 @@ export default async function DashboardDetailPage({
       {canEdit ? (
         <DashboardEditor
           dashboardId={dashboard.id}
+          dashboardName={dashboard.name}
           widgets={widgets}
           isShared={dashboard.share_token !== null}
           shareUrl={dashboard.share_token ? '/share/' + dashboard.share_token : null}
