@@ -1115,6 +1115,47 @@ export const aiTagState = pgTable('ai_tag_state', {
 ]);
 
 /**
+ * Tagging for group posts.
+ *
+ * Group posts cannot use `ai_tag_state` or `post_tag_assignments`: both carry a
+ * foreign key to `posts`, and a group post is not a brand post. It has no
+ * company, so it has no landscape, which also means it is not scoped by the
+ * landscape rules that shape the brand taxonomy — every AI-eligible tag in the
+ * org applies.
+ *
+ * Everything else is deliberately identical to the brand path: same taxonomy in
+ * `post_tags`, same model, same validation. Only the storage differs, so a tag
+ * means the same thing on both sides of the product.
+ */
+export const groupTagState = pgTable('group_tag_state', {
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  groupPostId: uuid('group_post_id').notNull().references(() => groupPosts.id, { onDelete: 'cascade' }),
+  taxonomyFingerprint: text('taxonomy_fingerprint').notNull(),
+  model: text('model'),
+  status: ingestStatusEnum('status').notNull().default('queued'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+  taggedAt: timestamp('tagged_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'group_tag_state_pk', columns: [t.orgId, t.groupPostId] }),
+  index('group_tag_state_next_attempt_idx').on(t.nextAttemptAt),
+]);
+
+export const groupPostTagAssignments = pgTable('group_post_tag_assignments', {
+  groupPostId: uuid('group_post_id').notNull().references(() => groupPosts.id, { onDelete: 'cascade' }),
+  tagId: uuid('tag_id').notNull().references(() => postTags.id, { onDelete: 'cascade' }),
+  source: tagSourceEnum('source').notNull().default('ai'),
+  confidence: doublePrecision('confidence'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.groupPostId, t.tagId] }),
+  index('gpta_tag_idx').on(t.tagId),
+]);
+
+/**
  * What the tagger wished it could say.
  *
  * While applying the org's taxonomy, the tagging model may name up to two

@@ -65,7 +65,7 @@ export async function groupDiscussions(orgId: string, days: number): Promise<Dis
   const { rows } = await db.execute<{ name: string; color: string | null; posts: string | number }>(sql`
     SELECT t.name, t.color, count(DISTINCT gp.id) AS posts
       FROM group_posts gp
-      JOIN post_tag_assignments a ON a.post_id = gp.id
+      JOIN group_post_tag_assignments a ON a.group_post_id = gp.id
       JOIN post_tags t ON t.id = a.tag_id AND t.org_id = ${orgId}
      WHERE gp.org_id = ${orgId}
        AND gp.posted_at > now() - make_interval(days => ${days})

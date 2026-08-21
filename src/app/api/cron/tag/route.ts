@@ -16,6 +16,7 @@ import { assertCronAuthorized, cronJson } from '../../_lib/cron';
 import { orgsWithAiTags, runTaggingTick, type TagTickResult } from '@/lib/tagging/queue';
 import { runCurationPass, type CurationPassResult } from '@/lib/tagging/curation';
 import { runNarrativeTick, type NarrativeTickResult } from '@/lib/tagging/narrative-jobs';
+import { runGroupTaggingTick, type GroupTagTickResult } from '@/lib/tagging/group-queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const results: TagTickResult[] = [];
   const curation: CurationPassResult[] = [];
   const narratives: NarrativeTickResult[] = [];
+  const groups: GroupTagTickResult[] = [];
   for (const orgId of orgIds) {
     try {
       results.push(await runTaggingTick(orgId));
@@ -36,6 +38,18 @@ async function handle(req: NextRequest): Promise<Response> {
       console.error('[data-dumpster:cron/tag] org tick failed', {
         orgId,
         error: error instanceof Error ? error.message : 'Unknown tagging failure.',
+      });
+    }
+    try {
+      // Group posts run the same taxonomy through the same model, into their
+      // own tables. They share the org's post-tagging budget, and run after
+      // brand posts so brand coverage is never starved by group volume.
+      const g = await runGroupTaggingTick(orgId);
+      if (g.claimed > 0) groups.push(g);
+    } catch (error) {
+      console.error('[data-dumpster:cron/tag] group tick failed', {
+        orgId,
+        error: error instanceof Error ? error.message : 'Unknown group tagging failure.',
       });
     }
     try {
@@ -74,6 +88,15 @@ async function handle(req: NextRequest): Promise<Response> {
       spentUsd: Number(r.spentUsd.toFixed(4)),
       ...(r.budgetExhausted ? { budgetExhausted: true } : {}),
       ...(r.skipped ? { skipped: r.skipped } : {}),
+    })),
+    groupTagging: groups.map((g) => ({
+      orgId: g.orgId,
+      claimed: g.claimed,
+      tagged: g.tagged,
+      assignments: g.assignmentsWritten,
+      failed: g.failed,
+      spentUsd: Number(g.spentUsd.toFixed(4)),
+      ...(g.budgetExhausted ? { budgetExhausted: true } : {}),
     })),
     narratives: narratives.map((n) => ({
       orgId: n.orgId,
