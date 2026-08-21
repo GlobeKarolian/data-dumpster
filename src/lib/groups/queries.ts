@@ -78,6 +78,34 @@ export async function groupDiscussions(orgId: string, days: number): Promise<Dis
 export interface SharedDomainRow { domain: string; shares: number; isOwned: boolean }
 
 /**
+ * The org's own web domains, from org settings.
+ *
+ * This used to be derived from every domain the org's accounts had ever
+ * linked to, which is a different thing entirely: it marked eventbrite.com,
+ * instagram.com and docs.google.com as "OURS" because the Globe had once
+ * posted links to them. Claiming someone else's domain is ours is exactly the
+ * class of confident-but-wrong statement this product must not make, so the
+ * list is now explicit. An org that has not set one gets no OURS badges at
+ * all, which is the honest default.
+ */
+export async function ownedDomains(orgId: string): Promise<string[]> {
+  const { rows } = await db.execute<{ domains: unknown }>(sql`
+    SELECT settings->'ownedDomains' AS domains FROM orgs WHERE id = ${orgId}`);
+  const raw = rows[0]?.domains;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((d): d is string => typeof d === 'string')
+    .map((d) => d.trim().toLowerCase().replace(/^www\./, ''))
+    .filter(Boolean);
+}
+
+/** True when `domain` is one of ours, or a subdomain of one. */
+export function isOwnedDomain(domain: string, owned: string[]): boolean {
+  const d = domain.toLowerCase().replace(/^www\./, '');
+  return owned.some((o) => d === o || d.endsWith('.' + o));
+}
+
+/**
  * Whose links travel into local groups — the distribution intelligence nobody
  * else has. Aggregate by domain; no post text, no author.
  */
@@ -99,10 +127,9 @@ export async function sharedDomains(orgId: string, days: number, ownedDomains: s
      GROUP BY lower(u->>'domain')
      ORDER BY count(*) DESC
      LIMIT 40`);
-  const owned = new Set(ownedDomains.map((d) => d.toLowerCase()));
   return rows.map((r) => ({
     domain: r.domain,
     shares: Number(r.shares),
-    isOwned: owned.has(r.domain),
+    isOwned: isOwnedDomain(r.domain, ownedDomains),
   }));
 }

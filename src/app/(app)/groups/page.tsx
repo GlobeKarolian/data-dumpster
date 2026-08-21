@@ -6,10 +6,10 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { requireOrg } from '@/lib/session';
 import { roleAtLeast } from '@/lib/roles';
 import {
-  watchedGroups, groupDiscussions, sharedDomains, groupIdentitiesVisible,
+  watchedGroups, groupDiscussions, sharedDomains, groupIdentitiesVisible, ownedDomains,
 } from '@/lib/groups/queries';
 import { GroupManager } from '@/components/groups/group-manager';
-import { query, type SearchParamsInput } from '../_lib/data';
+import { type SearchParamsInput } from '../_lib/data';
 
 export const metadata: Metadata = { title: 'Group View' };
 export const dynamic = 'force-dynamic';
@@ -27,19 +27,11 @@ export default async function GroupsPage({
   const { orgId, role } = await requireOrg();
   const canManage = roleAtLeast(role, 'editor');
 
-  // Our own domains, so the distribution table can mark which shared links are
-  // ours. Derived from the org's own companies' posted URLs, not hard-coded.
-  const owned = await query<{ domain: string }>(({ sql }) => sql`
-    SELECT DISTINCT lower(u.domain) AS domain
-      FROM posted_urls u JOIN posts p ON p.id = u.post_id
-      JOIN companies c ON c.id = p.company_id AND c.org_id = ${orgId}::uuid
-     WHERE u.domain IS NOT NULL LIMIT 200`);
-  const ownedDomains = owned.data.map((r) => r.domain);
-
+  const owned = await ownedDomains(orgId);
   const [groups, discussions, domains] = await Promise.all([
     watchedGroups(orgId),
     groupDiscussions(orgId, 14),
-    sharedDomains(orgId, 14, ownedDomains),
+    sharedDomains(orgId, 14, owned),
   ]);
 
   const identitiesVisible = groupIdentitiesVisible(role);
