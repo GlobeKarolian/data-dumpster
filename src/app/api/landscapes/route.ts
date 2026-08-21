@@ -43,13 +43,11 @@ const createLandscapeSchema = z.object({
   newFocusCompany: inlineCompanySchema.nullish(),
   companyIds: z.array(z.uuid()).max(50).default([]),
 }).superRefine((body, ctx) => {
-  if (!body.focusCompanyId && !body.newFocusCompany) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['focusCompanyId'],
-      message: 'Choose an existing focus company or create a new one.',
-    });
-  }
+  // A focus company is deliberately optional. Plenty of real landscapes are a
+  // market watched from outside (all 30 MLB clubs, a neighboring metro), where
+  // "which brand is ours" has no answer. PATCH has always allowed null here;
+  // requiring it only at creation forced people to invent a focus they then
+  // never meant.
   if (body.focusCompanyId && body.newFocusCompany) {
     ctx.addIssue({
       code: 'custom',

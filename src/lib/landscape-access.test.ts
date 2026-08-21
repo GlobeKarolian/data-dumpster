@@ -55,7 +55,10 @@ describe('landscape access policy', () => {
     assert.match(route, /newFocusCompany/);
     assert.match(route, /focusCompanyCreated/);
     assert.match(ui, /Create landscape and company/);
-    assert.match(ui, /variant="primary"\s+onClick=\{\(\) => setOpen\(\(v\) => !v\)\}/);
+    // The UI submits the inline focus company in the same POST as the
+    // landscape, and treats the focus as optional: a "None" mode must exist.
+    assert.match(ui, /newFocusCompany:/);
+    assert.match(ui, /'none' \| 'existing' \| 'new'/);
   });
 
   it('reuses a pooled company in another landscape without replacing membership', () => {
