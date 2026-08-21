@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover } from '@/components/ui/popover';
-import { useUrlState } from '@/components/common/use-url-state';
+import { hrefWithGlobalParams, useUrlState } from '@/components/common/use-url-state';
 
 export interface LandscapeOption {
   id: string;
@@ -27,7 +28,27 @@ export function LandscapeSwitcher({
   activeId: string | null;
 }) {
   const { setParams } = useUrlState();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const active = landscapes.find((l) => l.id === activeId) ?? landscapes[0] ?? null;
+
+  /**
+   * A saved dashboard pins its own landscape, and the detail page reasserts
+   * that pin on every load. Rewriting the landscape param in place on such a
+   * page therefore does nothing: the redirect snaps straight back, and the
+   * switcher reads as broken. An explicit switch while viewing a pinned
+   * dashboard means "take me to that landscape", so it leaves the dashboard
+   * and lands on the dashboards list instead.
+   */
+  const pinnedByDashboard = /^\/dashboards\/[0-9a-f-]{36}/i.test(pathname);
+  const selectLandscape = (id: string) => {
+    if (pinnedByDashboard) {
+      router.push(hrefWithGlobalParams('/dashboards', searchParams, { landscape: id, companies: null }));
+    } else {
+      setParams({ landscape: id, companies: null });
+    }
+  };
 
   if (landscapes.length === 0) {
     return (
@@ -86,7 +107,7 @@ export function LandscapeSwitcher({
                   key={l.id}
                   type="button"
                   onClick={() => {
-                    setParams({ landscape: l.id, companies: null });
+                    selectLandscape(l.id);
                     close();
                   }}
                   className={cn(

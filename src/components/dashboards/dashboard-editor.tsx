@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDown,
   ArrowUp,
@@ -34,6 +34,22 @@ const SPANS: { value: string; label: string }[] = [
 /** Ids only need uniqueness within one dashboard's widget list. */
 function makeWidgetId(type: string): string {
   return type + '-' + Date.now().toString(36);
+}
+
+/** Encode a draft widget for the preview route: base64url of its JSON. */
+function encodeDraft(def: Omit<WidgetDef, 'id'>): string {
+  const json = JSON.stringify({ ...def, id: 'preview' });
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+/** The current query params the preview must inherit (landscape, window …). */
+function previewSrc(dashboardId: string, searchParams: URLSearchParams, encoded: string): string {
+  const params = new URLSearchParams(searchParams.toString());
+  params.set('w', encoded);
+  return '/dashboard-preview/' + dashboardId + '?' + params.toString();
 }
 
 const METRIC_FREE = new Set<WidgetType>([
@@ -88,6 +104,36 @@ export function DashboardEditor({
   const [shared, setShared] = React.useState(isShared);
   const [currentShareUrl, setCurrentShareUrl] = React.useState(shareUrl);
   const [copied, setCopied] = React.useState(false);
+  const searchParams = useSearchParams();
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+
+  /**
+   * Live preview of the widget being configured.
+   *
+   * The iframe points at a bare route that renders the draft through the same
+   * server-side WidgetGrid as the dashboard itself, so what the preview shows
+   * IS what saving will produce. Debounced so typing a title does not fire a
+   * query per keystroke; only fields that exist on the definition matter.
+   */
+  React.useEffect(() => {
+    if (!open) {
+      const clear = window.setTimeout(() => setPreviewUrl(null), 0);
+      return () => window.clearTimeout(clear);
+    }
+    const draft: Omit<WidgetDef, 'id'> = {
+      type,
+      span: Number(span) as 4 | 6 | 8 | 12,
+      title: title.trim() || undefined,
+      metric: METRIC_FREE.has(type) ? undefined : metric,
+      xMetric: type === 'scatter' ? xMetric : undefined,
+      platform: !PLATFORM_FREE.has(type) && platform ? (platform as Platform) : undefined,
+      text: type === 'note' ? text : undefined,
+    };
+    const timer = window.setTimeout(() => {
+      setPreviewUrl(previewSrc(dashboardId, searchParams, encodeDraft(draft)));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [open, type, span, title, metric, xMetric, platform, text, dashboardId, searchParams]);
 
   const closeForm = () => {
     setOpen(false);
@@ -410,6 +456,31 @@ export function DashboardEditor({
             <Button type="button" size="sm" onClick={closeForm}>
               Cancel
             </Button>
+          </div>
+
+          <div>
+            <p className="mb-1.5 flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Live preview
+              <span className="font-normal normal-case tracking-normal text-zinc-400">
+                real data, exactly as it will render · shown full-width, your width applies on the grid
+              </span>
+            </p>
+            <div className="overflow-hidden rounded-md border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+              {previewUrl ? (
+                <iframe
+                  key={previewUrl}
+                  src={previewUrl}
+                  title="Widget preview"
+                  className="h-96 w-full"
+                  sandbox="allow-same-origin allow-scripts"
+                />
+              ) : (
+                <div className="flex h-96 items-center justify-center text-xs text-zinc-400">
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden />
+                  Loading preview…
+                </div>
+              )}
+            </div>
           </div>
         </form>
       ) : null}
