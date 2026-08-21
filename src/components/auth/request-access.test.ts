@@ -22,7 +22,7 @@ test('public request flow is approval-gated and does not enumerate accounts', ()
   assert.match(page, /<RequestAccessHero \/>/);
   assert.match(page, /relative min-h-dvh overflow-hidden bg-black/);
   assert.match(page, /bg-white\/95/);
-  assert.match(page, /<h1 className="text-2xl font-semibold tracking-tight">Request access<\/h1>/);
+  assert.match(page, /<h1 className="[^"]*text-2xl font-semibold tracking-tight">Request access<\/h1>/);
   assert.match(hero, /B7aksBgcJzFDO\/giphy\.gif/);
   assert.match(hero, /object-cover object-center/);
   assert.match(hero, /gifs\/ace-ventura-funny-dog-B7aksBgcJzFDO/);

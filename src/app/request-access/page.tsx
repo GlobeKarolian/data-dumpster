@@ -19,8 +19,7 @@ export default function RequestAccessPage() {
         <div className="mx-auto w-full max-w-lg overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl shadow-black/50 backdrop-blur-md dark:bg-white/95">
           <section className="p-7 sm:p-9">
             <DumpsterLogo className="mb-8" forceLight />
-            <h1 className="text-2xl font-semibold tracking-tight">Request access</h1>
-            <p className="mt-1 mb-7 text-sm text-zinc-500">Use your work email so we know where to send the decision.</p>
+            <h1 className="mb-7 text-2xl font-semibold tracking-tight">Request access</h1>
             <RequestAccessForm />
             <Link href="/login" className="mt-6 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-950">
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
