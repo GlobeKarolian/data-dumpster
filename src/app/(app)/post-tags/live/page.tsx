@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { requireOrg } from '@/lib/session';
-import { getTagActivity } from '@/lib/tagging/activity';
+import { getTagActivity, getTagProgress } from '@/lib/tagging/activity';
 import { TaggingLiveFeed } from '@/components/tags/tagging-live-feed';
+import { TaggingProgress } from '@/components/tags/tagging-progress';
 
 export const metadata: Metadata = { title: 'Tagging · Live' };
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,14 @@ export const dynamic = 'force-dynamic';
  */
 export default async function TaggingLivePage() {
   const { orgId } = await requireOrg();
-  const initial = await getTagActivity(orgId);
-  return <TaggingLiveFeed initial={initial} />;
+  const [initial, progress] = await Promise.all([
+    getTagActivity(orgId),
+    getTagProgress(orgId),
+  ]);
+  return (
+    <div className="space-y-6">
+      <TaggingProgress progress={progress} />
+      <TaggingLiveFeed initial={initial} />
+    </div>
+  );
 }
