@@ -26,6 +26,7 @@ import { cn, compactNumber, formatChange } from '@/lib/utils';
 
 const METRIC_TABS = [
   { id: 'overview', label: 'State of the field' },
+  { id: 'topics', label: 'Topics' },
   { id: 'content', label: 'Top content' },
   { id: 'candidates', label: 'Candidate profiles' },
   { id: 'compare', label: 'Head-to-head' },
@@ -437,6 +438,204 @@ function OverviewView({ race, analytics }: {
   );
 }
 
+/**
+ * What the race is actually about.
+ *
+ * Every number here counts posts the AI tagging pipeline has read and
+ * classified. That is a different denominator from the rest of the tracker, so
+ * the coverage line states it rather than letting a reader assume the topic
+ * mix covers every post in the window.
+ */
+function TopicsView({ race, analytics }: {
+  race: ElectionRaceDetail;
+  analytics: ElectionRaceAnalytics;
+}) {
+  const { topics } = analytics;
+  const palette = ['#C8102E', '#2563EB', '#0D9488', '#D97706', '#7C3AED', '#DB2777', '#65A30D', '#0891B2'];
+  const colorFor = (index: number, tagColor: string | null) => tagColor ?? palette[index % palette.length];
+
+  if (topics.tags.length === 0) {
+    return (
+      <Card>
+        <CardBody>
+          <p className="py-8 text-center text-xs text-zinc-500">
+            {topics.totalPosts === 0
+              ? 'No candidate posts in this window yet.'
+              : 'The tagging pipeline has not read these posts yet. Topics appear as it works through the window.'}
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const coveragePct = topics.totalPosts > 0
+    ? Math.round((topics.taggedPosts / topics.totalPosts) * 100)
+    : 0;
+  const maxTag = topics.tags[0]?.posts ?? 1;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>What the field talks about</CardTitle>
+            <CardDescription>
+              {'Posts classified by topic across all candidates, ' + periodLabel(analytics) + '. '
+                + 'A post can carry several topics.'}
+            </CardDescription>
+          </div>
+          <Badge tone={coveragePct >= 80 ? 'accent' : 'warning'}>
+            {number.format(topics.taggedPosts) + ' of ' + number.format(topics.totalPosts) + ' posts read · ' + coveragePct + '%'}
+          </Badge>
+        </CardHeader>
+        <CardBody>
+          <ul className="space-y-2">
+            {topics.tags.map((tag, index) => (
+              <li key={tag.id} className="flex items-center gap-3">
+                <span className="w-44 shrink-0 truncate text-xs font-medium text-zinc-800 dark:text-zinc-200" title={tag.name}>
+                  {tag.name}
+                </span>
+                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                  <span
+                    className="block h-full rounded-full"
+                    style={{
+                      width: Math.max(2, (tag.posts / maxTag) * 100) + '%',
+                      backgroundColor: colorFor(index, tag.color),
+                    }}
+                  />
+                </span>
+                <span className="pb-num w-14 shrink-0 text-right text-xs tabular-nums text-zinc-500">
+                  {number.format(tag.posts)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </CardBody>
+      </Card>
+
+      {topics.series.length > 1 ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Topics over time</CardTitle>
+              <CardDescription>
+                Tagged posts per day. Where a line climbs, the field moved onto that subject.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={topics.series} margin={{ top: 6, right: 12, bottom: 0, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-zinc-200 dark:text-zinc-800" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(value: string) => readableDay(value)}
+                    tick={{ fontSize: 11 }}
+                    stroke="currentColor"
+                    className="text-zinc-400"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    stroke="currentColor"
+                    className="text-zinc-400"
+                    tickLine={false}
+                    axisLine={false}
+                    width={38}
+                    allowDecimals={false}
+                  />
+                  <ChartTooltip
+                    labelFormatter={(value) => readableDay(String(value))}
+                    formatter={(value, key) => [
+                      number.format(Number(value ?? 0)) + ' posts',
+                      topics.tags.find((tag) => tag.id === String(key))?.name ?? String(key),
+                    ]}
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  />
+                  {topics.tags.map((tag, index) => (
+                    <Line
+                      key={tag.id}
+                      type="monotone"
+                      dataKey={tag.id}
+                      name={tag.name}
+                      stroke={colorFor(index, tag.color)}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+              {topics.tags.map((tag, index) => (
+                <span key={tag.id} className="inline-flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-400">
+                  <span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: colorFor(index, tag.color) }} />
+                  {tag.name}
+                </span>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>What each candidate posts about</CardTitle>
+            <CardDescription>
+              Each candidate&rsquo;s most-posted topics, as a share of their own classified posts.
+              Read the share, not the count: candidates post at very different volumes.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          {topics.candidates.map((entry) => {
+            const candidate = race.candidates.find((c) => c.companyId === entry.companyId);
+            const row = rowFor(analytics.engagementTotal, entry.companyId);
+            const name = candidate?.name ?? row?.company.name ?? 'Candidate';
+            return (
+              <div key={entry.companyId} className="flex items-start gap-3">
+                <CandidateMark candidate={candidate} row={row} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{name}</p>
+                    <p className="pb-num text-[11px] tabular-nums text-zinc-500">
+                      {number.format(entry.taggedPosts) + ' classified posts'}
+                    </p>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {entry.topics.map((topic) => (
+                      <span
+                        key={topic.id}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] text-zinc-700 dark:border-zinc-800 dark:text-zinc-300"
+                        title={number.format(topic.posts) + ' posts'}
+                      >
+                        <span
+                          aria-hidden
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: topic.color ?? '#71717a' }}
+                        />
+                        {topic.name}
+                        <span className="pb-num tabular-nums text-zinc-400">
+                          {Math.round(topic.share * 100) + '%'}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
 function CandidateProfiles({ race, analytics }: {
   race: ElectionRaceDetail;
   analytics: ElectionRaceAnalytics;
@@ -642,6 +841,7 @@ export function ElectionRaceDashboard({ race, analytics }: { race: ElectionRaceD
         <Tabs items={METRIC_TABS} value={tab} onChange={setTab} label="Election analytics views" className="mt-3 overflow-x-auto px-2" />
       </div>
       <TabPanel id="election-overview" active={tab === 'overview'}><OverviewView race={race} analytics={analytics} /></TabPanel>
+      <TabPanel id="election-topics" active={tab === 'topics'}><TopicsView race={race} analytics={analytics} /></TabPanel>
       <TabPanel id="election-content" active={tab === 'content'}><TopPostsPanel posts={analytics.topPosts} title="Content shaping the race" scopeLabel={race.name} landscapeId={race.landscapeId} href="/posts" perPlatform={3} /></TabPanel>
       <TabPanel id="election-candidates" active={tab === 'candidates'}><CandidateProfiles race={race} analytics={analytics} /></TabPanel>
       <TabPanel id="election-compare" active={tab === 'compare'}><CompareView race={race} analytics={analytics} /></TabPanel>

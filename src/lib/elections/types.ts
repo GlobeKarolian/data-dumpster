@@ -87,4 +87,34 @@ export interface ElectionRaceAnalytics {
   /** Daily Wikipedia article views per candidate: lookup attention, not search volume. */
   attentionSeries: TimeSeriesResult;
   topPosts: PostDto[];
+  /**
+   * What the race talks about, from the AI tagging pipeline.
+   *
+   * Counts are posts the model has read and tagged; a post may carry several
+   * tags. Posts the pipeline has not read yet are absent, not zero — the
+   * `taggedPosts`/`totalPosts` pair states the coverage so the UI can say so.
+   */
+  topics: RaceTopicFacts;
+}
+
+export interface RaceTopicRef {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+export interface RaceTopicFacts {
+  /** Top tags in the window across all candidates, by tagged posts. */
+  tags: (RaceTopicRef & { posts: number })[];
+  /** Per-day tagged-post counts, one key per tag id in `tags`. */
+  series: Array<Record<string, number | string>>;
+  /** Each candidate's most-posted topics, with share of their tagged posts. */
+  candidates: Array<{
+    companyId: string;
+    taggedPosts: number;
+    topics: (RaceTopicRef & { posts: number; share: number })[];
+  }>;
+  /** Coverage honesty: how much of the window the pipeline has read. */
+  taggedPosts: number;
+  totalPosts: number;
 }

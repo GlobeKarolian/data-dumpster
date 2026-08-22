@@ -257,6 +257,7 @@ export async function getElectionRaceAnalytics(
       viewSeries: { series: [], companies: [], granularity: 'day' },
       attentionSeries: { series: [], companies: [], granularity: 'day' },
       topPosts: [],
+      topics: { tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0 },
     };
   }
   const base = {
@@ -278,6 +279,7 @@ export async function getElectionRaceAnalytics(
     viewSeries,
     attentionSeries,
     topPosts,
+    topics,
   ] = await Promise.all([
     getLeaderboard({ ...base, metric: 'audience', compare: true }),
     getLeaderboard({ ...base, metric: 'audienceNetChange', compare: true }),
@@ -290,6 +292,7 @@ export async function getElectionRaceAnalytics(
     getTimeSeries({ ...base, metric: 'views', granularity: autoGranularity(range) }),
     getWikipediaAttentionSeries(race, range, autoGranularity(range)),
     getTopPostsByPlatform({ ...base, perPlatform: 3 }),
+    getRaceTopicFacts(companyIds, range),
   ]);
   return {
     range: {
@@ -308,6 +311,134 @@ export async function getElectionRaceAnalytics(
     viewSeries,
     attentionSeries,
     topPosts,
+    topics,
+  };
+}
+
+/**
+ * Tag facts for a race: what the field talks about, and who talks about what.
+ *
+ * Reads settled AI assignments only — nothing here re-derives topics. Buckets
+ * use the report zone so a day means the same thing it means everywhere else
+ * in the product. Coverage is reported rather than hidden: posts the tagging
+ * pipeline has not read yet are absent from every count, and the caller gets
+ * taggedPosts/totalPosts to say so on screen.
+ */
+async function getRaceTopicFacts(
+  companyIds: string[],
+  range: DateRange,
+): Promise<import('./types').RaceTopicFacts> {
+  const empty = { tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0 };
+  if (companyIds.length === 0) return empty;
+  const ids = dsql.raw(`'{${companyIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)).join(',')}}'::uuid[]`);
+
+  const top = await db.execute<{ id: string; name: string; color: string | null; posts: string | number }>(dsql`
+    SELECT t.id::text AS id, t.name, t.color, count(DISTINCT p.id) AS posts
+      FROM post_tag_assignments a
+      JOIN posts p ON p.id = a.post_id
+      JOIN post_tags t ON t.id = a.tag_id
+     WHERE p.company_id = ANY(${ids})
+       AND p.posted_at >= ${range.start.toISOString()}
+       AND p.posted_at < ${range.end.toISOString()}
+     GROUP BY t.id, t.name, t.color
+     ORDER BY count(DISTINCT p.id) DESC
+     LIMIT 8`);
+  const tags = top.rows.map((r) => ({
+    id: r.id, name: r.name, color: r.color, posts: Number(r.posts),
+  }));
+  if (tags.length === 0) return empty;
+  const tagIds = dsql.raw(`'{${tags.map((t) => t.id).join(',')}}'::uuid[]`);
+
+  const [series, perCandidate, coverage] = await Promise.all([
+    db.execute<{ day: string; tag_id: string; posts: string | number }>(dsql`
+      SELECT to_char(date_trunc('day', p.posted_at AT TIME ZONE 'America/New_York'), 'YYYY-MM-DD') AS day,
+             a.tag_id::text AS tag_id,
+             count(DISTINCT p.id) AS posts
+        FROM post_tag_assignments a
+        JOIN posts p ON p.id = a.post_id
+       WHERE p.company_id = ANY(${ids})
+         AND a.tag_id = ANY(${tagIds})
+         AND p.posted_at >= ${range.start.toISOString()}
+         AND p.posted_at < ${range.end.toISOString()}
+       GROUP BY 1, 2
+       ORDER BY 1`),
+    db.execute<{
+      company_id: string; tag_id: string; name: string; color: string | null;
+      posts: string | number; tagged_posts: string | number; rank: string | number;
+    }>(dsql`
+      WITH counts AS (
+        SELECT p.company_id, a.tag_id, t.name, t.color,
+               count(DISTINCT p.id) AS posts
+          FROM post_tag_assignments a
+          JOIN posts p ON p.id = a.post_id
+          JOIN post_tags t ON t.id = a.tag_id
+         WHERE p.company_id = ANY(${ids})
+           AND p.posted_at >= ${range.start.toISOString()}
+           AND p.posted_at < ${range.end.toISOString()}
+         GROUP BY p.company_id, a.tag_id, t.name, t.color
+      ), totals AS (
+        SELECT company_id, count(DISTINCT a.post_id) AS tagged_posts
+          FROM post_tag_assignments a
+          JOIN posts p ON p.id = a.post_id
+         WHERE p.company_id = ANY(${ids})
+           AND p.posted_at >= ${range.start.toISOString()}
+           AND p.posted_at < ${range.end.toISOString()}
+         GROUP BY company_id
+      )
+      SELECT c.company_id::text AS company_id, c.tag_id::text AS tag_id, c.name, c.color,
+             c.posts, tt.tagged_posts,
+             row_number() OVER (PARTITION BY c.company_id ORDER BY c.posts DESC) AS rank
+        FROM counts c
+        JOIN totals tt ON tt.company_id = c.company_id
+       ORDER BY c.company_id, c.posts DESC`),
+    db.execute<{ tagged: string | number; total: string | number }>(dsql`
+      SELECT
+        (SELECT count(DISTINCT a.post_id) FROM post_tag_assignments a
+          JOIN posts p ON p.id = a.post_id
+         WHERE p.company_id = ANY(${ids})
+           AND p.posted_at >= ${range.start.toISOString()}
+           AND p.posted_at < ${range.end.toISOString()}) AS tagged,
+        (SELECT count(*) FROM posts p
+         WHERE p.company_id = ANY(${ids})
+           AND p.posted_at >= ${range.start.toISOString()}
+           AND p.posted_at < ${range.end.toISOString()}) AS total`),
+  ]);
+
+  const byDay = new Map<string, Record<string, number | string>>();
+  for (const row of series.rows) {
+    let bucket = byDay.get(row.day);
+    if (!bucket) {
+      bucket = { date: row.day };
+      byDay.set(row.day, bucket);
+    }
+    bucket[row.tag_id] = Number(row.posts);
+  }
+
+  const candidateMap = new Map<string, {
+    companyId: string; taggedPosts: number;
+    topics: { id: string; name: string; color: string | null; posts: number; share: number }[];
+  }>();
+  for (const row of perCandidate.rows) {
+    if (Number(row.rank) > 5) continue;
+    let entry = candidateMap.get(row.company_id);
+    if (!entry) {
+      entry = { companyId: row.company_id, taggedPosts: Number(row.tagged_posts), topics: [] };
+      candidateMap.set(row.company_id, entry);
+    }
+    const posts = Number(row.posts);
+    entry.topics.push({
+      id: row.tag_id, name: row.name, color: row.color, posts,
+      share: entry.taggedPosts > 0 ? posts / entry.taggedPosts : 0,
+    });
+  }
+
+  const cov = coverage.rows[0];
+  return {
+    tags,
+    series: [...byDay.values()],
+    candidates: [...candidateMap.values()].sort((a, b) => b.taggedPosts - a.taggedPosts),
+    taggedPosts: Number(cov?.tagged ?? 0),
+    totalPosts: Number(cov?.total ?? 0),
   };
 }
 
