@@ -582,6 +582,92 @@ function TopicsView({ race, analytics }: {
         </Card>
       ) : null}
 
+      {topics.diffusion.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>How a topic moved through the field</CardTitle>
+              <CardDescription>
+                Each topic&rsquo;s busiest day, who posted on it earliest that day, and what
+                everyone else posted on it in the week either side.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardBody className="space-y-5">
+            {topics.diffusion.map((entry) => {
+              const firstCandidate = entry.firstCompanyId
+                ? race.candidates.find((c) => c.companyId === entry.firstCompanyId)
+                : undefined;
+              const firstRow = entry.firstCompanyId
+                ? rowFor(analytics.engagementTotal, entry.firstCompanyId)
+                : undefined;
+              const firstName = firstCandidate?.name ?? firstRow?.company.name ?? null;
+              const followers = entry.participants.filter((p) => p.increased
+                && p.companyId !== entry.firstCompanyId);
+              const steady = entry.participants.filter((p) => !p.increased
+                && p.companyId !== entry.firstCompanyId);
+              return (
+                <div key={entry.tag.id} className="border-t border-zinc-100 pt-4 first:border-0 first:pt-0 dark:border-zinc-800/60">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                      <span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.tag.color ?? '#71717a' }} />
+                      {entry.tag.name}
+                    </p>
+                    <p className="pb-num text-[11px] tabular-nums text-zinc-500">
+                      {'Busiest day ' + readableDay(entry.surgeDay) + ' · ' + number.format(entry.surgePosts) + ' posts'}
+                    </p>
+                  </div>
+
+                  {firstName ? (
+                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-400">
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100">{firstName}</span>
+                      {' posted on it earliest that day.'}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {followers.map((participant) => {
+                      const candidate = race.candidates.find((c) => c.companyId === participant.companyId);
+                      const row = rowFor(analytics.engagementTotal, participant.companyId);
+                      const name = candidate?.name ?? row?.company.name ?? 'Candidate';
+                      return (
+                        <span
+                          key={participant.companyId}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                          title={participant.before + ' posts before → ' + participant.after + ' after'}
+                        >
+                          {name}
+                          <span className="pb-num tabular-nums opacity-70">
+                            {participant.before + '→' + participant.after}
+                          </span>
+                        </span>
+                      );
+                    })}
+                    {followers.length === 0 ? (
+                      <span className="text-[11px] text-zinc-500">
+                        No other candidate posted more on this topic afterwards.
+                      </span>
+                    ) : null}
+                    {steady.length > 0 ? (
+                      <span className="text-[11px] text-zinc-400">
+                        {'· ' + steady.length + ' did not increase'}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </CardBody>
+          <div className="border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+            <p className="text-[11px] leading-relaxed text-zinc-500">
+              These are counts and timestamps, not causation: posting earliest does not mean a
+              candidate set the agenda. Whether a later post agrees or pushes back is not measured —
+              the pipeline classifies subject matter, not stance.
+            </p>
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <div>

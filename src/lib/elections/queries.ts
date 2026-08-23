@@ -257,7 +257,9 @@ export async function getElectionRaceAnalytics(
       viewSeries: { series: [], companies: [], granularity: 'day' },
       attentionSeries: { series: [], companies: [], granularity: 'day' },
       topPosts: [],
-      topics: { tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0 },
+      topics: {
+        tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0, diffusion: [],
+      },
     };
   }
   const base = {
@@ -328,7 +330,9 @@ async function getRaceTopicFacts(
   companyIds: string[],
   range: DateRange,
 ): Promise<import('./types').RaceTopicFacts> {
-  const empty = { tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0 };
+  const empty = {
+    tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0, diffusion: [],
+  };
   if (companyIds.length === 0) return empty;
   const ids = dsql.raw(`'{${companyIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)).join(',')}}'::uuid[]`);
 
@@ -439,7 +443,99 @@ async function getRaceTopicFacts(
     candidates: [...candidateMap.values()].sort((a, b) => b.taggedPosts - a.taggedPosts),
     taggedPosts: Number(cov?.tagged ?? 0),
     totalPosts: Number(cov?.total ?? 0),
+    diffusion: await getTopicDiffusion(ids, tagIds, tags, range),
   };
+}
+
+/**
+ * How each topic moved through the field.
+ *
+ * For every top topic: find its busiest day, name whoever posted on it
+ * earliest that day, and count what each candidate posted on that topic in the
+ * seven days either side. That is all measurement — no claim that the first
+ * poster caused anything, and no claim about whether the follow-on posts agree
+ * or argue. Stance is not something the tagging pipeline reads, so nothing
+ * here pretends to know it.
+ */
+async function getTopicDiffusion(
+  ids: ReturnType<typeof dsql.raw>,
+  tagIds: ReturnType<typeof dsql.raw>,
+  tags: { id: string; name: string; color: string | null }[],
+  range: DateRange,
+): Promise<import('./types').TopicDiffusion[]> {
+  const { rows } = await db.execute<{
+    tag_id: string; company_id: string; day: string; posts: string | number; first_at: string;
+  }>(dsql`
+    SELECT a.tag_id::text AS tag_id,
+           p.company_id::text AS company_id,
+           to_char(date_trunc('day', p.posted_at AT TIME ZONE 'America/New_York'), 'YYYY-MM-DD') AS day,
+           count(DISTINCT p.id) AS posts,
+           min(p.posted_at)::text AS first_at
+      FROM post_tag_assignments a
+      JOIN posts p ON p.id = a.post_id
+     WHERE p.company_id = ANY(${ids})
+       AND a.tag_id = ANY(${tagIds})
+       AND p.posted_at >= ${range.start.toISOString()}
+       AND p.posted_at < ${range.end.toISOString()}
+     GROUP BY 1, 2, 3`);
+
+  const byTag = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const list = byTag.get(row.tag_id) ?? [];
+    list.push(row);
+    byTag.set(row.tag_id, list);
+  }
+
+  const WINDOW_DAYS = 7;
+  const out: import('./types').TopicDiffusion[] = [];
+  for (const tag of tags) {
+    const entries = byTag.get(tag.id) ?? [];
+    if (entries.length === 0) continue;
+
+    const dayTotals = new Map<string, number>();
+    for (const entry of entries) {
+      dayTotals.set(entry.day, (dayTotals.get(entry.day) ?? 0) + Number(entry.posts));
+    }
+    let surgeDay = '';
+    let surgePosts = 0;
+    for (const [day, total] of dayTotals) {
+      if (total > surgePosts) { surgePosts = total; surgeDay = day; }
+    }
+    if (!surgeDay) continue;
+
+    const surge = new Date(surgeDay + 'T00:00:00Z').getTime();
+    const dayMs = 86_400_000;
+    const onSurge = entries.filter((entry) => entry.day === surgeDay);
+    const first = onSurge.reduce<typeof onSurge[number] | null>((earliest, entry) => (
+      !earliest || entry.first_at < earliest.first_at ? entry : earliest
+    ), null);
+
+    const tally = new Map<string, { before: number; after: number }>();
+    for (const entry of entries) {
+      const at = new Date(entry.day + 'T00:00:00Z').getTime();
+      const slot = tally.get(entry.company_id) ?? { before: 0, after: 0 };
+      if (at < surge && at >= surge - WINDOW_DAYS * dayMs) slot.before += Number(entry.posts);
+      if (at > surge && at <= surge + WINDOW_DAYS * dayMs) slot.after += Number(entry.posts);
+      tally.set(entry.company_id, slot);
+    }
+
+    out.push({
+      tag: { id: tag.id, name: tag.name, color: tag.color },
+      surgeDay,
+      surgePosts,
+      firstCompanyId: first?.company_id ?? null,
+      participants: [...tally.entries()]
+        .map(([companyId, counts]) => ({
+          companyId,
+          before: counts.before,
+          after: counts.after,
+          increased: counts.after > counts.before,
+        }))
+        .filter((entry) => entry.before > 0 || entry.after > 0)
+        .sort((a, b) => (b.after - b.before) - (a.after - a.before)),
+    });
+  }
+  return out;
 }
 
 /** Internal helper for an API that starts from a human-readable race URL. */

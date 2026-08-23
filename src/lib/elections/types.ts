@@ -117,4 +117,32 @@ export interface RaceTopicFacts {
   /** Coverage honesty: how much of the window the pipeline has read. */
   taggedPosts: number;
   totalPosts: number;
+  /** How a topic moved through the field: who posted first, who followed. */
+  diffusion: TopicDiffusion[];
+}
+
+/**
+ * One topic's surge and what the rest of the field did around it.
+ *
+ * Deliberately descriptive, never causal. "Posted first" is a timestamp, not a
+ * claim that one candidate set the agenda, and "increased after" is a count
+ * comparison, not evidence anyone was reacting. Whether a follow-on post
+ * agrees or pushes back is NOT measured here — that needs stance detection,
+ * which the pipeline does not do, so the product does not imply it.
+ */
+export interface TopicDiffusion {
+  tag: RaceTopicRef;
+  /** Highest-volume day for this topic in the window. */
+  surgeDay: string;
+  surgePosts: number;
+  /** Earliest poster on the surge day, by post timestamp. */
+  firstCompanyId: string | null;
+  /** Every candidate's posting on this topic either side of the surge. */
+  participants: Array<{
+    companyId: string;
+    before: number;
+    after: number;
+    /** Posted on this topic after the surge having posted less before it. */
+    increased: boolean;
+  }>;
 }
