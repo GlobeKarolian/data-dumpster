@@ -30,6 +30,7 @@ export function TaggingProgress({ progress }: { progress: TagProgress }) {
   const {
     totalPosts, processedPosts, taggedPosts, pctProcessed,
     throughput, platforms, spendToday, perPost7d,
+    blockedCount, blockedReason, blockedIsBilling,
   } = progress;
   const remaining = Math.max(0, totalPosts - processedPosts);
   const peak = throughput.reduce((m, b) => Math.max(m, b.posts), 0);
@@ -40,6 +41,29 @@ export function TaggingProgress({ progress }: { progress: TagProgress }) {
 
   return (
     <div className="space-y-4">
+      {/*
+        A stalled reader and a finished one draw the same progress bar. Credits
+        ran out at 06:00 on August 24 and the only record of it was a database
+        column nobody read, so the page showed a bar that had simply stopped
+        moving. It says so now, at the top, before any of the numbers.
+      */}
+      {blockedCount > 0 && blockedReason ? (
+        <div className="rounded-xl border border-red-300 bg-red-50/70 p-4 dark:border-red-900/60 dark:bg-red-950/20">
+          <p className="text-sm font-semibold text-red-900 dark:text-red-200">
+            {blockedIsBilling
+              ? 'The reader is stopped: the model provider is out of credits.'
+              : 'The reader is failing.'}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-red-800 dark:text-red-300">
+            {compact(blockedCount) + ' posts failed in the last six hours. '
+              + (blockedIsBilling
+                ? 'Add credit to the provider account and the queue resumes on its own; '
+                  + 'nothing needs to be re-run by hand. '
+                : '')}
+            {'Provider said: ' + blockedReason}
+          </p>
+        </div>
+      ) : null}
       <div className="rounded-xl border border-zinc-200/70 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Corpus coverage</h2>

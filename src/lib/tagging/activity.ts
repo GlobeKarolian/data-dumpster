@@ -9,6 +9,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
+import { isBillingFailure } from './queue';
 
 export interface ActivityTag { id: string; name: string; color: string | null; confidence: number | null }
 export interface ActivityItem {
@@ -39,6 +40,17 @@ export interface TagProgress {
   spendToday: number;
   spend7d: number;
   perPost7d: number | null;
+  /**
+   * Why the reader is stopped, when it is stopped, in the reader's own words.
+   *
+   * The progress bar cannot distinguish "finished" from "cannot run", and on 24
+   * August it showed neither: credits ran out at 06:00 and the only place that
+   * fact existed was a last_error column nobody was reading. A stalled pipeline
+   * that looks idle is worse than one that looks broken.
+   */
+  blockedCount: number;
+  blockedReason: string | null;
+  blockedIsBilling: boolean;
 }
 
 export async function getTagProgress(orgId: string): Promise<TagProgress> {
@@ -80,9 +92,20 @@ export async function getTagProgress(orgId: string): Promise<TagProgress> {
      GROUP BY p.platform
      ORDER BY count(*) DESC`);
 
+  // The most common current failure, not a historical one: a reason from three
+  // weeks ago on a queue that is now healthy would be worse than saying nothing.
+  const blocked = await db.execute<{ reason: string | null; n: string | number }>(sql`
+    SELECT left(last_error, 200) AS reason, count(*) AS n
+      FROM ai_tag_state
+     WHERE org_id = ${orgId} AND status = 'failed'
+       AND last_error IS NOT NULL
+       AND updated_at > now() - interval '6 hours'
+     GROUP BY 1 ORDER BY 2 DESC LIMIT 1`);
+
   const h = head.rows[0];
   const total = Number(h?.total ?? 0);
   const processed = Number(h?.processed ?? 0);
+  const blockedReason = blocked.rows[0]?.reason ?? null;
   const spend7d = Number(h?.spend_7d ?? 0);
   const posts7d = Number(h?.posts_7d ?? 0);
   return {
@@ -98,6 +121,9 @@ export async function getTagProgress(orgId: string): Promise<TagProgress> {
     spend7d,
     // Cost per post is only meaningful with a real sample behind it.
     perPost7d: posts7d > 200 ? spend7d / posts7d : null,
+    blockedCount: Number(blocked.rows[0]?.n ?? 0),
+    blockedReason,
+    blockedIsBilling: blockedReason !== null && isBillingFailure(blockedReason),
   };
 }
 
