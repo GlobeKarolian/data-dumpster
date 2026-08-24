@@ -12,7 +12,8 @@ export interface GroupRecord {
   area: string | null;
   url: string;
   active: boolean;
-  posts30d: number;
+  /** Posts inside the window selected in the top bar, not a fixed 30 days. */
+  postsInWindow: number;
   lastCollectedAt: string | null;
   outcome: string | null;
 }
@@ -129,8 +130,8 @@ export function GroupManager({ groups, canManage }: { groups: GroupRecord[]; can
                   </p>
                 </div>
                 <span className="pb-num shrink-0 text-right text-sm tabular-nums text-zinc-500">
-                  {g.posts30d.toLocaleString()}
-                  <span className="ml-1 text-[10px] uppercase tracking-wide text-zinc-400">30d</span>
+                  {g.postsInWindow.toLocaleString()}
+                  <span className="ml-1 text-[10px] uppercase tracking-wide text-zinc-400">posts</span>
                 </span>
                 {canManage ? (
                   <Button size="icon" variant="ghost" aria-label={'Remove ' + g.name}
