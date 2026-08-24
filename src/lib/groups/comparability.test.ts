@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { changeRatio, fromEpochMs, priorWindow, windowIsComparable } from './comparability';
+import {
+  changeRatio, daysInWindow, fromEpochMs, priorWindow, windowIsComparable,
+  windowIsFullyCollected,
+} from './comparability';
 
 const day = (iso: string): Date => new Date(iso + 'T00:00:00Z');
 
@@ -54,6 +57,21 @@ test('a prior window predating collection is not comparable', () => {
     { firstPost: day('2018-07-07'), lastPost: day('2026-08-20') },
   );
   assert.equal(comparable, false);
+});
+
+test('a window with a hole in the middle is not fully collected', () => {
+  // The case that shipped: the collector spent four days paused, resumed, and
+  // the fresh leading edge satisfied every edge check while three days of the
+  // window held nothing. The page reported chatter down 34 percent.
+  const w = { start: day('2026-08-18'), end: day('2026-08-25') };
+  assert.equal(daysInWindow(w), 7);
+  assert.equal(windowIsFullyCollected(w, 4), false);
+  assert.equal(windowIsFullyCollected(w, 7), true);
+});
+
+test('the day still in progress does not count as a hole', () => {
+  const w = { start: day('2026-08-18'), end: day('2026-08-25') };
+  assert.equal(windowIsFullyCollected(w, 6), true);
 });
 
 test('epoch milliseconds arrive as a real date, whether string or number', () => {

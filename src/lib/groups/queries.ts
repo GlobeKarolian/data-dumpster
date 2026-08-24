@@ -19,11 +19,12 @@ import { db } from '@/db';
 import { roleAtLeast, type Role } from '@/lib/roles';
 import type { PostingCadenceCell } from '@/lib/metrics/contract';
 import {
-  changeRatio, fromEpochMs, priorWindow, windowIsComparable,
+  changeRatio, daysInWindow, fromEpochMs, priorWindow, windowIsComparable,
+  windowIsFullyCollected,
   type GroupCoverage, type GroupWindow,
 } from './comparability';
 
-export { windowIsComparable, priorWindow };
+export { windowIsComparable, windowIsFullyCollected, daysInWindow, priorWindow };
 export type { GroupCoverage, GroupWindow };
 
 export function groupIdentitiesVisible(role: Role): boolean {
@@ -113,6 +114,11 @@ export interface GroupHeadline {
   postsChange: number | null;
   engagementChange: number | null;
   engagementPerPostChange: number | null;
+  /** Days in the window that carry posts, against the days it spans. */
+  daysCollected: number;
+  daysExpected: number;
+  /** False when either window has a hole in it, which withholds the deltas. */
+  comparable: boolean;
 }
 
 export async function groupHeadline(
@@ -124,6 +130,7 @@ export async function groupHeadline(
   const { rows } = await db.execute<{
     posts: string | number; engagement: string | number; voices: string | number;
     active_groups: string | number; prior_posts: string | number; prior_engagement: string | number;
+    days_collected: string | number; prior_days_collected: string | number;
   }>(sql`
     SELECT
       count(*) FILTER (WHERE gp.posted_at >= ${w.start.toISOString()} AND gp.posted_at < ${w.end.toISOString()}) AS posts,
@@ -135,14 +142,27 @@ export async function groupHeadline(
         WHERE gp.posted_at >= ${w.start.toISOString()} AND gp.posted_at < ${w.end.toISOString()}) AS active_groups,
       count(*) FILTER (WHERE gp.posted_at >= ${prior.start.toISOString()} AND gp.posted_at < ${prior.end.toISOString()}) AS prior_posts,
       coalesce(sum(gp.likes + gp.comments + gp.shares) FILTER (
-        WHERE gp.posted_at >= ${prior.start.toISOString()} AND gp.posted_at < ${prior.end.toISOString()}), 0) AS prior_engagement
+        WHERE gp.posted_at >= ${prior.start.toISOString()} AND gp.posted_at < ${prior.end.toISOString()}), 0) AS prior_engagement,
+      -- Days carrying posts, which is how a hole in the middle of a window
+      -- becomes visible. The edge checks cannot see one.
+      count(DISTINCT date_trunc('day', gp.posted_at AT TIME ZONE 'America/New_York')) FILTER (
+        WHERE gp.posted_at >= ${w.start.toISOString()} AND gp.posted_at < ${w.end.toISOString()}) AS days_collected,
+      count(DISTINCT date_trunc('day', gp.posted_at AT TIME ZONE 'America/New_York')) FILTER (
+        WHERE gp.posted_at >= ${prior.start.toISOString()} AND gp.posted_at < ${prior.end.toISOString()}) AS prior_days_collected
       FROM group_posts gp
      WHERE gp.org_id = ${orgId}`);
 
   const r = rows[0];
   const posts = Number(r?.posts ?? 0);
   const engagement = Number(r?.engagement ?? 0);
-  const comparable = windowIsComparable(w, coverage);
+  const daysCollected = Number(r?.days_collected ?? 0);
+  const priorDaysCollected = Number(r?.prior_days_collected ?? 0);
+  // Three conditions, and all three have failed in production at least once:
+  // the window must sit inside collection, and neither it nor the window before
+  // it may have a hole in the middle.
+  const comparable = windowIsComparable(w, coverage)
+    && windowIsFullyCollected(w, daysCollected)
+    && windowIsFullyCollected(priorWindow(w), priorDaysCollected);
   const priorPosts = Number(r?.prior_posts ?? 0);
   const priorEngagement = Number(r?.prior_engagement ?? 0);
   const perPost = posts > 0 ? engagement / posts : null;
@@ -153,6 +173,9 @@ export async function groupHeadline(
     voices: Number(r?.voices ?? 0),
     activeGroups: Number(r?.active_groups ?? 0),
     engagementPerPost: perPost,
+    daysCollected,
+    daysExpected: daysInWindow(w),
+    comparable,
     postsChange: comparable ? changeRatio(posts, priorPosts) : null,
     engagementChange: comparable ? changeRatio(engagement, priorEngagement) : null,
     engagementPerPostChange: comparable && perPost !== null && priorPerPost !== null

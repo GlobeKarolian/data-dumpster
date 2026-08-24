@@ -14,7 +14,7 @@ import { compactNumber } from '@/lib/utils';
 import {
   watchedGroups, groupDiscussions, sharedDomains, groupIdentitiesVisible, ownedDomains,
   groupHeadline, groupTrend, groupTopPosts, groupCadence, ourLinkShare,
-  groupCoverage, windowIsComparable, groupRunHealth, type GroupRunHealth,
+  groupCoverage, groupRunHealth, type GroupRunHealth,
 } from '@/lib/groups/queries';
 import { GroupManager } from '@/components/groups/group-manager';
 import { resolveContext } from '../_lib/context';
@@ -158,22 +158,26 @@ export default async function GroupsPage({
   const engagementSpark = trend.map((p) => ({ date: p.date, value: p.engagement }));
   const topGroupPosts = groups[0]?.posts || 1;
 
-  // A window that runs past the last day we collected is not a quiet window,
-  // and the difference is invisible unless the screen says so. Comparisons are
-  // withheld in that case rather than reported as a decline in neighborhood
-  // chatter that is really a paused collector.
-  const comparable = windowIsComparable(w, coverage);
+  // A window with days we never collected is not a quiet window, and the
+  // difference is invisible unless the screen says so. Comparisons are withheld
+  // rather than reported as a decline in neighborhood chatter that is really a
+  // gap in our own collection.
   const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
-  const collectedThrough = coverage.lastPost
-    ? dayFmt.format(coverage.lastPost)
-    : null;
+  const collectedThrough = coverage.lastPost ? dayFmt.format(coverage.lastPost) : null;
   const paused = groups.some((g) => g.outcome === 'paused');
-  const gapNote = collectedThrough && !comparable
-    ? 'Group posts are collected through ' + collectedThrough
-      + (paused ? ', and collection is paused' : '')
-      + '. Days after that were never read, so they show as nothing here rather than as'
-      + ' quiet, and period-over-period comparisons are withheld until both windows are covered.'
-    : null;
+  const missingDays = Math.max(0, head.daysExpected - head.daysCollected);
+  const gapNote = head.comparable ? null : (
+    paused
+      ? 'Collection is paused for at least one group, so this window is incomplete and'
+        + ' period-over-period comparisons are withheld.'
+      : missingDays > 1
+        ? missingDays + ' of the ' + head.daysExpected + ' days in this window were not'
+          + ' collected, so they read as nothing here rather than as quiet. Comparisons are'
+          + ' withheld until the window fills in'
+          + (collectedThrough ? '; posts currently run through ' + collectedThrough : '') + '.'
+        : 'This window cannot be compared to the one before it yet, because one of the two'
+          + ' is not fully collected. The numbers below are real; only the change is withheld.'
+  );
 
   return (
     <div className="space-y-4">
