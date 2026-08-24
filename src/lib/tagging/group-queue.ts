@@ -27,7 +27,7 @@ import {
   validateAssignments,
   type TaggablePostContent,
 } from './ai-tagger';
-import { aiTagsForOrg } from './queue';
+import { aiTagsForOrg, isBillingFailure } from './queue';
 
 const POSTS_PER_COMPLETION = 20;
 const LEASE_MINUTES = 10;
@@ -130,13 +130,21 @@ async function settle(
   error?: string,
 ): Promise<void> {
   if (ids.length === 0) return;
+  // Same rule as the brand queue: running out of credits is a pause, not a
+  // strike, so it must not consume the retries that exist for bad requests.
+  const billing = outcome === 'failed' && !!error && isBillingFailure(error);
   await db.execute(sql`
     UPDATE group_tag_state s
        SET status = ${outcome},
            model = ${model},
            taxonomy_fingerprint = ${fingerprint},
-           attempts = CASE WHEN ${outcome} = 'succeeded' THEN 0 ELSE s.attempts + 1 END,
-           next_attempt_at = CASE WHEN ${outcome} = 'succeeded' THEN NULL
+           attempts = CASE
+             WHEN ${outcome} = 'succeeded' THEN 0
+             WHEN ${billing} THEN s.attempts
+             ELSE s.attempts + 1 END,
+           next_attempt_at = CASE
+             WHEN ${outcome} = 'succeeded' THEN NULL
+             WHEN ${billing} THEN now() + interval '1 hour'
              ELSE now() + make_interval(mins => 10 * power(2, least(s.attempts, 8))::int) END,
            tagged_at = CASE WHEN ${outcome} = 'succeeded' THEN now() ELSE s.tagged_at END,
            last_error = ${error ?? null},

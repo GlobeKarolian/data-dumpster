@@ -20,6 +20,17 @@ import type { TimeSeriesResult } from '@/lib/metrics/contract';
 import { getLeaderboard, getTimeSeries, getTopPostsByPlatform } from '@/lib/metrics/queries';
 import { autoGranularity, bucketKey, daysIn, presetRange, toDayString } from '@/lib/dates';
 
+/**
+ * Share of a race's tagged posts above which a tag stops telling you anything.
+ *
+ * Set at 60 percent, well clear of the 21 percent the second-place tag holds in
+ * the 2028 field and well below the 86 percent Politics holds. A tag that
+ * describes almost every post in a field of candidates describes the field, and
+ * the useful reading of a candidate is what they talk about that the others do
+ * not.
+ */
+const UBIQUITOUS_TAG_SHARE = 0.6;
+
 type RaceSummaryRow = {
   id: string;
   landscape_id: string;
@@ -258,7 +269,8 @@ export async function getElectionRaceAnalytics(
       attentionSeries: { series: [], companies: [], granularity: 'day' },
       topPosts: [],
       topics: {
-        tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0, diffusion: [],
+        tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0,
+        diffusion: [], ubiquitous: [],
       },
     };
   }
@@ -331,13 +343,26 @@ async function getRaceTopicFacts(
   range: DateRange,
 ): Promise<import('./types').RaceTopicFacts> {
   const empty = {
-    tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0, diffusion: [],
+    tags: [], series: [], candidates: [], taggedPosts: 0, totalPosts: 0,
+    diffusion: [], ubiquitous: [],
   };
   if (companyIds.length === 0) return empty;
   const ids = dsql.raw(`'{${companyIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)).join(',')}}'::uuid[]`);
 
-  const top = await db.execute<{ id: string; name: string; color: string | null; posts: string | number }>(dsql`
-    SELECT t.id::text AS id, t.name, t.color, count(DISTINCT p.id) AS posts
+  const top = await db.execute<{
+    id: string; name: string; color: string | null;
+    posts: string | number; tagged_total: string | number;
+  }>(dsql`
+    WITH tagged AS (
+      SELECT count(DISTINCT a.post_id) AS n
+        FROM post_tag_assignments a
+        JOIN posts p ON p.id = a.post_id
+       WHERE p.company_id = ANY(${ids})
+         AND p.posted_at >= ${range.start.toISOString()}
+         AND p.posted_at < ${range.end.toISOString()}
+    )
+    SELECT t.id::text AS id, t.name, t.color, count(DISTINCT p.id) AS posts,
+           (SELECT n FROM tagged) AS tagged_total
       FROM post_tag_assignments a
       JOIN posts p ON p.id = a.post_id
       JOIN post_tags t ON t.id = a.tag_id
@@ -346,12 +371,29 @@ async function getRaceTopicFacts(
        AND p.posted_at < ${range.end.toISOString()}
      GROUP BY t.id, t.name, t.color
      ORDER BY count(DISTINCT p.id) DESC
-     LIMIT 8`);
-  const tags = top.rows.map((r) => ({
-    id: r.id, name: r.name, color: r.color, posts: Number(r.posts),
-  }));
-  if (tags.length === 0) return empty;
+     LIMIT 24`);
+
+  const taggedTotal = Number(top.rows[0]?.tagged_total ?? 0);
+  const ranked = top.rows.map((r) => {
+    const posts = Number(r.posts);
+    return {
+      id: r.id, name: r.name, color: r.color, posts,
+      share: taggedTotal > 0 ? posts / taggedTotal : 0,
+    };
+  });
+
+  // A tag on nearly every post in a field of candidates describes the field,
+  // not any candidate in it. Politics sits at 86 percent of the 2028 corpus
+  // against 21 for the next tag down, so while it was on the chart it WAS the
+  // chart, and every candidate's top topic was the same word. Held back on
+  // share rather than by name, so a taxonomy that later grows an "Elections" or
+  // a "Campaign 2028" is handled without another edit here.
+  const ubiquitous = ranked.filter((t) => t.share >= UBIQUITOUS_TAG_SHARE);
+  const tags = ranked.filter((t) => t.share < UBIQUITOUS_TAG_SHARE).slice(0, 8)
+    .map(({ id, name, color, posts }) => ({ id, name, color, posts }));
+  if (tags.length === 0) return { ...empty, ubiquitous };
   const tagIds = dsql.raw(`'{${tags.map((t) => t.id).join(',')}}'::uuid[]`);
+  const keptIds = tagIds;
 
   const [series, perCandidate, coverage] = await Promise.all([
     db.execute<{ day: string; tag_id: string; posts: string | number }>(dsql`
@@ -371,12 +413,15 @@ async function getRaceTopicFacts(
       posts: string | number; tagged_posts: string | number; rank: string | number;
     }>(dsql`
       WITH counts AS (
+        -- Restricted to the kept tags, so a candidate's "most-posted topics"
+        -- are not five slots of which the first is always Politics.
         SELECT p.company_id, a.tag_id, t.name, t.color,
                count(DISTINCT p.id) AS posts
           FROM post_tag_assignments a
           JOIN posts p ON p.id = a.post_id
           JOIN post_tags t ON t.id = a.tag_id
          WHERE p.company_id = ANY(${ids})
+           AND a.tag_id = ANY(${keptIds})
            AND p.posted_at >= ${range.start.toISOString()}
            AND p.posted_at < ${range.end.toISOString()}
          GROUP BY p.company_id, a.tag_id, t.name, t.color
@@ -385,6 +430,7 @@ async function getRaceTopicFacts(
           FROM post_tag_assignments a
           JOIN posts p ON p.id = a.post_id
          WHERE p.company_id = ANY(${ids})
+           AND a.tag_id = ANY(${keptIds})
            AND p.posted_at >= ${range.start.toISOString()}
            AND p.posted_at < ${range.end.toISOString()}
          GROUP BY company_id
@@ -444,6 +490,7 @@ async function getRaceTopicFacts(
     taggedPosts: Number(cov?.tagged ?? 0),
     totalPosts: Number(cov?.total ?? 0),
     diffusion: await getTopicDiffusion(ids, tagIds, tags, range),
+    ubiquitous,
   };
 }
 

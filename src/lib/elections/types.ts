@@ -119,6 +119,19 @@ export interface RaceTopicFacts {
   totalPosts: number;
   /** How a topic moved through the field: who posted first, who followed. */
   diffusion: TopicDiffusion[];
+  /**
+   * Tags held back for carrying no information in this context, with the share
+   * of posts that carry them.
+   *
+   * Politics sits on 86 percent of posts in the 2028 field, against 21 percent
+   * for the next tag down. It is true of nearly every post a candidate makes,
+   * which is precisely why it distinguishes nothing, and while it was on the
+   * chart it was the chart. Suppressed rather than deleted, because the same tag
+   * is genuinely informative on a Somerville zoning post, and reported rather
+   * than dropped quietly, because a reader who knows the taxonomy will notice it
+   * missing and should not have to wonder why.
+   */
+  ubiquitous: (RaceTopicRef & { posts: number; share: number })[];
 }
 
 /**

@@ -220,6 +220,26 @@ async function loadPostContent(postIds: string[]): Promise<TaggablePostContent[]
   }));
 }
 
+/**
+ * Is this failure the account being out of money rather than the work being
+ * wrong.
+ *
+ * The distinction is not cosmetic. Credits ran out at 06:00 on August 24 and
+ * within one hour 62,431 rows had burned through all six of their retries on a
+ * condition no retry could fix. Because the claim query requires
+ * `attempts < MAX_TAGGING_ATTEMPTS`, every one of them was then permanently
+ * parked: topping the account back up would not have restarted a single post.
+ * The queue would have looked idle and healthy with 8,407 posts never read.
+ *
+ * A billing failure is a pause, so it must not consume the budget of attempts
+ * that exists for genuinely bad requests.
+ */
+export function isBillingFailure(message: string): boolean {
+  return /\b402\b/.test(message)
+    || /requires more credits|exceed your available credits|insufficient (credit|balance|funds)|quota exceeded|billing/i
+      .test(message);
+}
+
 async function settle(
   orgId: string,
   postIds: string[],
@@ -229,13 +249,21 @@ async function settle(
   error?: string,
 ): Promise<void> {
   if (postIds.length === 0) return;
+  // A pause, not a strike. Attempts are left where they are and the row waits
+  // an hour, so the work resumes on its own once the account is funded.
+  const billing = outcome === 'failed' && !!error && isBillingFailure(error);
   await db.execute(sql`
     UPDATE ai_tag_state s
        SET status = ${outcome},
            model = ${model},
            taxonomy_fingerprint = ${fingerprint},
-           attempts = CASE WHEN ${outcome} = 'succeeded' THEN 0 ELSE s.attempts + 1 END,
-           next_attempt_at = CASE WHEN ${outcome} = 'succeeded' THEN NULL
+           attempts = CASE
+             WHEN ${outcome} = 'succeeded' THEN 0
+             WHEN ${billing} THEN s.attempts
+             ELSE s.attempts + 1 END,
+           next_attempt_at = CASE
+             WHEN ${outcome} = 'succeeded' THEN NULL
+             WHEN ${billing} THEN now() + interval '1 hour'
              ELSE now() + make_interval(mins => 10 * power(2, least(s.attempts, 8))::int) END,
            tagged_at = CASE WHEN ${outcome} = 'succeeded' THEN now() ELSE s.tagged_at END,
            last_error = ${error ?? null},

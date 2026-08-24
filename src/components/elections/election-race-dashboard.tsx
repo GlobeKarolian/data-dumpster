@@ -510,6 +510,17 @@ function TopicsView({ race, analytics }: {
               </li>
             ))}
           </ul>
+          {topics.ubiquitous.length > 0 ? (
+            <p className="mt-3 border-t border-zinc-100 pt-3 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-800/60">
+              {'Held back for carrying no information here: '
+                + topics.ubiquitous
+                  .map((t) => t.name + ' (' + Math.round(t.share * 100) + '% of posts)')
+                  .join(', ')
+                + '. A subject on nearly every post in a field of candidates describes the'
+                + ' field rather than anyone in it, so it is excluded from these charts'
+                + ' instead of sitting on top of them. It is still applied to the posts.'}
+            </p>
+          ) : null}
         </CardBody>
       </Card>
 
