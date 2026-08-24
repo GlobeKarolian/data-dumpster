@@ -19,7 +19,7 @@ import { db } from '@/db';
 import { roleAtLeast, type Role } from '@/lib/roles';
 import type { PostingCadenceCell } from '@/lib/metrics/contract';
 import {
-  changeRatio, priorWindow, windowIsComparable,
+  changeRatio, fromEpochMs, priorWindow, windowIsComparable,
   type GroupCoverage, type GroupWindow,
 } from './comparability';
 
@@ -34,15 +34,14 @@ export function groupIdentitiesVisible(role: Role): boolean {
 /* ------------------------------------------------------------- coverage */
 
 export async function groupCoverage(orgId: string): Promise<GroupCoverage> {
-  const { rows } = await db.execute<{ first_post: string | null; last_post: string | null }>(sql`
-    SELECT min(posted_at)::text AS first_post, max(posted_at)::text AS last_post
+  const { rows } = await db.execute<{ first_ms: string | number | null; last_ms: string | number | null }>(sql`
+    SELECT (extract(epoch FROM min(posted_at)) * 1000)::bigint AS first_ms,
+           (extract(epoch FROM max(posted_at)) * 1000)::bigint AS last_ms
       FROM group_posts WHERE org_id = ${orgId}`);
-  const parse = (v: string | null): Date | null => {
-    if (!v) return null;
-    const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
-    return Number.isNaN(+d) ? null : d;
+  return {
+    firstPost: fromEpochMs(rows[0]?.first_ms),
+    lastPost: fromEpochMs(rows[0]?.last_ms),
   };
-  return { firstPost: parse(rows[0]?.first_post ?? null), lastPost: parse(rows[0]?.last_post ?? null) };
 }
 
 /* --------------------------------------------------------- run health */
@@ -67,15 +66,15 @@ export interface GroupRunHealth {
 
 export async function groupRunHealth(orgId: string): Promise<GroupRunHealth> {
   const { rows } = await db.execute<{
-    last_run: string | null; next_run: string | null;
+    last_run: string | number | null; next_run: string | number | null;
     active_groups: string | number; stopped_groups: string | number;
     records: string | number; cents: string | number;
   }>(sql`
-    SELECT (SELECT max(s.last_collected_at)::text
+    SELECT (SELECT (extract(epoch FROM max(s.last_collected_at)) * 1000)::bigint
               FROM group_collection_state s
               JOIN watched_groups g ON g.id = s.group_id
              WHERE g.org_id = ${orgId}) AS last_run,
-           (SELECT min(s.next_attempt_at)::text
+           (SELECT (extract(epoch FROM min(s.next_attempt_at)) * 1000)::bigint
               FROM group_collection_state s
               JOIN watched_groups g ON g.id = s.group_id
              WHERE g.org_id = ${orgId} AND g.active
@@ -92,14 +91,9 @@ export async function groupRunHealth(orgId: string): Promise<GroupRunHealth> {
              WHERE org_id = ${orgId} AND vendor = 'brightdata'
                AND created_at > now() - interval '24 hours') AS cents`);
   const r = rows[0];
-  const parse = (v: string | null | undefined): Date | null => {
-    if (!v) return null;
-    const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
-    return Number.isNaN(+d) ? null : d;
-  };
   return {
-    lastRunAt: parse(r?.last_run),
-    nextRunAt: parse(r?.next_run),
+    lastRunAt: fromEpochMs(r?.last_run),
+    nextRunAt: fromEpochMs(r?.next_run),
     activeGroups: Number(r?.active_groups ?? 0),
     stoppedGroups: Number(r?.stopped_groups ?? 0),
     recordsLast24h: Number(r?.records ?? 0),

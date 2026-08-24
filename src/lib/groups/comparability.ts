@@ -24,6 +24,22 @@ export interface GroupCoverage {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Read a timestamp that crossed the database boundary as epoch milliseconds.
+ *
+ * Timestamps used to come across as `::text`, which yields
+ * "2018-07-07 14:23:00+00", and the parser swapped the space for a T and
+ * appended a Z, appending an offset to a string that already had one. Every
+ * coverage read returned null, silently, so the comparability guard below never
+ * fired once in production and every delta on the screen read n/a. Epoch
+ * milliseconds have no format left to get wrong.
+ */
+export function fromEpochMs(v: string | number | null | undefined): Date | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? new Date(n) : null;
+}
+
 /** Previous window of equal length, for period-over-period deltas. */
 export function priorWindow(w: GroupWindow): GroupWindow {
   const span = w.end.getTime() - w.start.getTime();

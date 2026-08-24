@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { changeRatio, priorWindow, windowIsComparable } from './comparability';
+import { changeRatio, fromEpochMs, priorWindow, windowIsComparable } from './comparability';
 
 const day = (iso: string): Date => new Date(iso + 'T00:00:00Z');
 
@@ -54,6 +54,23 @@ test('a prior window predating collection is not comparable', () => {
     { firstPost: day('2018-07-07'), lastPost: day('2026-08-20') },
   );
   assert.equal(comparable, false);
+});
+
+test('epoch milliseconds arrive as a real date, whether string or number', () => {
+  // The driver hands back a bigint as a string, and Number() on it is exact
+  // well past any timestamp we will ever store.
+  const ms = Date.UTC(2026, 7, 20, 23, 21, 25);
+  assert.equal(fromEpochMs(ms)?.toISOString(), new Date(ms).toISOString());
+  assert.equal(fromEpochMs(String(ms))?.toISOString(), new Date(ms).toISOString());
+});
+
+test('a missing timestamp is null, not an invalid date', () => {
+  // The bug this replaces produced an Invalid Date, which is truthy, compares
+  // false against everything, and made coverage checks quietly no-ops.
+  for (const empty of [null, undefined, '']) {
+    assert.equal(fromEpochMs(empty), null);
+  }
+  assert.equal(fromEpochMs('2018-07-07 14:23:00+00'), null);
 });
 
 test('an empty corpus is never comparable', () => {
