@@ -18,6 +18,9 @@ import { db } from '@/db';
 import { groupPosts } from '@/db/schema';
 import { scrapeSync, DATASETS, rowError } from '@/lib/vendors/brightdata';
 import { PendingSnapshotError } from '@/lib/vendors/brightdata';
+import {
+  GROUP_DAILY_RECORD_BUDGET, estimateBrightDataCents, recordSpend, remainingRecordBudget,
+} from '@/lib/vendors/budget';
 
 const LEASE_MINUTES = 8;
 const GROUPS_PER_TICK = 8;
@@ -34,23 +37,28 @@ const ACCESS_REFUSAL = /private|not (a )?(public|member)|members[- ]only|access 
 const MEDIA_HOST = /(^|\.)(fbcdn\.net|cdninstagram\.com|akamaihd\.net|licdn\.com|twimg\.com|ytimg\.com)$/i;
 
 /**
- * Vendor spend governor: how far back and how many posts we buy per group.
+ * Records bought per group per round, enforced by the vendor.
  *
- * Deliberately small. Collection runs every six hours, so a two-day window
- * overlaps itself and nothing is missed, while the per-run bill stays in cents
- * rather than the ~$50 an unbounded group snapshot cost. Group View is a
- * "what is being discussed now" tool; history accrues from our own daily
- * collection rather than being bought back.
+ * This number used to be passed as `num_of_posts` in the request body, next to
+ * a two-day `start_date`, and I reported the spend as capped on that basis. It
+ * was not. This dataset accepts both fields and ignores both: the last round
+ * asked for fifty posts each from a two-day window and was delivered 31,235,
+ * 18,397 and 7,405 records reaching back to July 2018, then billed for all of
+ * them. Roughly $85 a round, every six hours, which is the $232 invoice.
+ *
+ * `limit_per_input` is a trigger query parameter that Bright Data applies
+ * before delivery, so it caps the invoice instead of requesting politely that
+ * it be small. Verified against the live dataset: a limit of five returned
+ * exactly five records, newest first. Newest-first is what makes the cap
+ * sufficient on its own — a date window would be redundant even if it worked.
+ *
+ * Seventy-five per group per round, four rounds a day, is 300 records of
+ * headroom against the 60 to 110 posts a day these groups actually produce.
  */
-const WINDOW_DAYS = 2;
-const POSTS_PER_GROUP = 50;
+const POSTS_PER_GROUP = 75;
 
-/** MM-DD-YYYY, the format this dataset's date inputs expect. */
-function windowStart(): string {
-  const d = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return p(d.getMonth() + 1) + '-' + p(d.getDate()) + '-' + d.getFullYear();
-}
+/** Hours between rounds for a group that collected cleanly. */
+const RECOLLECT_HOURS = 6;
 
 export interface GroupCollectResult {
   groupsClaimed: number;
@@ -58,6 +66,11 @@ export interface GroupCollectResult {
   covered: number;
   ineligible: number;
   failed: number;
+  /** Records the vendor delivered and billed for, which is not postsWritten. */
+  recordsBought: number;
+  estimatedCents: number;
+  /** Set when the rolling record budget stopped this tick short. */
+  budgetExhausted: boolean;
 }
 
 interface RawGroupPost {
@@ -167,7 +180,7 @@ async function settle(
              WHEN ${outcome} = 'failed'
                THEN now() + make_interval(mins => 30 * power(2, least(attempts, 5))::int)
              WHEN ${outcome} = 'ineligible' THEN NULL
-             ELSE now() + interval '6 hours' END,
+             ELSE now() + make_interval(hours => ${RECOLLECT_HOURS}) END,
            resume_snapshot_id = ${opts.resume ?? null},
            last_error = ${opts.error ?? null},
            last_collected_at = CASE WHEN ${outcome} = 'covered' THEN now() ELSE last_collected_at END,
@@ -223,32 +236,56 @@ async function writePosts(orgId: string, groupId: string, rows: RawGroupPost[]):
 export async function runGroupCollection(orgId: string, apiKey: string): Promise<GroupCollectResult> {
   const result: GroupCollectResult = {
     groupsClaimed: 0, postsWritten: 0, covered: 0, ineligible: 0, failed: 0,
+    recordsBought: 0, estimatedCents: 0, budgetExhausted: false,
   };
+
+  // Ask the ledger before buying anything. The vendor cap below is the primary
+  // defence and it is verified; this is the second one, for the day the vendor
+  // changes behaviour without telling us. Its job is to make that day cost a
+  // few dollars instead of a few hundred.
+  let budget = await remainingRecordBudget('brightdata', GROUP_DAILY_RECORD_BUDGET);
+  if (budget < POSTS_PER_GROUP) {
+    result.budgetExhausted = true;
+    console.warn('[data-dumpster:groups] daily record budget exhausted, buying nothing', {
+      orgId, budgetRemaining: budget, dailyBudget: GROUP_DAILY_RECORD_BUDGET,
+    });
+    return result;
+  }
+
   const groups = await claimGroups(orgId);
   result.groupsClaimed = groups.length;
 
   for (const group of groups) {
+    if (budget < POSTS_PER_GROUP && !group.resume) {
+      // Out of budget mid-tick. Release the claim so the next tick picks this
+      // group up rather than leaving it leased and looking stuck. A resume is
+      // exempt: that snapshot is already paid for, and abandoning it would
+      // forfeit the spend and buy it again later.
+      result.budgetExhausted = true;
+      await db.execute(sql`
+        UPDATE group_collection_state
+           SET status = 'idle', next_attempt_at = now() + interval '1 hour', updated_at = now()
+         WHERE group_id = ${group.id}`);
+      continue;
+    }
     try {
       // This dataset is url_collection only: the group URL IS the input and
       // Bright Data returns that group's posts. It rejects discovery mode
       // (type=discover_new) with an HTTP 400, so no discoverBy here.
       //
-      // The window is not optional. Unbounded, one busy group returned 33,226
-      // records in a single snapshot, which is roughly $50 at $1.50/1,000 —
-      // per group, per collection, every six hours. Group View is a "what is
-      // being discussed now" tool, so it buys a recent window and nothing more.
+      // No date window and no num_of_posts in the body. Both are accepted and
+      // both are ignored by this dataset, which is how a round meant to buy 150
+      // records bought 57,037. limitPerInput becomes a trigger query parameter
+      // the vendor applies before delivery, and returns newest posts first.
       const rows = await scrapeSync<RawGroupPost>(
         DATASETS.facebookGroupPosts,
-        [{
-          url: group.url,
-          start_date: windowStart(),
-          end_date: '',
-          num_of_posts: POSTS_PER_GROUP,
-        }],
+        [{ url: group.url }],
         {
           apiKey,
           platform: 'facebook',
           resumeSnapshotId: group.resume ?? undefined,
+          limitPerInput: POSTS_PER_GROUP,
+          limitTotal: POSTS_PER_GROUP,
           timeoutMs: 60_000,
         },
       );
@@ -272,7 +309,31 @@ export async function runGroupCollection(orgId: string, apiKey: string): Promise
         continue;
       }
       const written = await writePosts(orgId, group.id, rows);
+
+      // Write the purchase down before anything else can fail. The vendor
+      // billed for `rows.length` whether or not we kept them, and the whole
+      // point of the ledger is that it reflects the invoice rather than our
+      // intentions. A cap the vendor stopped honouring would surface here as
+      // a records count far above POSTS_PER_GROUP.
+      const cents = estimateBrightDataCents(rows.length);
+      budget -= rows.length;
+      result.recordsBought += rows.length;
+      result.estimatedCents += cents;
       result.postsWritten += written;
+      await recordSpend({
+        orgId,
+        vendor: 'brightdata',
+        resource: DATASETS.facebookGroupPosts,
+        subject: group.url,
+        records: rows.length,
+        stored: written,
+        estimatedCents: cents,
+      });
+      if (rows.length > POSTS_PER_GROUP * 2) {
+        console.error('[data-dumpster:groups] vendor exceeded its own record cap', {
+          orgId, group: group.url, asked: POSTS_PER_GROUP, delivered: rows.length,
+        });
+      }
       await settle(group.id, 'covered');
       result.covered += 1;
     } catch (err) {

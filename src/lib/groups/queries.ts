@@ -45,6 +45,68 @@ export async function groupCoverage(orgId: string): Promise<GroupCoverage> {
   return { firstPost: parse(rows[0]?.first_post ?? null), lastPost: parse(rows[0]?.last_post ?? null) };
 }
 
+/* --------------------------------------------------------- run health */
+
+/**
+ * Is collection actually running, and what is it costing.
+ *
+ * On the screen because "it should not stop" is not a thing you can verify by
+ * looking at post counts: a stalled collector and a quiet weekend produce the
+ * same chart. The last successful round and the trailing 24 hours of vendor
+ * spend are the two facts that separate them, and the spend figure is the one
+ * that would have caught a $232 round on the day rather than a day later.
+ */
+export interface GroupRunHealth {
+  lastRunAt: Date | null;
+  nextRunAt: Date | null;
+  activeGroups: number;
+  stoppedGroups: number;
+  recordsLast24h: number;
+  estimatedCentsLast24h: number;
+}
+
+export async function groupRunHealth(orgId: string): Promise<GroupRunHealth> {
+  const { rows } = await db.execute<{
+    last_run: string | null; next_run: string | null;
+    active_groups: string | number; stopped_groups: string | number;
+    records: string | number; cents: string | number;
+  }>(sql`
+    SELECT (SELECT max(s.last_collected_at)::text
+              FROM group_collection_state s
+              JOIN watched_groups g ON g.id = s.group_id
+             WHERE g.org_id = ${orgId}) AS last_run,
+           (SELECT min(s.next_attempt_at)::text
+              FROM group_collection_state s
+              JOIN watched_groups g ON g.id = s.group_id
+             WHERE g.org_id = ${orgId} AND g.active
+               AND s.outcome IS DISTINCT FROM 'ineligible') AS next_run,
+           (SELECT count(*) FROM watched_groups WHERE org_id = ${orgId} AND active) AS active_groups,
+           (SELECT count(*) FROM group_collection_state s
+              JOIN watched_groups g ON g.id = s.group_id
+             WHERE g.org_id = ${orgId}
+               AND s.outcome IN ('paused', 'ineligible')) AS stopped_groups,
+           (SELECT coalesce(sum(records), 0) FROM vendor_spend
+             WHERE org_id = ${orgId} AND vendor = 'brightdata'
+               AND created_at > now() - interval '24 hours') AS records,
+           (SELECT coalesce(sum(estimated_cents), 0) FROM vendor_spend
+             WHERE org_id = ${orgId} AND vendor = 'brightdata'
+               AND created_at > now() - interval '24 hours') AS cents`);
+  const r = rows[0];
+  const parse = (v: string | null | undefined): Date | null => {
+    if (!v) return null;
+    const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
+    return Number.isNaN(+d) ? null : d;
+  };
+  return {
+    lastRunAt: parse(r?.last_run),
+    nextRunAt: parse(r?.next_run),
+    activeGroups: Number(r?.active_groups ?? 0),
+    stoppedGroups: Number(r?.stopped_groups ?? 0),
+    recordsLast24h: Number(r?.records ?? 0),
+    estimatedCentsLast24h: Number(r?.cents ?? 0),
+  };
+}
+
 /* ------------------------------------------------------------- headline */
 
 export interface GroupHeadline {

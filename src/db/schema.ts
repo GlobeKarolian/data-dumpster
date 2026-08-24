@@ -1270,6 +1270,50 @@ export const groupCollectionState = pgTable('group_collection_state', {
 ]);
 
 /**
+ * Every record we bought from a metered vendor, and what it cost.
+ *
+ * This table exists because of a $232 invoice nobody saw coming. The group
+ * collector asked for fifty posts per group inside a two-day window, using
+ * input fields the dataset silently ignores, and was delivered 57,037 records
+ * reaching back to 2018 — per round, every six hours. Nothing in the product
+ * knew, because nothing was counting. The vendor's own dashboard was the only
+ * place the number existed, and it is a lagging indicator by a day.
+ *
+ * So a purchase is now written down at the moment it happens, and the collector
+ * reads its own recent spend before deciding whether to buy more. A budget that
+ * is not measured is a hope, and a runaway scraper outruns hope inside an hour.
+ *
+ * `records` is what the vendor delivered and billed, which is not the same as
+ * what we stored: duplicates we already had still cost money. Both are kept, so
+ * a widening gap between them shows up as waste rather than as nothing.
+ */
+export const vendorSpend = pgTable('vendor_spend', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),
+  /** brightdata, openrouter, and so on. */
+  vendor: text('vendor').notNull(),
+  /** Dataset or model id, so one runaway source is attributable. */
+  resource: text('resource').notNull(),
+  /** Free text naming what was collected, e.g. a group name. */
+  subject: text('subject'),
+  /** Records the vendor delivered, which is what the vendor bills for. */
+  records: integer('records').notNull().default(0),
+  /** Rows we actually kept. Below `records` when the window overlaps itself. */
+  stored: integer('stored').notNull().default(0),
+  /** Vendor receipt, for reconciling against their invoice. */
+  snapshotId: text('snapshot_id'),
+  /**
+   * Estimated cost in cents, from a rate we hold in code. Deliberately labelled
+   * an estimate: the authoritative number is the vendor's invoice, and a figure
+   * we computed ourselves must never be presented as the bill.
+   */
+  estimatedCents: integer('estimated_cents').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('vendor_spend_window_idx').on(t.vendor, t.createdAt),
+]);
+
+/**
  * What drove one day of one story, in words.
  *
  * A bar on a lifecycle chart says a day was big; it cannot say why. These

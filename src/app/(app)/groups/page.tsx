@@ -14,7 +14,7 @@ import { compactNumber } from '@/lib/utils';
 import {
   watchedGroups, groupDiscussions, sharedDomains, groupIdentitiesVisible, ownedDomains,
   groupHeadline, groupTrend, groupTopPosts, groupCadence, ourLinkShare,
-  groupCoverage, windowIsComparable,
+  groupCoverage, windowIsComparable, groupRunHealth, type GroupRunHealth,
 } from '@/lib/groups/queries';
 import { GroupManager } from '@/components/groups/group-manager';
 import { resolveContext } from '../_lib/context';
@@ -50,6 +50,43 @@ function PlainTile({ label, value, footnote }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Whether collection is running, and what it costs.
+ *
+ * "It should not stop" is not verifiable from post counts, because a stalled
+ * collector and a quiet weekend draw the same chart. This states the last round,
+ * the next one, and the trailing day of vendor spend, which is the number that
+ * would have caught a runaway on the day rather than on the invoice.
+ */
+function CollectionStatus({ health }: { health: GroupRunHealth }) {
+  const when = (d: Date | null): string => (d
+    ? new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    }).format(d)
+    : 'never');
+  const dollars = '$' + (health.estimatedCentsLast24h / 100).toFixed(2);
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden
+          className={'h-1.5 w-1.5 rounded-full '
+            + (health.stoppedGroups > 0 ? 'bg-amber-500' : 'bg-emerald-500')}
+        />
+        {health.stoppedGroups > 0
+          ? health.stoppedGroups + ' of ' + health.activeGroups + ' not collecting'
+          : 'Collecting on a six-hour cycle'}
+      </span>
+      <span>{'Last round ' + when(health.lastRunAt)}</span>
+      <span>{'Next ' + when(health.nextRunAt)}</span>
+      <span>
+        {health.recordsLast24h.toLocaleString() + ' records bought in 24h, about '
+          + dollars + ' estimated'}
+      </span>
+    </span>
   );
 }
 
@@ -97,7 +134,9 @@ export default async function GroupsPage({
   const identitiesVisible = groupIdentitiesVisible(role);
   const w = { start: ctx.range.start, end: ctx.range.end };
 
-  const [owned, coverage] = await Promise.all([ownedDomains(orgId), groupCoverage(orgId)]);
+  const [owned, coverage, health] = await Promise.all([
+    ownedDomains(orgId), groupCoverage(orgId), groupRunHealth(orgId),
+  ]);
   const [head, trend, groups, discussions, domains, linkShare, topPosts, cadence] =
     await Promise.all([
       groupHeadline(orgId, w, coverage),
@@ -424,7 +463,11 @@ export default async function GroupsPage({
           + '. Post counts here are for the window selected in the top bar.'
         }
       >
-        <Panel title="Groups" bodyClassName="p-0">
+        <Panel
+          title="Groups"
+          bodyClassName="p-0"
+          note={<CollectionStatus health={health} />}
+        >
           <GroupManager
             groups={groups.map((g) => ({
               id: g.id,

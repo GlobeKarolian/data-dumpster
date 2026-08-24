@@ -225,6 +225,13 @@
       "when": 1787293210115,
       "tag": "0032_lazy_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787551350015,
+      "tag": "0033_naive_kitty_pryde",
+      "breakpoints": true
     }
   ]
 }

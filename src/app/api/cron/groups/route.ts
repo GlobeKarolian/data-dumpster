@@ -48,6 +48,13 @@ async function handle(req: NextRequest): Promise<Response> {
       covered: r.covered,
       ineligible: r.ineligible,
       failed: r.failed,
+      // Records bought is the number that maps to the invoice, and it is not
+      // the same as posts stored. Surfaced on every tick so a runaway is
+      // visible in the cron log rather than only on the vendor's dashboard a
+      // day later, which is how a $232 round went unnoticed.
+      recordsBought: r.recordsBought,
+      estimatedCents: r.estimatedCents,
+      budgetExhausted: r.budgetExhausted,
     })),
   });
 }

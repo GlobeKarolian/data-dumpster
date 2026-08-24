@@ -69,6 +69,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * A spend limit is only a limit if it is a whole number above zero. Bright Data
+ * rejects `limit_per_input=0` and silently ignores a non-numeric value, and a
+ * silently ignored limit is how an unbounded snapshot gets bought.
+ */
+function positiveInt(v: number | undefined): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  const n = Math.trunc(v);
+  return n > 0 ? n : null;
+}
+
+/**
  * Bright Data reports failures both as HTTP status codes and as an error field
  * inside a 200 body, so both paths have to be checked.
  */
@@ -327,6 +338,20 @@ export async function scrapeSync<T = Record<string, unknown>>(
      * Set from the channel cursor after a previous run ran out of time.
      */
     resumeSnapshotId?: string;
+    /**
+     * Hard ceiling on records purchased, enforced by Bright Data.
+     *
+     * These are the only limits that actually bind. Per-dataset input fields
+     * like `num_of_posts` and `start_date` are advisory: the Facebook group
+     * dataset accepted `num_of_posts: 50` with a two-day window, returned
+     * 57,037 records reaching back to 2018, and billed for all of them. The
+     * trigger query parameters are applied by the vendor before delivery, so
+     * they cap the invoice rather than requesting politely that it be small.
+     *
+     * Set these on any collection whose natural size is unbounded.
+     */
+    limitPerInput?: number;
+    limitTotal?: number;
   },
 ): Promise<T[]> {
   if (input.length === 0) return [];
@@ -357,7 +382,9 @@ export async function scrapeSync<T = Record<string, unknown>>(
   // adds latency and never loses or duplicates paid work.
   const url = BASE + '/trigger?dataset_id=' + encodeURIComponent(datasetId)
     + '&format=json&include_errors=true'
-    + (opts.discoverBy ? '&type=discover_new&discover_by=' + opts.discoverBy : '');
+    + (opts.discoverBy ? '&type=discover_new&discover_by=' + opts.discoverBy : '')
+    + (positiveInt(opts.limitPerInput) ? '&limit_per_input=' + positiveInt(opts.limitPerInput) : '')
+    + (positiveInt(opts.limitTotal) ? '&limit_multiple_results=' + positiveInt(opts.limitTotal) : '');
 
   let body: unknown;
   try {
