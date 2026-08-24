@@ -14,6 +14,7 @@ import { compactNumber } from '@/lib/utils';
 import {
   watchedGroups, groupDiscussions, sharedDomains, groupIdentitiesVisible, ownedDomains,
   groupHeadline, groupTrend, groupTopPosts, groupCadence, ourLinkShare,
+  groupCoverage, windowIsComparable,
 } from '@/lib/groups/queries';
 import { GroupManager } from '@/components/groups/group-manager';
 import { resolveContext } from '../_lib/context';
@@ -96,10 +97,10 @@ export default async function GroupsPage({
   const identitiesVisible = groupIdentitiesVisible(role);
   const w = { start: ctx.range.start, end: ctx.range.end };
 
-  const owned = await ownedDomains(orgId);
+  const [owned, coverage] = await Promise.all([ownedDomains(orgId), groupCoverage(orgId)]);
   const [head, trend, groups, discussions, domains, linkShare, topPosts, cadence] =
     await Promise.all([
-      groupHeadline(orgId, w),
+      groupHeadline(orgId, w, coverage),
       groupTrend(orgId, w),
       watchedGroups(orgId, w),
       groupDiscussions(orgId, w),
@@ -117,6 +118,23 @@ export default async function GroupsPage({
   const postsSpark = trend.map((p) => ({ date: p.date, value: p.posts }));
   const engagementSpark = trend.map((p) => ({ date: p.date, value: p.engagement }));
   const topGroupPosts = groups[0]?.posts || 1;
+
+  // A window that runs past the last day we collected is not a quiet window,
+  // and the difference is invisible unless the screen says so. Comparisons are
+  // withheld in that case rather than reported as a decline in neighborhood
+  // chatter that is really a paused collector.
+  const comparable = windowIsComparable(w, coverage);
+  const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+  const collectedThrough = coverage.lastPost
+    ? dayFmt.format(coverage.lastPost)
+    : null;
+  const paused = groups.some((g) => g.outcome === 'paused');
+  const gapNote = collectedThrough && !comparable
+    ? 'Group posts are collected through ' + collectedThrough
+      + (paused ? ', and collection is paused' : '')
+      + '. Days after that were never read, so they show as nothing here rather than as'
+      + ' quiet, and period-over-period comparisons are withheld until both windows are covered.'
+    : null;
 
   return (
     <div className="space-y-4">
@@ -144,12 +162,18 @@ export default async function GroupsPage({
           </Panel>
         ) : (
           <>
+            {gapNote ? (
+              <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+                {gapNote}
+              </p>
+            ) : null}
+
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <StatTile
                 metric="posts"
                 label="Group posts"
                 value={head.posts}
-                changePct={head.postsChangePct}
+                changePct={head.postsChange}
                 spark={postsSpark}
                 color={ACCENT}
                 footnote={head.activeGroups + ' of ' + groups.length
@@ -158,7 +182,7 @@ export default async function GroupsPage({
               <StatTile
                 metric="engagementTotal"
                 value={head.engagement}
-                changePct={head.engagementChangePct}
+                changePct={head.engagementChange}
                 spark={engagementSpark}
                 color={ACCENT}
                 footnote="Reactions, comments and shares on group posts"
@@ -166,6 +190,7 @@ export default async function GroupsPage({
               <StatTile
                 metric="engagementPerPost"
                 value={head.engagementPerPost}
+                changePct={head.engagementPerPostChange}
                 color={ACCENT}
                 footnote="What a typical post in these communities earns"
               />
@@ -244,7 +269,7 @@ export default async function GroupsPage({
 
               <Panel
                 title="Whose links travel"
-                description="Domains shared into these groups. Attachment CDNs are excluded, because those are media rather than shared links."
+                description="Domains shared into these groups. Attachment CDNs and Facebook's own domains are excluded, because an image host and a link to another Facebook post are not somebody's journalism arriving."
                 note={linkShare.sharePct === null
                   ? 'Declare your own domains in org settings and this panel will also show your share.'
                   : 'Your domains are ' + linkShare.sharePct.toFixed(1) + '% of the '

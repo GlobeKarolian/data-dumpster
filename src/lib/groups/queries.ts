@@ -18,21 +18,31 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { roleAtLeast, type Role } from '@/lib/roles';
 import type { PostingCadenceCell } from '@/lib/metrics/contract';
+import {
+  changeRatio, priorWindow, windowIsComparable,
+  type GroupCoverage, type GroupWindow,
+} from './comparability';
+
+export { windowIsComparable, priorWindow };
+export type { GroupCoverage, GroupWindow };
 
 export function groupIdentitiesVisible(role: Role): boolean {
   return roleAtLeast(role, 'admin')
     && process.env.GROUP_IDENTITIES_VISIBLE === 'true';
 }
 
-export interface GroupWindow {
-  start: Date;
-  end: Date;
-}
+/* ------------------------------------------------------------- coverage */
 
-/** Previous window of equal length, for period-over-period deltas. */
-function priorWindow(w: GroupWindow): GroupWindow {
-  const span = w.end.getTime() - w.start.getTime();
-  return { start: new Date(w.start.getTime() - span), end: new Date(w.start.getTime()) };
+export async function groupCoverage(orgId: string): Promise<GroupCoverage> {
+  const { rows } = await db.execute<{ first_post: string | null; last_post: string | null }>(sql`
+    SELECT min(posted_at)::text AS first_post, max(posted_at)::text AS last_post
+      FROM group_posts WHERE org_id = ${orgId}`);
+  const parse = (v: string | null): Date | null => {
+    if (!v) return null;
+    const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
+    return Number.isNaN(+d) ? null : d;
+  };
+  return { firstPost: parse(rows[0]?.first_post ?? null), lastPost: parse(rows[0]?.last_post ?? null) };
 }
 
 /* ------------------------------------------------------------- headline */
@@ -43,16 +53,17 @@ export interface GroupHeadline {
   voices: number;
   activeGroups: number;
   engagementPerPost: number | null;
-  postsChangePct: number | null;
-  engagementChangePct: number | null;
+  /** Fractions, not percents: 0.12 is twelve percent. Null when incomparable. */
+  postsChange: number | null;
+  engagementChange: number | null;
+  engagementPerPostChange: number | null;
 }
 
-function pctChange(current: number, prior: number): number | null {
-  if (prior <= 0) return null;
-  return ((current - prior) / prior) * 100;
-}
-
-export async function groupHeadline(orgId: string, w: GroupWindow): Promise<GroupHeadline> {
+export async function groupHeadline(
+  orgId: string,
+  w: GroupWindow,
+  coverage: GroupCoverage,
+): Promise<GroupHeadline> {
   const prior = priorWindow(w);
   const { rows } = await db.execute<{
     posts: string | number; engagement: string | number; voices: string | number;
@@ -75,14 +86,22 @@ export async function groupHeadline(orgId: string, w: GroupWindow): Promise<Grou
   const r = rows[0];
   const posts = Number(r?.posts ?? 0);
   const engagement = Number(r?.engagement ?? 0);
+  const comparable = windowIsComparable(w, coverage);
+  const priorPosts = Number(r?.prior_posts ?? 0);
+  const priorEngagement = Number(r?.prior_engagement ?? 0);
+  const perPost = posts > 0 ? engagement / posts : null;
+  const priorPerPost = priorPosts > 0 ? priorEngagement / priorPosts : null;
   return {
     posts,
     engagement,
     voices: Number(r?.voices ?? 0),
     activeGroups: Number(r?.active_groups ?? 0),
-    engagementPerPost: posts > 0 ? engagement / posts : null,
-    postsChangePct: pctChange(posts, Number(r?.prior_posts ?? 0)),
-    engagementChangePct: pctChange(engagement, Number(r?.prior_engagement ?? 0)),
+    engagementPerPost: perPost,
+    postsChange: comparable ? changeRatio(posts, priorPosts) : null,
+    engagementChange: comparable ? changeRatio(engagement, priorEngagement) : null,
+    engagementPerPostChange: comparable && perPost !== null && priorPerPost !== null
+      ? changeRatio(perPost, priorPerPost)
+      : null,
   };
 }
 
@@ -201,6 +220,20 @@ export async function groupDiscussions(
 export interface SharedDomainRow { domain: string; shares: number; isOwned: boolean }
 
 /**
+ * Domains that are not somebody's published work travelling into a group.
+ *
+ * Two kinds. Attachment CDNs are the image bytes of the post itself, and they
+ * dominated this panel badly enough that the top fifteen was nothing but
+ * scontent-ord5-2.xx.fbcdn.net and its siblings. Facebook's own domains are the
+ * group's plumbing: a link to another Facebook post, an event, a profile. The
+ * question this panel answers is whose journalism reaches these communities, so
+ * both are noise rather than answers.
+ */
+const NOT_A_PUBLISHER_LINK =
+  '(^|\\.)(fbcdn\\.net|cdninstagram\\.com|akamaihd\\.net|licdn\\.com|twimg\\.com|ytimg\\.com'
+  + '|facebook\\.com|fb\\.me|fb\\.watch|messenger\\.com)$';
+
+/**
  * The org's own web domains, from org settings.
  *
  * This used to be derived from every domain the org's accounts had ever
@@ -246,8 +279,7 @@ export async function sharedDomains(
        AND gp.posted_at >= ${w.start.toISOString()}
        AND gp.posted_at < ${w.end.toISOString()}
        AND coalesce(u->>'domain', '') <> ''
-       -- Attachment CDNs are media, not shared links.
-       AND lower(u->>'domain') !~ '(^|\.)(fbcdn\.net|cdninstagram\.com|akamaihd\.net|licdn\.com|twimg\.com|ytimg\.com)$'
+       AND lower(u->>'domain') !~ ${NOT_A_PUBLISHER_LINK}
      GROUP BY lower(u->>'domain')
      ORDER BY count(*) DESC
      LIMIT ${limit}`);
@@ -280,7 +312,7 @@ export async function ourLinkShare(
        AND gp.posted_at >= ${w.start.toISOString()}
        AND gp.posted_at < ${w.end.toISOString()}
        AND coalesce(u->>'domain', '') <> ''
-       AND lower(u->>'domain') !~ '(^|\.)(fbcdn\.net|cdninstagram\.com|akamaihd\.net|licdn\.com|twimg\.com|ytimg\.com)$'`);
+       AND lower(u->>'domain') !~ ${NOT_A_PUBLISHER_LINK}`);
   const ours = Number(rows[0]?.ours ?? 0);
   const total = Number(rows[0]?.total ?? 0);
   return { ourLinks: ours, totalLinks: total, sharePct: total > 0 ? (ours / total) * 100 : null };
