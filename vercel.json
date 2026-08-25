@@ -26,6 +26,10 @@
       "schedule": "20,50 * * * *"
     },
     {
+      "path": "/api/cron/comments",
+      "schedule": "24,54 * * * *"
+    },
+    {
       "path": "/api/cron/backup",
       "schedule": "0 7 * * *"
     }

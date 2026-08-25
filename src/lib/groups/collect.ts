@@ -243,7 +243,11 @@ export async function runGroupCollection(orgId: string, apiKey: string): Promise
   // defence and it is verified; this is the second one, for the day the vendor
   // changes behaviour without telling us. Its job is to make that day cost a
   // few dollars instead of a few hundred.
-  let budget = await remainingRecordBudget('brightdata', GROUP_DAILY_RECORD_BUDGET);
+  // Scoped to this dataset, so comment collection and group collection each
+  // spend their own budget rather than racing for one vendor-wide number.
+  let budget = await remainingRecordBudget(
+    'brightdata', GROUP_DAILY_RECORD_BUDGET, 24, DATASETS.facebookGroupPosts,
+  );
   if (budget < POSTS_PER_GROUP) {
     result.budgetExhausted = true;
     console.warn('[data-dumpster:groups] daily record budget exhausted, buying nothing', {

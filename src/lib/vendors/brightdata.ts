@@ -50,6 +50,13 @@ export const DATASETS = {
   // and Group View surfaces that as an ineligible source rather than working
   // around it. See docs/GROUP-VIEW.md.
   facebookGroupPosts: 'gd_lz11l67o2cb3r0lkj3',
+  /**
+   * Comments under one Instagram post or reel, by post URL, newest first.
+   * Probed 25 Aug 2026: limit_per_input binds exactly (asked 5, got 5), and
+   * the docs' "latest 15 comments" truncation is NOT real (asked 100, got 100
+   * from a 253-comment post). Dates are real ISO timestamps.
+   */
+  instagramComments: 'gd_ltppn085pokosxh13',
 } as const;
 
 /** Bright Data accepts at most 20 inputs per trigger for these datasets. */

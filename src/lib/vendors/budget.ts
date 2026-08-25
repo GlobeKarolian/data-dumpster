@@ -39,6 +39,15 @@ export function estimateBrightDataCents(records: number): number {
  */
 export const GROUP_DAILY_RECORD_BUDGET = 2_500;
 
+/**
+ * Records per rolling 24 hours for Instagram comment collection.
+ *
+ * The whole IG corpus reports ~1,500 new comments a day, so 4,000 is roughly
+ * 2.5x an ordinary day: never tripped by news, tripped immediately by a
+ * vendor change that stops honouring caps. About $6 if fully spent.
+ */
+export const IG_COMMENT_DAILY_RECORD_BUDGET = 4_000;
+
 export interface SpendWindow {
   records: number;
   stored: number;
@@ -46,8 +55,16 @@ export interface SpendWindow {
   purchases: number;
 }
 
-/** What a vendor has cost us over the trailing `hours`, from our own ledger. */
-export async function spendSince(vendor: string, hours: number): Promise<SpendWindow> {
+/**
+ * What a vendor has cost us over the trailing `hours`, from our own ledger.
+ * Pass `resource` to scope to one dataset, so the comment budget and the
+ * group budget cannot starve each other despite sharing a vendor.
+ */
+export async function spendSince(
+  vendor: string,
+  hours: number,
+  resource?: string,
+): Promise<SpendWindow> {
   const { rows } = await db.execute<{
     records: string | number; stored: string | number;
     cents: string | number; purchases: string | number;
@@ -58,6 +75,7 @@ export async function spendSince(vendor: string, hours: number): Promise<SpendWi
            count(*) AS purchases
       FROM vendor_spend
      WHERE vendor = ${vendor}
+       AND (${resource ?? null}::text IS NULL OR resource = ${resource ?? null})
        AND created_at > now() - make_interval(hours => ${hours})`);
   const r = rows[0];
   return {
@@ -78,8 +96,9 @@ export async function remainingRecordBudget(
   vendor: string,
   budget: number,
   hours = 24,
+  resource?: string,
 ): Promise<number> {
-  const spent = await spendSince(vendor, hours);
+  const spent = await spendSince(vendor, hours, resource);
   return Math.max(0, budget - spent.records);
 }
 

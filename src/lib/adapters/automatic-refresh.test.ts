@@ -48,6 +48,11 @@ test('production opens exactly two collection windows and recovery cannot enqueu
     { path: '/api/cron/tag', schedule: '8,18,28,38,48,58 * * * *' },
     { path: '/api/cron/narrate', schedule: '3,13,23,33,43,53 * * * *' },
     { path: '/api/cron/groups', schedule: '20,50 * * * *' },
+    // Comment collection IS a vendor collection window: it buys Instagram
+    // comment records. Its demand is bounded twice, by vendor-enforced
+    // limit_per_input on every trigger and by the dataset-scoped daily record
+    // budget in vendors/budget.ts, both consulted before purchase.
+    { path: '/api/cron/comments', schedule: '24,54 * * * *' },
     // The nightly backup reads the database and writes to Blob storage. It
     // is not a collection window either: no vendor is ever called.
     { path: '/api/cron/backup', schedule: '0 7 * * *' },

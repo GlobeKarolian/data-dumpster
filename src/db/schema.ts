@@ -1287,6 +1287,58 @@ export const groupCollectionState = pgTable('group_collection_state', {
  * what we stored: duplicates we already had still cost money. Both are kept, so
  * a widening gap between them shows up as waste rather than as nothing.
  */
+/**
+ * Comments under pooled posts. Instagram first; the table is platform-agnostic
+ * because the post it hangs off already knows its platform.
+ *
+ * Pooled, not org-scoped, for the same reason posts are: a comment on a public
+ * Boston Globe post is one fact, not one fact per tenant. Author identity is
+ * stored because the vendor sends it and deleting it is irreversible, but
+ * display is a separate product decision, the same split Group View proved out.
+ *
+ * Why comments at all: the earliest signal of an emerging theme lives under
+ * the posts, not in them. The Lindsay Clancy conspiracy narrative was visible
+ * in comment sections roughly two weeks before it broke as a story, and nobody
+ * can read fifty comment sections a day. The reader can.
+ */
+export const postComments = pgTable('post_comments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  postId: uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  /** Vendor's stable comment id, the idempotency key. */
+  externalId: text('external_id').notNull(),
+  authorName: text('author_name'),
+  authorUrl: text('author_url'),
+  text: text('text'),
+  likes: integer('likes').notNull().default(0),
+  replies: integer('replies').notNull().default(0),
+  commentedAt: timestamp('commented_at', { withTimezone: true }),
+  collectedAt: timestamp('collected_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('post_comments_dedupe_idx').on(t.postId, t.externalId),
+  index('post_comments_post_time_idx').on(t.postId, t.commentedAt),
+]);
+
+/**
+ * Durable comment-collection state, one row per post, the fourth copy of the
+ * claim-under-lease / settle-with-outcome shape (channels, groups, tagging,
+ * now comments). v1 policy is a single pass per post once its comments have
+ * had half a day to accrue; a settled post is never bought again.
+ */
+export const commentCollectionState = pgTable('comment_collection_state', {
+  postId: uuid('post_id').primaryKey().references(() => posts.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('idle'),
+  /** covered | failed — the last settled outcome. */
+  outcome: text('outcome'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+  resumeSnapshotId: text('resume_snapshot_id'),
+  lastError: text('last_error'),
+  lastCollectedAt: timestamp('last_collected_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('comment_collection_state_next_idx').on(t.nextAttemptAt),
+]);
+
 export const vendorSpend = pgTable('vendor_spend', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),
