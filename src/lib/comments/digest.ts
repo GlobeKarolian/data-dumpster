@@ -110,13 +110,22 @@ export async function runCommentDigestTick(): Promise<CommentDigestResult> {
             .join('\n'),
         },
       ],
-      maxTokens: 500,
+      maxTokens: 900,
       temperature: 0.3,
     },
     { feature: 'comment-digest' },
   );
 
   const digest = completion.text.trim();
+  // A digest that stops mid-sentence hit the token ceiling. Storing the stub
+  // put "toll increases," on the dashboard once; silence until the next tick
+  // beats a paragraph with its ending torn off.
+  if (digest && !/[.!?…»”"]$/.test(digest)) {
+    console.error('[data-dumpster:comments] digest looks truncated, not storing', {
+      tail: digest.slice(-60),
+    });
+    return { written: false, summariesConsidered: summaries.length, skipped: 'model output truncated' };
+  }
   if (!digest) {
     return { written: false, summariesConsidered: summaries.length, skipped: 'model returned no digest' };
   }

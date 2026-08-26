@@ -166,15 +166,23 @@ function timeDecay(aMs: number, bMs: number, halfLifeHours: number): number {
 
 class DisjointSet {
   private parent: number[];
-  constructor(n: number) { this.parent = Array.from({ length: n }, (_, i) => i); }
+  private sizes: number[];
+  constructor(n: number) {
+    this.parent = Array.from({ length: n }, (_, i) => i);
+    this.sizes = Array.from({ length: n }, () => 1);
+  }
   find(i: number): number {
     while (this.parent[i] !== i) { this.parent[i] = this.parent[this.parent[i]]; i = this.parent[i]; }
     return i;
   }
   union(a: number, b: number): void {
     const ra = this.find(a); const rb = this.find(b);
-    if (ra !== rb) this.parent[rb] = ra;
+    if (ra !== rb) {
+      this.parent[rb] = ra;
+      this.sizes[ra] += this.sizes[rb];
+    }
   }
+  size(i: number): number { return this.sizes[this.find(i)]; }
 }
 
 export interface ClusterOptions {
@@ -186,6 +194,14 @@ export interface ClusterOptions {
   minSize?: number;
   /** Only compare posts within this many hours of each other. */
   maxGapHours?: number;
+  /**
+   * Core terms two clusters must share before they merge. A cluster's core is
+   * what most of its members say (not its tf-idf peaks: the bigger a story,
+   * the lower its own entity's idf, which buries the one term that names it).
+   * Two shared core terms is an entity plus a surname, or an entity plus an
+   * event word; one shared term is a busy day, not one story.
+   */
+  mergeSharedTerms?: number;
 }
 
 /**
@@ -212,9 +228,73 @@ export function clusterPosts(posts: ClusterablePost[], opts: ClusterOptions = {}
   const vectors = tokens.map((t) => vectorize(t, idf));
   const times = items.map((p) => p.postedAt.getTime());
 
-  const ds = new DisjointSet(items.length);
+  /*
+   * The pipeline, in load-bearing order:
+   *   1. link      -- URL proof plus guarded cosine, single-link.
+   *   2. decompose -- an oversized component re-links its own members at a
+   *                   stricter bar; hairballs shatter, wire-copy stories hold.
+   *   3. camp-merge -- clusters that agree on core terms fold into one story.
+   * Decomposing before merging matters: fragments freed from a hairball must
+   * still be able to find their story, and a hairball must never be handed to
+   * the merge pass, which would only glue it back together.
+   */
+  const MIN_LINK_TOKENS = 4;
+  const MIN_SHARED_TERMS = 2;
+  const BLOB_SIZE = 150;
+  const SPLIT_BOOST = 0.2;
+  const maxGapMs = maxGapHours * 3_600_000;
 
-  // Signal 1: shared canonical URL. Treated as proof.
+  // Signals 2 and 3 as a reusable pass: rare shared terms, decayed by time.
+  //
+  // Degeneracy guards, learned from an 8,000-post day chaining 77% of the
+  // corpus into two hairballs. A near-empty caption ("Link in bio") carries a
+  // one-term vector scoring cosine 1.0 against every other near-empty caption,
+  // so cosine linking requires a real caption and two shared terms. And at
+  // news-day density single-link percolates, so attachment gets harder as a
+  // component grows: wispy links stop welding big things while verbatim wire
+  // copy, which is what real cross-outlet stories are made of, clears any bar.
+  const cosineLink = (ds: DisjointSet, indices: number[], bar0: number): void => {
+    for (let a = 0; a < indices.length; a += 1) {
+      const i = indices[a];
+      if (tokens[i].length < MIN_LINK_TOKENS) continue;
+      for (let b = a + 1; b < indices.length; b += 1) {
+        const j = indices[b];
+        if (times[j] - times[i] > maxGapMs) break;
+        if (tokens[j].length < MIN_LINK_TOKENS) continue;
+        if (ds.find(i) === ds.find(j)) continue;
+        const sim = cosine(vectors[i], vectors[j]) * timeDecay(times[i], times[j], halfLifeHours);
+        const grown = Math.max(ds.size(i), ds.size(j));
+        const bar = grown > 32 ? bar0 + 0.05 * Math.log2(grown / 32) : bar0;
+        if (sim < bar) continue;
+        const [small, large] = vectors[i].size <= vectors[j].size
+          ? [vectors[i], vectors[j]] : [vectors[j], vectors[i]];
+        let shared = 0;
+        for (const term of small.keys()) {
+          if (large.has(term)) { shared += 1; if (shared >= MIN_SHARED_TERMS) break; }
+        }
+        if (shared >= MIN_SHARED_TERMS) ds.union(i, j);
+      }
+    }
+  };
+
+  const components = (ds: DisjointSet, indices: number[]): number[][] => {
+    const byRoot = new Map<number, number[]>();
+    for (const i of indices) {
+      const root = ds.find(i);
+      const g = byRoot.get(root);
+      if (g) g.push(i); else byRoot.set(root, [i]);
+    }
+    return [...byRoot.values()];
+  };
+
+  // Signal 1: shared canonical URL. Treated as proof, up to a point: a story
+  // link appears on a handful of posts (one article, a few platforms, some
+  // syndication), while a link on dozens is an outlet's boilerplate footer
+  // (SubscribeToNBC, a linktree) that welded every post an outlet made into
+  // one node and, through any single cross-outlet link, welded outlets into a
+  // corpus-sized hairball. Proof stops being proof at scale.
+  const URL_WALLPAPER_POSTS = 15;
+  const ds = new DisjointSet(items.length);
   const byUrl = new Map<string, number[]>();
   items.forEach((p, i) => {
     for (const raw of p.urls) {
@@ -226,30 +306,107 @@ export function clusterPosts(posts: ClusterablePost[], opts: ClusterOptions = {}
     }
   });
   for (const idxs of byUrl.values()) {
+    if (idxs.length > URL_WALLPAPER_POSTS) continue;
     for (let k = 1; k < idxs.length; k += 1) ds.union(idxs[0], idxs[k]);
   }
 
-  // Signals 2 and 3: rare shared terms, decayed by time.
-  const maxGapMs = maxGapHours * 3_600_000;
-  for (let i = 0; i < items.length; i += 1) {
-    for (let j = i + 1; j < items.length; j += 1) {
-      if (times[j] - times[i] > maxGapMs) break;
-      if (ds.find(i) === ds.find(j)) continue;
-      const sim = cosine(vectors[i], vectors[j]) * timeDecay(times[i], times[j], halfLifeHours);
-      if (sim >= threshold) ds.union(i, j);
+  const allIndices = items.map((_, i) => i);
+  cosineLink(ds, allIndices, threshold);
+
+  // Decompose. A component this large is either the story of the day or a
+  // percolation artifact; re-linking its own members at a stricter bar tells
+  // them apart, because wire copy holds and wisps do not.
+  let groups: number[][] = [];
+  for (const group of components(ds, allIndices)) {
+    if (group.length <= BLOB_SIZE) {
+      groups.push(group);
+      continue;
+    }
+    const sub = new DisjointSet(items.length);
+    cosineLink(sub, group, threshold + SPLIT_BOOST);
+    const parts = components(sub, group);
+    const real = parts.filter((part) => part.length >= minSize);
+    if (real.length <= 1) {
+      groups.push(group);
+    } else {
+      groups.push(...parts);
     }
   }
+  groups = groups.filter((g) => g.length >= minSize);
 
-  // Materialise groups.
-  const groups = new Map<number, number[]>();
-  items.forEach((_, i) => {
-    const root = ds.find(i);
-    const g = groups.get(root);
-    if (g) g.push(i); else groups.set(root, [i]);
-  });
+  // Camp-merge: coverage of one event splits into camps the pairwise pass
+  // cannot bridge -- every outlet quoting the subject in one camp, every
+  // outlet writing the obituary in another. What names the event across camps
+  // is its core: terms most members share. Wallpaper is judged among
+  // clusters, not documents, because document frequency disqualified "dolly"
+  // on the very day Dolly was the story.
+  const mergeSharedTerms = opts.mergeSharedTerms ?? 2;
+  {
+    const cores: (Set<string> | null)[] = groups.map((idxs) => {
+      const memberCount = new Map<string, number>();
+      for (const i of idxs) {
+        for (const term of new Set(tokens[i])) {
+          memberCount.set(term, (memberCount.get(term) ?? 0) + 1);
+        }
+      }
+      // The bigger the cluster, the more caption styles it holds, and the
+      // lower the fraction any one term reaches: "dolly" sat at 37% of a
+      // five-thousand-post day-of-death cluster. Small camps stay strict at
+      // 60%; big ones relax to 30%, and cross-cluster wallpaper filtering
+      // below keeps junk that clears 30% ("https") from ever counting.
+      const needed = Math.ceil(idxs.length * (idxs.length >= 100 ? 0.3 : 0.6));
+      const core = new Set<string>();
+      for (const [term, count] of memberCount) {
+        if (count >= needed) core.add(term);
+      }
+      return core.size > 0 ? core : null;
+    });
+    const coreDf = new Map<string, number>();
+    for (const core of cores) {
+      if (!core) continue;
+      for (const term of core) coreDf.set(term, (coreDf.get(term) ?? 0) + 1);
+    }
+    const wallpaperAt = Math.max(3, Math.ceil(groups.length * 0.15));
+    const spans = groups.map((idxs) => {
+      let from = Infinity;
+      let to = -Infinity;
+      for (const i of idxs) {
+        if (times[i] < from) from = times[i];
+        if (times[i] > to) to = times[i];
+      }
+      return { from, to };
+    });
+
+    const parent = groups.map((_, g) => g);
+    const findGroup = (g: number): number => {
+      while (parent[g] !== g) { parent[g] = parent[parent[g]]; g = parent[g]; }
+      return g;
+    };
+    for (let a = 0; a < groups.length; a += 1) {
+      if (!cores[a]) continue;
+      for (let b = a + 1; b < groups.length; b += 1) {
+        if (!cores[b]) continue;
+        if (findGroup(a) === findGroup(b)) continue;
+        const gap = Math.max(spans[a].from, spans[b].from) - Math.min(spans[a].to, spans[b].to);
+        if (gap > maxGapMs) continue;
+        let shared = 0;
+        for (const term of cores[b]!) {
+          if (cores[a]!.has(term) && (coreDf.get(term) ?? 0) <= wallpaperAt) shared += 1;
+        }
+        if (shared >= mergeSharedTerms) parent[findGroup(b)] = findGroup(a);
+      }
+    }
+    const mergedGroups = new Map<number, number[]>();
+    groups.forEach((idxs, g) => {
+      const root = findGroup(g);
+      const bucket = mergedGroups.get(root);
+      if (bucket) bucket.push(...idxs); else mergedGroups.set(root, [...idxs]);
+    });
+    groups = [...mergedGroups.values()];
+  }
 
   const clusters: StoryCluster[] = [];
-  for (const [root, idxs] of groups) {
+  for (const idxs of groups) {
     if (idxs.length < minSize) continue;
     const members = idxs.map((i) => items[i]);
 
@@ -285,7 +442,7 @@ export function clusterPosts(posts: ClusterablePost[], opts: ClusterOptions = {}
     }
 
     clusters.push({
-      id: 'story_' + root.toString(36) + '_' + members.length,
+      id: 'story_' + idxs[0].toString(36) + '_' + members.length,
       label: (top.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 90) || keywords.slice(0, 4).join(', '),
       postIds: members.map((p) => p.id),
       posts: members,

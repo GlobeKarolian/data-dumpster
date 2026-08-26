@@ -8,6 +8,7 @@
  * individual sections are worth opening (per-post summaries).
  */
 import type { Metadata } from 'next';
+import { unstable_cache } from 'next/cache';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { PageSection } from '@/components/shell/page-section';
@@ -123,9 +124,21 @@ export default async function TodayPage({ searchParams }: {
 
   const end = new Date();
   const start = new Date(end.getTime() - WINDOW_HOURS * 3_600_000);
+  // Clustering a national-scale day takes tens of seconds; a glanceable page
+  // cannot. Cache per landscape for fifteen minutes -- the digest and the
+  // pulse stay live, and stories move slower than that anyway.
+  const cachedCloud = unstable_cache(
+    async (landscapeId: string) => getStoryCloud({
+      landscapeId,
+      start: new Date(Date.now() - WINDOW_HOURS * 3_600_000),
+      end: new Date(),
+    }),
+    ['today-story-cloud'],
+    { revalidate: 900 },
+  );
   const [digest, cloud, sections, pulse] = await Promise.all([
     loadDigest(),
-    getStoryCloud({ landscapeId: ctx.landscape.id, start, end }),
+    cachedCloud(ctx.landscape.id),
     loadSections(ctx.landscape.id),
     loadPulse(ctx.landscape.id),
   ]);
