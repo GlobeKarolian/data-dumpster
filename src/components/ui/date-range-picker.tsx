@@ -48,7 +48,9 @@ export function DateRangePicker({ className }: { className?: string }) {
   }
 
   const custom = Boolean(startIso && endIso);
-  const activePreset = custom ? null : (preset ?? '28d');
+  // Must match parseRangeParams' fallback, or the picker labels a window the
+  // data layer is not actually using.
+  const activePreset = custom ? null : (preset ?? '7d');
   const invalid = Boolean(draftStart && draftEnd && draftStart > draftEnd);
 
   return (

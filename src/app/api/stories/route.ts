@@ -37,7 +37,7 @@ export const GET = apiHandler(async (req) => {
 
   await assertLandscapeAccessible(parsed.landscapeId, session);
 
-  const range = parseRangeParams(sp, 28);
+  const range = parseRangeParams(sp);
 
   const cloud = await getStoryCloud({
     landscapeId: parsed.landscapeId,

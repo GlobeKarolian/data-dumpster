@@ -190,7 +190,11 @@ export function parseDateValue(value: string | Date): Date {
   return parseLocalDay(value) ?? new Date(value);
 }
 
-export function parseRangeParams(sp: URLSearchParams, fallbackDays = 28): DateRange {
+/**
+ * The app-wide default window is 7 days: the tool's daily users think in
+ * weeks, and 28 days buried this week's movement under last month's.
+ */
+export function parseRangeParams(sp: URLSearchParams, fallbackDays = 7): DateRange {
   const s = sp.get('start'); const e = sp.get('end');
   if (s && e) {
     const parsedStart = parseLocalDay(s);
