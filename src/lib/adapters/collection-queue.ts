@@ -181,6 +181,25 @@ function collectionRunSince(input: {
     : input.requiredSince;
 }
 
+/**
+ * The suffix a terminally limited settle may keep fresh. The attempt must
+ * reach back into the certified window (no gap to vouch for) and push past
+ * its right edge (otherwise there is nothing to extend). The left edge is
+ * never touched: only a certified crawl may add older history.
+ */
+function extendedTerminalSuffix(input: {
+  attemptedSince: Date | null;
+  attemptedUntil: Date | null;
+  coverageSince: Date | null;
+  coverageUntil: Date | null;
+}): { since: Date; until: Date } | null {
+  if (!input.attemptedSince || !input.attemptedUntil) return null;
+  if (!input.coverageSince || !input.coverageUntil) return null;
+  if (input.attemptedSince > input.coverageUntil) return null;
+  if (input.attemptedUntil <= input.coverageUntil) return null;
+  return { since: input.coverageSince, until: input.attemptedUntil };
+}
+
 interface QueueDisposition {
   status: 'succeeded' | 'partial' | 'failed';
   schedule: 'none' | 'immediate' | 'backoff';
@@ -247,6 +266,7 @@ function escalateRetryableOutcome(
 
 export const collectionQueueTestHelpers = {
   collectionRunSince,
+  extendedTerminalSuffix,
   queueDisposition,
   escalateRetryableOutcome,
   MAX_CONSECUTIVE_RETRYABLE_ATTEMPTS,
@@ -954,6 +974,26 @@ async function finishClaim(
       } else {
         lastError = null;
       }
+    }
+  }
+
+  // A source that is terminally limited going backward is still exhaustive
+  // going forward: the crawl paged everything the vendor exposes between its
+  // attempt bounds. When those bounds overlap an existing certified suffix,
+  // the suffix's right edge moves with the attempt; refusing to move it let
+  // the suffix go stale two days after certification, which silently withdrew
+  // week-over-week from every report on a vendor-capped platform. The left
+  // edge never moves here: only a certified crawl may add older history.
+  if (!disposition.mayAdvanceCoverage && stateOutcome === 'terminal_source_limitation') {
+    const extended = extendedTerminalSuffix({
+      attemptedSince: result.attemptedSince ?? null,
+      attemptedUntil: result.attemptedUntil ?? null,
+      coverageSince: item.coverage_since ? asDate(item.coverage_since) : null,
+      coverageUntil: item.coverage_until ? asDate(item.coverage_until) : null,
+    });
+    if (extended) {
+      coverageSince = extended.since;
+      coverageUntil = extended.until;
     }
   }
 

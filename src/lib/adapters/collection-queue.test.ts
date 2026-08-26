@@ -6,6 +6,7 @@ import { collectionOutcomeForFetch } from './runner';
 
 const {
   collectionRunSince,
+  extendedTerminalSuffix,
   assertValidDemandWindow,
   demandRegistrationNeedsQueue,
   demandWindowIsCovered,
@@ -359,6 +360,55 @@ describe('durable collection windows', () => {
     assert.equal(merged.since.toISOString(), requiredSince.toISOString());
     assert.equal(merged.until.toISOString(), '2026-08-01T12:00:00.000Z');
     assert.equal(merged.complete, true);
+  });
+});
+
+describe('terminal suffix extension', () => {
+  const day = (d: string) => new Date(d + 'T00:00:00Z');
+
+  it('moves the right edge when the attempt overlaps the certified suffix', () => {
+    const extended = extendedTerminalSuffix({
+      attemptedSince: day('2026-08-24'),
+      attemptedUntil: day('2026-08-26'),
+      coverageSince: day('2026-05-02'),
+      coverageUntil: day('2026-08-25'),
+    });
+    assert.ok(extended);
+    assert.equal(extended.since.toISOString(), day('2026-05-02').toISOString());
+    assert.equal(extended.until.toISOString(), day('2026-08-26').toISOString());
+  });
+
+  it('refuses to vouch for a gap between suffix and attempt', () => {
+    assert.equal(extendedTerminalSuffix({
+      attemptedSince: day('2026-08-24'),
+      attemptedUntil: day('2026-08-26'),
+      coverageSince: day('2026-05-02'),
+      coverageUntil: day('2026-08-20'),
+    }), null);
+  });
+
+  it('does nothing without an existing certified suffix or attempt bounds', () => {
+    assert.equal(extendedTerminalSuffix({
+      attemptedSince: day('2026-08-24'),
+      attemptedUntil: day('2026-08-26'),
+      coverageSince: null,
+      coverageUntil: null,
+    }), null);
+    assert.equal(extendedTerminalSuffix({
+      attemptedSince: null,
+      attemptedUntil: null,
+      coverageSince: day('2026-05-02'),
+      coverageUntil: day('2026-08-25'),
+    }), null);
+  });
+
+  it('never moves the left edge or shrinks the right one', () => {
+    assert.equal(extendedTerminalSuffix({
+      attemptedSince: day('2026-08-01'),
+      attemptedUntil: day('2026-08-20'),
+      coverageSince: day('2026-05-02'),
+      coverageUntil: day('2026-08-25'),
+    }), null);
   });
 });
 
