@@ -153,8 +153,15 @@ async function claimPosts(
                AND coalesce(s.next_attempt_at, now()) <= now()
                AND s.attempts < ${MAX_ATTEMPTS})
            OR (s.status = 'collecting' AND s.next_attempt_at <= now())
+           -- Parked mid-collection: the snapshot is paid for and cooking on the
+           -- vendor's side. Without this branch a parked post was orphaned
+           -- forever, which no Instagram post ever surfaced (their dataset
+           -- answers inline) and every TikTok post did (theirs never does).
+           OR (s.status = 'idle' AND s.outcome = 'collecting'
+               AND coalesce(s.next_attempt_at, now()) <= now())
          )
-       ORDER BY p.conversation DESC
+       -- Harvest bought snapshots before triggering new spend.
+       ORDER BY (s.resume_snapshot_id IS NOT NULL) DESC, p.conversation DESC
        LIMIT ${limit}
        FOR UPDATE OF p SKIP LOCKED
     )
