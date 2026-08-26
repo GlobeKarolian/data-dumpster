@@ -162,7 +162,8 @@ test('allows zero or one focus marker and blocks multiple focus companies', () =
     'First News,,firstnews.bsky.social',
   ].join('\n'));
   assert.equal(noFocus.errors.length, 0);
-  assert.ok(hasCode(noFocus.warnings, 'focus_required'));
+  // A focusless CSV is a legitimate market-watch landscape, not a warning.
+  assert.equal(noFocus.warnings.length, 0);
   assert.equal(noFocus.suggestedFocusCompanyKey, null);
 
   const oneFocus = parseLandscapeImportCsv([

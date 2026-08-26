@@ -120,7 +120,8 @@ export interface LandscapeImportResult {
     name: string;
     slug: string;
     created: boolean;
-    focusCompanyId: string;
+    /** Null for a focusless landscape: a market watched from outside. */
+    focusCompanyId: string | null;
   };
   counts: {
     companiesCreated: number;
@@ -826,14 +827,9 @@ export function parseLandscapeImportCsv(csv: string): LandscapeImportPreview {
         'Only one company can be marked as the focus company.',
       ));
     }
-  } else if (focused.length === 0 && companyOrder.length > 0) {
-    warnings.push(issue(
-      1,
-      focusColumn >= 0 ? rawHeaders[focusColumn] : null,
-      'focus_required',
-      'Choose the focus company before importing.',
-    ));
   }
+  // Zero focused companies is not a defect: a landscape may deliberately be a
+  // market watched from outside, and the review step offers the choice anyway.
 
   const accounts = companyOrder.flatMap((company) => company.accounts);
   if (companyOrder.length > LANDSCAPE_IMPORT_MAX_COMPANIES) {

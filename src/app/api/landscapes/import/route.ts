@@ -47,7 +47,8 @@ const importBodySchema = z.object({
   action: z.literal('import'),
   csv: z.string().min(1, 'CSV is required.'),
   landscapeName: z.string().trim().min(1).max(120),
-  focusCompanyKey: z.string().trim().min(1).max(160),
+  /** Absent creates a focusless landscape: a market watched from outside. */
+  focusCompanyKey: z.string().trim().min(1).max(160).optional(),
 });
 
 const requestSchema = z.discriminatedUnion('action', [previewBodySchema, importBodySchema]);
@@ -470,10 +471,12 @@ async function commitImport(
   initialPlan: LandscapeImportPlan,
 ): Promise<Response> {
   const { orgId } = actor;
-  const focusCompany = initialPlan.companies.find(
-    (company) => company.key === request.focusCompanyKey,
-  );
-  if (!focusCompany) {
+  const focusCompany = request.focusCompanyKey
+    ? initialPlan.companies.find(
+        (company) => company.key === request.focusCompanyKey,
+      )
+    : null;
+  if (request.focusCompanyKey && !focusCompany) {
     appendIssue(initialPlan.errors, {
       row: 1,
       column: 'focus',
@@ -557,17 +560,20 @@ async function commitImport(
   }
   const accountsAdded = channelInsert.inserted;
 
-  const focusCompanyId = companyIdByKey.get(request.focusCompanyKey);
-  if (!focusCompanyId) throw new Error('The selected focus company was not upserted.');
+  const focusCompanyId = request.focusCompanyKey
+    ? companyIdByKey.get(request.focusCompanyKey) ?? null
+    : null;
+  if (request.focusCompanyKey && !focusCompanyId) {
+    throw new Error('The selected focus company was not upserted.');
+  }
   const orderedIds = currentPlan.companies.map((company) => {
     const id = companyIdByKey.get(company.key);
     if (!id) throw new Error('An imported company was not upserted.');
     return id;
   });
-  const orderedWithFocus = [
-    focusCompanyId,
-    ...orderedIds.filter((companyId) => companyId !== focusCompanyId),
-  ];
+  const orderedWithFocus = focusCompanyId
+    ? [focusCompanyId, ...orderedIds.filter((companyId) => companyId !== focusCompanyId)]
+    : orderedIds;
   const desiredMembers = sql.join(
     orderedWithFocus.map((companyId, index) => sql`(${companyId}::uuid, ${index}::integer)`),
     sql`, `,
@@ -657,7 +663,7 @@ async function commitImport(
       membersTotal: membership?.count ?? 0,
       collectionQueued: collection.queued,
     },
-    warnings: currentPlan.warnings.filter((warning) => warning.code !== 'focus_required'),
+    warnings: currentPlan.warnings,
   };
   return Response.json(result, {
     status: 201,

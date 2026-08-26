@@ -747,7 +747,7 @@ export function LandscapeImportDialog({
   };
 
   const commit = async () => {
-    if (!preview || !csv || !landscapeName.trim() || !focusCompanyKey) return;
+    if (!preview || !csv || !landscapeName.trim()) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
@@ -761,7 +761,8 @@ export function LandscapeImportDialog({
           action: 'import',
           csv,
           landscapeName: landscapeName.trim(),
-          focusCompanyKey,
+          // Absent means a focusless landscape: a market watched from outside.
+          focusCompanyKey: focusCompanyKey || undefined,
         }),
         signal: controller.signal,
       });
@@ -784,15 +785,12 @@ export function LandscapeImportDialog({
   const rowErrors = preview?.companies.flatMap((company) => company.errors) ?? [];
   const rowWarnings = preview?.companies.flatMap((company) => company.warnings) ?? [];
   const allErrors = [...(preview?.errors ?? []), ...rowErrors];
-  const reviewWarnings = (preview?.warnings ?? []).filter(
-    (warning) => !(focusCompanyKey && warning.code === 'focus_required'),
-  );
+  const reviewWarnings = preview?.warnings ?? [];
   const allWarnings = [...reviewWarnings, ...rowWarnings];
   const canImport = Boolean(
     preview
     && csv
     && landscapeName.trim()
-    && focusCompanyKey
     && allErrors.length === 0
     && !busy,
   );
@@ -800,7 +798,7 @@ export function LandscapeImportDialog({
   const dialogDescription = phase === 'upload'
     ? 'Upload a CSV containing the companies and social profiles for a new landscape.'
     : phase === 'review'
-      ? 'Review every company and profile, name the landscape, and select its focus company.'
+      ? 'Review every company and profile, name the landscape, and optionally choose a focus company.'
       : 'The landscape and its social profiles were created.';
 
   return (
@@ -1031,18 +1029,20 @@ export function LandscapeImportDialog({
               <Field
                 label="Focus company"
                 htmlFor="landscape-import-focus"
-                hint="Every comparison is written from this company’s point of view."
+                hint="Optional. Comparisons are written from this company’s point of view; leave it unset to watch the market from outside."
               >
                 <Select
                   id="landscape-import-focus"
                   value={focusCompanyKey}
-                  required
                   disabled={busy}
-                  placeholder="Choose exactly one focus company"
-                  options={preview.companies.map((company) => ({
-                    value: company.key,
-                    label: company.name,
-                  }))}
+                  placeholder="No focus company"
+                  options={[
+                    { value: '', label: 'No focus company' },
+                    ...preview.companies.map((company) => ({
+                      value: company.key,
+                      label: company.name,
+                    })),
+                  ]}
                   onChange={(event) => setFocusCompanyKey(event.target.value)}
                 />
               </Field>
@@ -1163,8 +1163,6 @@ export function LandscapeImportDialog({
                   <CircleAlert className="h-3.5 w-3.5" aria-hidden />
                   Fix every error in the CSV before importing.
                 </span>
-              ) : !focusCompanyKey ? (
-                'Choose one focus company to continue.'
               ) : !landscapeName.trim() ? (
                 'Enter a landscape name to continue.'
               ) : allWarnings.length > 0 ? (
