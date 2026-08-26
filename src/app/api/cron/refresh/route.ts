@@ -9,6 +9,7 @@ import { after } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { apiHandler } from '@/lib/session';
 import { assertCronAuthorized, cronJson } from '../../_lib/cron';
+import { readControl } from '@/lib/controls';
 import { dispatchRefreshJob } from '@/lib/adapters/refresh-dispatch';
 import { claimRefreshRecoveryWake } from '@/lib/adapters/refresh-jobs';
 
@@ -18,6 +19,9 @@ export const maxDuration = 60;
 
 async function handle(req: NextRequest): Promise<Response> {
   assertCronAuthorized(req);
+  if (!(await readControl('refresh')).enabled) {
+    return cronJson({ skipped: 'refresh is switched off by operator control' });
+  }
   const jobId = await claimRefreshRecoveryWake();
   if (jobId) {
     after(async () => {

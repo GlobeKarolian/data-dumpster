@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm';
 import { apiHandler } from '@/lib/session';
 import { db } from '@/db';
 import { assertCronAuthorized, cronJson } from '../../_lib/cron';
+import { readControl } from '@/lib/controls';
 import { publicSourceCredentials } from '@/lib/adapters/public-sources';
 import { runGroupCollection, type GroupCollectResult } from '@/lib/groups/collect';
 
@@ -19,6 +20,9 @@ export const maxDuration = 300;
 
 async function handle(req: NextRequest): Promise<Response> {
   assertCronAuthorized(req);
+  if (!(await readControl('groups')).enabled) {
+    return cronJson({ skipped: 'group collection is switched off by operator control' });
+  }
   const apiKey = publicSourceCredentials('facebook').brightDataApiKey;
   if (!apiKey) {
     return cronJson({ skipped: 'no Bright Data credential configured' });

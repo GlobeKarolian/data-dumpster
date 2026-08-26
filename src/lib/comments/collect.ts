@@ -23,40 +23,29 @@ import { db } from '@/db';
 import { postComments } from '@/db/schema';
 import { scrapeSync, DATASETS, PendingSnapshotError } from '@/lib/vendors/brightdata';
 import {
-  IG_COMMENT_DAILY_RECORD_BUDGET, TIKTOK_COMMENT_DAILY_RECORD_BUDGET,
   estimateBrightDataCents, recordSpend, remainingRecordBudget,
 } from '@/lib/vendors/budget';
+import { readControl, type ControlValue } from '@/lib/controls';
 
 const LEASE_MINUTES = 8;
-const POSTS_PER_PLATFORM_PER_TICK = 5;
 const MAX_ATTEMPTS = 5;
 
-/** The platforms whose comment sections we buy, each on its own budget. */
-const PLATFORM_CONFIGS = [
-  {
-    platform: 'instagram' as const,
-    dataset: DATASETS.instagramComments,
-    dailyBudget: IG_COMMENT_DAILY_RECORD_BUDGET,
-  },
-  {
-    platform: 'tiktok' as const,
-    dataset: DATASETS.tiktokComments,
-    dailyBudget: TIKTOK_COMMENT_DAILY_RECORD_BUDGET,
-  },
-];
+/** Which vendor dataset buys each platform's sections. Everything else about
+ * a platform — enabled, budget, pacing, eligibility window — is an operator
+ * control read fresh each tick from control_settings. */
+const PLATFORM_DATASETS = {
+  instagram: DATASETS.instagramComments,
+  tiktok: DATASETS.tiktokComments,
+} as const;
 
 /**
- * Records bought per post. The dataset returns newest first, so this reads as
- * "the hundred most recent comments," which for theme detection is the sample
- * that matters. Instagram posts in this corpus report a median well under
- * this; the cap exists for the tail and for the day the vendor misbehaves.
+ * Records bought per post (default). The dataset returns newest first, so this
+ * reads as "the N most recent comments," which for theme detection is the
+ * sample that matters. Instagram posts in this corpus report a median well
+ * under the default; the cap exists for the tail and for the day the vendor
+ * misbehaves.
  */
 export const COMMENTS_PER_POST = 100;
-
-/** Comments accrue for a while; buying too early buys an empty section. */
-const MIN_POST_AGE_HOURS = 12;
-/** And a week later the section is settled and the news value is gone. */
-const MAX_POST_AGE_DAYS = 7;
 
 export interface CommentCollectResult {
   postsClaimed: number;
@@ -133,7 +122,9 @@ export function parseComment(postId: string, r: RawComment): {
 async function claimPosts(
   platform: string,
   limit: number,
+  window: { minPostAgeHours: number; maxPostAgeDays: number; excludedCompanyIds: string[] },
 ): Promise<{ id: string; permalink: string; resume: string | null }[]> {
+  const excluded = window.excludedCompanyIds;
   const { rows } = await db.execute<{
     id: string; permalink: string; resume_snapshot_id: string | null;
   }>(sql`
@@ -145,8 +136,11 @@ async function claimPosts(
        WHERE c.platform = ${platform}
          AND p.permalink IS NOT NULL
          AND p.conversation >= 1
-         AND p.posted_at <= now() - make_interval(hours => ${MIN_POST_AGE_HOURS})
-         AND p.posted_at >= now() - make_interval(days => ${MAX_POST_AGE_DAYS})
+         AND p.posted_at <= now() - make_interval(hours => ${window.minPostAgeHours})
+         AND p.posted_at >= now() - make_interval(days => ${window.maxPostAgeDays})
+         ${excluded.length > 0
+           ? sql`AND c.company_id NOT IN (${sql.join(excluded.map((id) => sql`${id}::uuid`), sql`, `)})`
+           : sql``}
          AND (
            s.post_id IS NULL
            OR (s.status <> 'collecting' AND s.outcome = 'failed'
@@ -223,23 +217,39 @@ export async function runCommentCollection(apiKey: string): Promise<CommentColle
     recordsBought: 0, estimatedCents: 0, budgetExhausted: false,
   };
 
-  for (const config of PLATFORM_CONFIGS) {
+  const controls: ControlValue<'comments'> = await readControl('comments');
+  if (!controls.enabled) {
+    console.warn('[data-dumpster:comments] comment collection is switched off by operator control');
+    return result;
+  }
+  const perPost = controls.commentsPerPost;
+  const window = {
+    minPostAgeHours: controls.minPostAgeHours,
+    maxPostAgeDays: controls.maxPostAgeDays,
+    excludedCompanyIds: controls.excludedCompanyIds,
+  };
+
+  for (const [platform, dataset] of Object.entries(PLATFORM_DATASETS) as
+      [keyof typeof PLATFORM_DATASETS, string][]) {
+    const platformControl = controls.platforms[platform];
+    if (!platformControl.enabled) continue;
+
     let budget = await remainingRecordBudget(
-      'brightdata', config.dailyBudget, 24, config.dataset,
+      'brightdata', platformControl.dailyRecordBudget, 24, dataset,
     );
-    if (budget < COMMENTS_PER_POST) {
+    if (budget < perPost) {
       result.budgetExhausted = true;
       console.warn('[data-dumpster:comments] daily record budget exhausted for platform', {
-        platform: config.platform, budgetRemaining: budget, dailyBudget: config.dailyBudget,
+        platform, budgetRemaining: budget, dailyBudget: platformControl.dailyRecordBudget,
       });
       continue;
     }
 
-    const claimed = await claimPosts(config.platform, POSTS_PER_PLATFORM_PER_TICK);
+    const claimed = await claimPosts(platform, controls.postsPerPlatformPerTick, window);
     result.postsClaimed += claimed.length;
 
     for (const post of claimed) {
-      if (budget < COMMENTS_PER_POST && !post.resume) {
+      if (budget < perPost && !post.resume) {
         result.budgetExhausted = true;
         await db.execute(sql`
           UPDATE comment_collection_state
@@ -249,14 +259,14 @@ export async function runCommentCollection(apiKey: string): Promise<CommentColle
       }
       try {
         const rows = await scrapeSync<RawComment>(
-          config.dataset,
+          dataset,
           [{ url: post.permalink }],
           {
             apiKey,
-            platform: config.platform,
+            platform,
             resumeSnapshotId: post.resume ?? undefined,
-            limitPerInput: COMMENTS_PER_POST,
-            limitTotal: COMMENTS_PER_POST,
+            limitPerInput: perPost,
+            limitTotal: perPost,
             timeoutMs: 60_000,
           },
         );
@@ -269,16 +279,16 @@ export async function runCommentCollection(apiKey: string): Promise<CommentColle
         result.commentsWritten += written;
         await recordSpend({
           vendor: 'brightdata',
-          resource: config.dataset,
+          resource: dataset,
           subject: post.permalink,
           records: rows.length,
           stored: written,
           estimatedCents: cents,
         });
-        if (rows.length > COMMENTS_PER_POST * 2) {
+        if (rows.length > perPost * 2) {
           console.error('[data-dumpster:comments] vendor exceeded its own record cap', {
-            platform: config.platform, post: post.permalink,
-            asked: COMMENTS_PER_POST, delivered: rows.length,
+            platform, post: post.permalink,
+            asked: perPost, delivered: rows.length,
           });
         }
         // Zero comments settles covered, not failed: a post whose commenters

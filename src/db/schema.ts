@@ -1353,6 +1353,20 @@ export const commentSummaries = pgTable('comment_summaries', {
   generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Operator-set runtime controls, one row per well-known key. The registry in
+ * src/lib/controls.ts owns which keys exist and what shapes they take; this
+ * table only makes an operator's departure from the code defaults durable.
+ * Absent row = code default, so a new control never needs a backfill and
+ * deleting a row is always a safe reset.
+ */
+export const controlSettings = pgTable('control_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const vendorSpend = pgTable('vendor_spend', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),

@@ -15,6 +15,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { complete } from '@/lib/ai/client';
 import { orgsWithAiTags } from '@/lib/tagging/queue';
+import { readControl } from '@/lib/controls';
 
 export const COMMENT_SUMMARY_SCHEMA = {
   type: 'object',
@@ -31,7 +32,6 @@ const MAX_COMMENT_CHARS = 240;
 /** A section this thin is readable at a glance already; silence beats padding. */
 export const MIN_COMMENTS_FOR_SUMMARY = 5;
 
-const POSTS_PER_TICK = 12;
 const TICK_MS_BUDGET = 120_000;
 
 function dailyBudgetUsd(): number {
@@ -119,9 +119,12 @@ async function spentTodayUsd(orgId: string): Promise<number> {
   return Number(rows[0]?.usd ?? 0);
 }
 
-/** One tick: summarize up to POSTS_PER_TICK freshly commented posts. */
+/** One tick: summarize up to the operator-controlled number of posts. */
 export async function runCommentSummaryTick(): Promise<CommentSummaryTickResult> {
   const base: CommentSummaryTickResult = { candidates: 0, written: 0, rejected: 0, spentUsd: 0 };
+
+  const controls = await readControl('summaries');
+  if (!controls.enabled) return { ...base, skipped: 'switched off by operator control' };
 
   // Comments are pooled; the completion still needs an org's model connection
   // and budget. The org running the tagging reader is the natural payer, and
@@ -146,7 +149,7 @@ export async function runCommentSummaryTick(): Promise<CommentSummaryTickResult>
      GROUP BY p.id, co.name, p.text
     HAVING count(pc.id) >= ${MIN_COMMENTS_FOR_SUMMARY}
      ORDER BY count(pc.id) DESC
-     LIMIT ${POSTS_PER_TICK}`);
+     LIMIT ${controls.postsPerTick}`);
   base.candidates = candidates.length;
   if (candidates.length === 0) return { ...base, skipped: 'nothing to summarize' };
 

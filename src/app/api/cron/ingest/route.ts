@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import type { NextRequest } from 'next/server';
 import { apiHandler } from '@/lib/session';
+import { readControl } from '@/lib/controls';
 import { assertCronAuthorized, cronJson } from '../../_lib/cron';
 
 export const runtime = 'nodejs';
@@ -73,11 +74,19 @@ function isRunnerModule(mod: unknown): mod is RunnerModule {
 
 async function handle(req: NextRequest): Promise<Response> {
   assertCronAuthorized(req);
-  const { mode, limit, postLimit } = paramsSchema.parse({
+  const params = paramsSchema.parse({
     mode: req.nextUrl.searchParams.get('mode') ?? undefined,
     limit: req.nextUrl.searchParams.get('limit') ?? undefined,
     postLimit: req.nextUrl.searchParams.get('postLimit') ?? undefined,
   });
+  const controls = await readControl('ingest');
+  if (!controls.enabled) {
+    return cronJson({ skipped: 'ingest is switched off by operator control' });
+  }
+  const { mode, postLimit } = params;
+  // The cron URL's limit stays the hard ceiling; the operator dial only
+  // narrows one invocation, never widens it past what the deploy allows.
+  const limit = Math.min(params.limit, controls.recoverChannelsPerTick);
 
   let runner: unknown;
   try {

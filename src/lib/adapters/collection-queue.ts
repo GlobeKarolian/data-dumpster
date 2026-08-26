@@ -25,9 +25,21 @@ import {
   AUTOMATIC_REFRESH_INTERVAL_MS,
   automaticRefreshWindowStart,
 } from './automatic-refresh';
+import { readControl } from '@/lib/controls';
 
 const DEFAULT_HISTORY_DAYS = 90;
-const DEFAULT_FRESH_MS = AUTOMATIC_REFRESH_INTERVAL_MS;
+
+
+/**
+ * The operator dial for refresh cadence. Falls back to the shipped 12-hour
+ * interval; a control row can stretch it (cheaper, staler) or tighten it
+ * (fresher, more vendor calls), and the change takes effect on the next tick
+ * without a deploy.
+ */
+async function freshnessMs(): Promise<number> {
+  const controls = await readControl('ingest');
+  return controls.refreshIntervalHours * 3_600_000;
+}
 /*
  * Ten, because this work is waiting rather than computing.
  *
@@ -693,7 +705,7 @@ export async function enqueueLandscapeCollection(input: {
     targets.map((target) => target.channelId),
     {
       force: input.force ?? false,
-      staleBefore: new Date(Date.now() - DEFAULT_FRESH_MS),
+      staleBefore: new Date(Date.now() - await freshnessMs()),
     },
   );
   return { queued, channelIds: targets.map((target) => target.channelId) };
@@ -731,7 +743,7 @@ export async function enqueueChannelCollection(input: {
     poolDemandWindows(demands).map((target) => target.channelId),
     {
       force: input.force ?? false,
-      staleBefore: new Date(Date.now() - DEFAULT_FRESH_MS),
+      staleBefore: new Date(Date.now() - await freshnessMs()),
     },
   );
 }

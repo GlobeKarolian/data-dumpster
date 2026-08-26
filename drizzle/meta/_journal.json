@@ -246,6 +246,13 @@
       "when": 1787713630195,
       "tag": "0035_shallow_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787723412251,
+      "tag": "0036_operator_control_settings",
+      "breakpoints": true
     }
   ]
 }
