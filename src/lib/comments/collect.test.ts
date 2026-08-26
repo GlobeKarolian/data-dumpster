@@ -43,6 +43,27 @@ test('junk counts and dates degrade to zero and null, never NaN', () => {
   assert.equal(row.commentedAt, null);
 });
 
+test('a TikTok record parses through the same parser, with its probed field names', () => {
+  // Field names from the 26 Aug probe against a live Boston 25 video, whose
+  // top comment carried 2,953 likes. The two vendors' key sets do not collide.
+  const row = parseComment(POST_ID, {
+    comment_id: '7677727839420859149',
+    commenter_user_name: 'Miss Nikki2.0',
+    commenter_url: 'https://www.tiktok.com/@miss.nikki2.0',
+    date_created: '2026-08-24T22:25:53.000Z',
+    comment_text: 'Nope. The jury can’t UNHEAR it. Automatic mistrial',
+    num_likes: 2953,
+    num_replies: 21,
+  });
+  assert.ok(row);
+  assert.equal(row.externalId, '7677727839420859149');
+  assert.equal(row.authorName, 'Miss Nikki2.0');
+  assert.equal(row.text, 'Nope. The jury can’t UNHEAR it. Automatic mistrial');
+  assert.equal(row.likes, 2953);
+  assert.equal(row.replies, 21);
+  assert.equal(row.commentedAt?.toISOString(), '2026-08-24T22:25:53.000Z');
+});
+
 test('the per-post cap stays a real cap', () => {
   // 100 records per post is the sampling design and the cost model. If this
   // number changes, the daily budget in vendors/budget.ts moves with it.

@@ -48,6 +48,13 @@ export const GROUP_DAILY_RECORD_BUDGET = 2_500;
  */
 export const IG_COMMENT_DAILY_RECORD_BUDGET = 4_000;
 
+/**
+ * TikTok comments, same reasoning: the corpus reports ~8,800 new TikTok
+ * comments a day, sampling with 100-per-post caps buys the loud head of
+ * that, and 4,000 is the tripwire, about $6 if fully spent.
+ */
+export const TIKTOK_COMMENT_DAILY_RECORD_BUDGET = 4_000;
+
 export interface SpendWindow {
   records: number;
   stored: number;
