@@ -21,6 +21,7 @@ import {
 import { db } from '@/db';
 import { companies, landscapeCompanies, landscapes } from '@/db/schema';
 import { slugify } from '@/lib/utils';
+import { LANDSCAPE_IMPORT_MAX_COMPANIES } from '@/lib/landscape-import';
 import { replaceLandscapeMembership } from '@/lib/landscape-membership';
 import { readJson } from '../../_lib/query';
 import { assertCompaniesVisibleToUser } from '../../_lib/org-scope';
@@ -35,7 +36,7 @@ const updateLandscapeSchema = z.object({
   description: z.string().trim().max(2000).nullish(),
   focusCompanyId: z.uuid().nullish(),
   /** When present, replaces membership wholesale. Omit to leave members alone. */
-  companyIds: z.array(z.uuid()).max(50).optional(),
+  companyIds: z.array(z.uuid()).max(LANDSCAPE_IMPORT_MAX_COMPANIES).optional(),
 }).refine((b) => Object.keys(b).length > 0, 'Nothing to update.');
 
 async function membersOf(landscapeId: string) {

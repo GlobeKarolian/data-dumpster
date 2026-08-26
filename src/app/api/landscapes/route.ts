@@ -22,6 +22,7 @@ import {
   userLandscapeAccess,
 } from '@/db/schema';
 import { slugify } from '@/lib/utils';
+import { LANDSCAPE_IMPORT_MAX_COMPANIES } from '@/lib/landscape-import';
 import { readJson } from '../_lib/query';
 import { assertCompaniesVisibleToUser } from '../_lib/org-scope';
 
@@ -41,7 +42,7 @@ const createLandscapeSchema = z.object({
   description: z.string().trim().max(2000).nullish(),
   focusCompanyId: z.uuid().nullish(),
   newFocusCompany: inlineCompanySchema.nullish(),
-  companyIds: z.array(z.uuid()).max(50).default([]),
+  companyIds: z.array(z.uuid()).max(LANDSCAPE_IMPORT_MAX_COMPANIES).default([]),
 }).superRefine((body, ctx) => {
   // A focus company is deliberately optional. Plenty of real landscapes are a
   // market watched from outside (all 30 MLB clubs, a neighboring metro), where

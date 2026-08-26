@@ -977,7 +977,7 @@ export function LandscapeImportDialog({
                   <li>Importing does not start ingestion or spend vendor credits.</li>
                 </ul>
               </div>
-              <p className="px-1 text-[11px] text-zinc-500">CSV files up to 1 MB. Maximum 50 companies per landscape.</p>
+              <p className="px-1 text-[11px] text-zinc-500">CSV files up to 1 MB. Maximum 100 companies per landscape.</p>
             </div>
           </div>
           {error ? (

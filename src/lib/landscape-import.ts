@@ -3,8 +3,8 @@ import type { Platform } from '@/lib/types';
 import { slugify } from '@/lib/utils';
 
 export const LANDSCAPE_IMPORT_MAX_BYTES = 1_000_000;
-export const LANDSCAPE_IMPORT_MAX_COMPANIES = 50;
-export const LANDSCAPE_IMPORT_MAX_ACCOUNTS = 500;
+export const LANDSCAPE_IMPORT_MAX_COMPANIES = 100;
+export const LANDSCAPE_IMPORT_MAX_ACCOUNTS = 1000;
 
 export const LANDSCAPE_IMPORT_PLATFORMS = [
   'facebook',
