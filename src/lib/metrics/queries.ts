@@ -1881,8 +1881,29 @@ type PostDetailRow = {
   last_refreshed_at: string;
   tags: unknown;
   urls: unknown;
+  comment_count: string | number | null;
+  comments: unknown;
   metric_history: unknown;
 };
+
+function coerceDetailComments(value: unknown): PostDetailDto['comments']['items'] {
+  if (!Array.isArray(value)) return [];
+  const items: PostDetailDto['comments']['items'] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const r = entry as Record<string, unknown>;
+    const id = str(r.id);
+    if (!id) continue;
+    items.push({
+      id,
+      text: str(r.text),
+      likes: num(r.likes),
+      replies: num(r.replies),
+      commentedAt: str(r.commentedAt),
+    });
+  }
+  return items;
+}
 
 function coerceStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -2026,6 +2047,30 @@ export async function getPostDetail(
               WHERE u.post_id = p.id
            ), '[]'::jsonb) AS urls,
            coalesce((
+             SELECT count(*) FROM post_comments pc WHERE pc.post_id = p.id
+           ), 0) AS comment_count,
+           -- The most-liked comments, because the dialog's question is "what
+           -- did the audience say back", and likes are the audience agreeing
+           -- with an answer. Capped small: this is a glance, not an archive.
+           coalesce((
+             SELECT jsonb_agg(c.j)
+               FROM (
+                 SELECT jsonb_build_object(
+                          'id', pc.id,
+                          'text', left(pc.text, 500),
+                          'likes', pc.likes,
+                          'replies', pc.replies,
+                          'commentedAt',
+                            to_char(pc.commented_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                        ) AS j
+                   FROM post_comments pc
+                  WHERE pc.post_id = p.id
+                    AND coalesce(btrim(pc.text), '') <> ''
+                  ORDER BY pc.likes DESC, pc.commented_at DESC NULLS LAST
+                  LIMIT 10
+               ) c
+           ), '[]'::jsonb) AS comments,
+           coalesce((
              SELECT jsonb_agg(
                       jsonb_build_object(
                         'capturedAt',
@@ -2078,6 +2123,10 @@ export async function getPostDetail(
     lastRefreshedAt: row.last_refreshed_at,
     tags: coerceDetailTags(row.tags),
     urls: coerceDetailUrls(row.urls),
+    comments: {
+      collected: num(row.comment_count),
+      items: coerceDetailComments(row.comments),
+    },
     metricHistory: coerceMetricHistory(row.metric_history, summary.followersAtPost),
   };
 }

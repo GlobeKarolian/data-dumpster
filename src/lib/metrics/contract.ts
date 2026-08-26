@@ -109,6 +109,23 @@ export interface PostDetailDto extends Omit<PostDto, 'tags' | 'urls'> {
     domain: string;
     title: string | null;
   }[];
+  /**
+   * What commenters said under this post, where we have bought the section.
+   * `collected` is how many comments we hold; `items` is the most-liked
+   * handful. Zero collected on a post with a conversation count just means
+   * its section has not been purchased, not that nobody spoke: comment
+   * collection is per-platform and budget-paced, Instagram first.
+   */
+  comments: {
+    collected: number;
+    items: {
+      id: string;
+      text: string | null;
+      likes: number;
+      replies: number;
+      commentedAt: string | null;
+    }[];
+  };
   metricHistory: {
     capturedAt: string;
     applause: number;

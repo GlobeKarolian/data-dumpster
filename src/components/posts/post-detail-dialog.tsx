@@ -515,6 +515,47 @@ export function PostDetailDialog({
               )}
             </section>
 
+            {resolved && resolved.comments.collected > 0 ? (
+              <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    What commenters are saying
+                  </h3>
+                  <span className="pb-num shrink-0 text-[11px] tabular-nums text-zinc-500">
+                    {formatInteger(resolved.comments.collected)
+                      + (resolved.comments.collected === 1 ? ' comment' : ' comments')
+                      + ' collected'}
+                  </span>
+                </div>
+                <ul className="mt-3 space-y-2.5">
+                  {resolved.comments.items.map((comment) => (
+                    <li key={comment.id} className="flex gap-3">
+                      <span className="pb-num w-10 shrink-0 pt-0.5 text-right text-xs font-semibold tabular-nums text-zinc-500">
+                        {comment.likes > 0 ? formatInteger(comment.likes) + ' ♥' : ''}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-200">
+                          {comment.text}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-zinc-400">
+                          {(comment.commentedAt ? formatDateTime(comment.commentedAt) : '')
+                            + (comment.replies > 0
+                              ? (comment.commentedAt ? ' · ' : '')
+                                + comment.replies
+                                + (comment.replies === 1 ? ' reply' : ' replies')
+                              : '')}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 border-t border-zinc-100 pt-2.5 text-[10px] leading-relaxed text-zinc-400 dark:border-zinc-800">
+                  Most-liked of the collected sample. Commenter identities are stored but not
+                  displayed.
+                </p>
+              </section>
+            ) : null}
+
             {hasClassification ? (
               <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
