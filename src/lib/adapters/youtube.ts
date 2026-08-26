@@ -448,6 +448,19 @@ export const youtubeAdapter: ChannelAdapter = {
       const [first, second] = segments;
       if (first.startsWith('@')) return first.slice(1);
       if ((first === 'channel' || first === 'c' || first === 'user') && second) return second;
+      // The oldest vanity form is a bare path: youtube.com/FoxNewsChannel.
+      // YouTube still serves these, and half the CSVs in the wild carry them.
+      // Anything that is not a reserved content path is a vanity name, handed
+      // to `forHandle` exactly like the `/c/` form.
+      const RESERVED = new Set([
+        'watch', 'shorts', 'playlist', 'results', 'feed', 'embed', 'live',
+        'post', 'clip', 'hashtag', 'source', 'account', 'gaming', 'music',
+        'premium', 'about', 'upload', 't', 's',
+      ]);
+      if (segments.length === 1 && !RESERVED.has(first.toLowerCase())
+          && /^[A-Za-z0-9._-]{1,100}$/.test(first)) {
+        return first;
+      }
       throw new AdapterError(`Could not find a channel in: ${input}`, { platform: PLATFORM, retryable: false });
     }
 

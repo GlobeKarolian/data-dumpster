@@ -343,7 +343,7 @@ async function buildPlan(
           row: account.row,
           column: account.column,
           code: 'pooled_account_conflict',
-          message: `${account.platform} account ${account.handle} is already attached to ${ownerNames.join(', ')}.`,
+          message: `${account.platform} account ${account.handle} is already attached to ${ownerNames.join(', ')}. Rename this row's company to "${ownerNames[0]}" to reuse that company instead of creating a duplicate.`,
         });
         return {
           ...account,
