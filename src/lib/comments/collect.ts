@@ -122,9 +122,15 @@ export function parseComment(postId: string, r: RawComment): {
 async function claimPosts(
   platform: string,
   limit: number,
-  window: { minPostAgeHours: number; maxPostAgeDays: number; excludedCompanyIds: string[] },
+  window: {
+    minPostAgeHours: number;
+    maxPostAgeDays: number;
+    excludedCompanyIds: string[];
+    selectedLandscapeIds: string[] | null;
+  },
 ): Promise<{ id: string; permalink: string; resume: string | null }[]> {
   const excluded = window.excludedCompanyIds;
+  const landscapes = window.selectedLandscapeIds;
   const { rows } = await db.execute<{
     id: string; permalink: string; resume_snapshot_id: string | null;
   }>(sql`
@@ -141,6 +147,17 @@ async function claimPosts(
          ${excluded.length > 0
            ? sql`AND c.company_id NOT IN (${sql.join(excluded.map((id) => sql`${id}::uuid`), sql`, `)})`
            : sql``}
+         ${landscapes === null
+           ? sql``
+           : landscapes.length === 0
+             // Selected mode with nothing toggled on is a deliberate "buy
+             // nowhere", not an accidental "buy everywhere".
+             ? sql`AND false`
+             : sql`AND EXISTS (
+                  SELECT 1 FROM landscape_companies lm
+                   WHERE lm.company_id = c.company_id
+                     AND lm.landscape_id IN (${sql.join(landscapes.map((id) => sql`${id}::uuid`), sql`, `)})
+                )`}
          AND (
            s.post_id IS NULL
            OR (s.status <> 'collecting' AND s.outcome = 'failed'
@@ -227,6 +244,9 @@ export async function runCommentCollection(apiKey: string): Promise<CommentColle
     minPostAgeHours: controls.minPostAgeHours,
     maxPostAgeDays: controls.maxPostAgeDays,
     excludedCompanyIds: controls.excludedCompanyIds,
+    selectedLandscapeIds: controls.landscapeMode === 'selected'
+      ? controls.selectedLandscapeIds
+      : null,
   };
 
   for (const [platform, dataset] of Object.entries(PLATFORM_DATASETS) as

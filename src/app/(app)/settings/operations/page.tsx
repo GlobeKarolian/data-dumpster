@@ -8,6 +8,7 @@ import { readAllControls } from '@/lib/controls';
 import {
   OperationsPanel,
   type CompanyOption,
+  type LandscapeOption,
   type OperationsStatus,
 } from '@/components/settings/operations-panel';
 import { resolveContext } from '../../_lib/context';
@@ -83,15 +84,25 @@ export default async function OperationsPage({ searchParams }: {
     );
   }
 
-  const [controls, status, companyRows] = await Promise.all([
+  const [controls, status, companyRows, landscapeRows] = await Promise.all([
     readAllControls(),
     liveStatus(),
     db.execute<{ id: string; name: string }>(sql`
       SELECT id::text AS id, name FROM companies ORDER BY name ASC LIMIT 500`),
+    db.execute<{ id: string; name: string; members: string | number }>(sql`
+      SELECT l.id::text AS id, l.name, count(lc.company_id) AS members
+        FROM landscapes l
+        LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
+       GROUP BY 1, 2 ORDER BY l.name ASC`),
   ]);
   const companies: CompanyOption[] = companyRows.rows.map((row) => ({
     id: row.id,
     name: row.name,
+  }));
+  const landscapes: LandscapeOption[] = landscapeRows.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    members: Number(row.members) || 0,
   }));
 
   return (
@@ -99,7 +110,12 @@ export default async function OperationsPage({ searchParams }: {
       title="Operations"
       description="Live dials for the collection machinery. Changes take effect on the next cron tick, no deploy needed."
     >
-      <OperationsPanel controls={controls} status={status} companies={companies} />
+      <OperationsPanel
+        controls={controls}
+        status={status}
+        companies={companies}
+        landscapes={landscapes}
+      />
     </PageSection>
   );
 }

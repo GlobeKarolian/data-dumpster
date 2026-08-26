@@ -37,6 +37,14 @@ export const controlSchemas = {
     }),
     /** Companies whose posts never get comment sections bought. */
     excludedCompanyIds: z.array(z.uuid()).max(500),
+    /**
+     * Which landscapes' posts get comment sections at all. 'all' is the
+     * shipped behavior; 'selected' buys only for posts whose company belongs
+     * to at least one toggled-on landscape. Pooling still applies: a company
+     * in a toggled-on landscape gets comments everywhere it appears.
+     */
+    landscapeMode: z.enum(['all', 'selected']),
+    selectedLandscapeIds: z.array(z.uuid()).max(100),
   }),
   summaries: z.object({
     enabled: z.boolean(),
@@ -72,6 +80,8 @@ export const controlDefaults: { [K in ControlKey]: ControlValue<K> } = {
       tiktok: { enabled: true, dailyRecordBudget: TIKTOK_COMMENT_DAILY_RECORD_BUDGET },
     },
     excludedCompanyIds: [],
+    landscapeMode: 'all',
+    selectedLandscapeIds: [],
   },
   summaries: { enabled: true, postsPerTick: 12 },
   ingest: { enabled: true, recoverChannelsPerTick: 250, refreshIntervalHours: 12 },

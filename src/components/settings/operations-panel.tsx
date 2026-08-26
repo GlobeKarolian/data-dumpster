@@ -21,6 +21,8 @@ export interface OperationsControls {
     commentsPerPost: number;
     platforms: { instagram: CommentPlatform; tiktok: CommentPlatform };
     excludedCompanyIds: string[];
+    landscapeMode: 'all' | 'selected';
+    selectedLandscapeIds: string[];
   };
   summaries: { enabled: boolean; postsPerTick: number };
   ingest: { enabled: boolean; recoverChannelsPerTick: number; refreshIntervalHours: number };
@@ -38,6 +40,12 @@ export interface OperationsStatus {
 export interface CompanyOption {
   id: string;
   name: string;
+}
+
+export interface LandscapeOption {
+  id: string;
+  name: string;
+  members: number;
 }
 
 function Toggle({ checked, onChange, disabled, label }: {
@@ -168,10 +176,11 @@ const PLATFORM_LABELS: Record<'instagram' | 'tiktok', string> = {
   tiktok: 'TikTok',
 };
 
-export function OperationsPanel({ controls, status, companies }: {
+export function OperationsPanel({ controls, status, companies, landscapes }: {
   controls: OperationsControls;
   status: OperationsStatus;
   companies: CompanyOption[];
+  landscapes: LandscapeOption[];
 }) {
   const comments = useSaver('comments', controls.comments);
   const summaries = useSaver('summaries', controls.summaries);
@@ -295,6 +304,44 @@ export function OperationsPanel({ controls, status, companies }: {
               onChange={(maxPostAgeDays) => comments.setValue({ ...comments.value, maxPostAgeDays })}
               hint="Older sections lose news value"
             />
+          </div>
+          <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <SwitchRow
+              label="Limit to selected landscapes"
+              sub="Off buys for every landscape. On buys only for posts whose brand belongs to a toggled-on landscape below; a brand in several landscapes gets comments everywhere it appears."
+              checked={comments.value.landscapeMode === 'selected'}
+              disabled={!comments.value.enabled}
+              onChange={(selected) => comments.setValue({
+                ...comments.value,
+                landscapeMode: selected ? 'selected' : 'all',
+              })}
+            />
+            {comments.value.landscapeMode === 'selected' ? (
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                {landscapes.map((landscape) => {
+                  const on = comments.value.selectedLandscapeIds.includes(landscape.id);
+                  return (
+                    <div key={landscape.id} className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                      <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                        {landscape.name}
+                        <span className="ml-1 text-[10px] text-zinc-400">{landscape.members}</span>
+                      </span>
+                      <Toggle
+                        label={'Comments for ' + landscape.name}
+                        checked={on}
+                        disabled={!comments.value.enabled}
+                        onChange={(next) => comments.setValue({
+                          ...comments.value,
+                          selectedLandscapeIds: next
+                            ? [...comments.value.selectedLandscapeIds, landscape.id]
+                            : comments.value.selectedLandscapeIds.filter((id) => id !== landscape.id),
+                        })}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
           <div>
             <p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">Never buy comments for</p>
