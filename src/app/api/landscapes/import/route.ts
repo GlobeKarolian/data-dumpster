@@ -302,11 +302,74 @@ async function buildPlan(
     (existingCompanies as ExistingCompany[]).map((company) => company.id),
     parsed,
   );
+
+  /*
+   * A row whose slug matches nothing may still be an existing pooled company
+   * wearing a different name: its accounts give it away. When every already-
+   * attached account on a row points at the same pooled company, and no other
+   * row claims that company, the row reuses it rather than demanding a rename
+   * ("Bloomberg News" carrying accounts owned by pooled "Bloomberg").
+   * Ambiguous ownership stays a per-account conflict below.
+   */
+  const adoptedByKey = new Map<string, ExistingCompany>();
+  {
+    const channelsByIdentity = new Map<string, ExistingChannel[]>();
+    for (const channel of existingChannels) {
+      const key = channel.platform + '\u0000' + channel.identityKey;
+      const list = channelsByIdentity.get(key) ?? [];
+      list.push(channel);
+      channelsByIdentity.set(key, list);
+    }
+    const rowsClaimingOwner = new Map<string, string[]>();
+    const ownerByRowKey = new Map<string, string>();
+    for (const company of parsed.companies) {
+      if (companyBySlug.has(company.slug)) continue;
+      const owners = new Set<string>();
+      for (const account of company.accounts) {
+        const matches = channelsByIdentity.get(
+          account.platform + '\u0000' + identityHandle(account.platform, account.handle),
+        ) ?? [];
+        for (const match of matches) owners.add(match.companyId);
+      }
+      if (owners.size !== 1) continue;
+      const [ownerId] = owners;
+      ownerByRowKey.set(company.key, ownerId);
+      rowsClaimingOwner.set(ownerId, [...(rowsClaimingOwner.get(ownerId) ?? []), company.key]);
+    }
+    const unambiguous = [...ownerByRowKey.entries()]
+      .filter(([, ownerId]) => (rowsClaimingOwner.get(ownerId) ?? []).length === 1);
+    if (unambiguous.length > 0) {
+      const ownerRows = await db
+        .select({
+          id: companies.id,
+          name: companies.name,
+          slug: companies.slug,
+          orgId: companies.orgId,
+          website: companies.website,
+        })
+        .from(companies)
+        .where(inArray(companies.id, unique(unambiguous.map(([, ownerId]) => ownerId))));
+      const ownerById = new Map(ownerRows.map((row) => [row.id, row as ExistingCompany]));
+      for (const [rowKey, ownerId] of unambiguous) {
+        const record = ownerById.get(ownerId);
+        if (record) adoptedByKey.set(rowKey, record);
+      }
+    }
+  }
+
   const errors = [...parsed.errors];
   const warnings = [...parsed.warnings];
   const plannedCompanies: LandscapeImportCompanyPlan[] = parsed.companies.map((company) => {
-    const existing = companyBySlug.get(company.slug) ?? null;
-    if (existing && existing.name !== company.name) {
+    const adopted = adoptedByKey.get(company.key) ?? null;
+    const existing = companyBySlug.get(company.slug) ?? adopted;
+    if (adopted) {
+      appendIssue(warnings, {
+        row: company.rows[0],
+        column: 'company',
+        code: 'pooled_company_adopted',
+        message: `"${company.name}" will reuse pooled company "${adopted.name}" because its profiles are already attached there.`,
+      });
+    } else if (existing && existing.name !== company.name) {
       appendIssue(warnings, {
         row: company.rows[0],
         column: 'company',
