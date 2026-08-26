@@ -1354,6 +1354,21 @@ export const commentSummaries = pgTable('comment_summaries', {
 });
 
 /**
+ * One model-written digest per report-zone day: what the region's comment
+ * sections are collectively arguing about, distilled from that day's per-post
+ * summaries so the newsroom reads one paragraph instead of forty. Regenerated
+ * in place while the day is live as new sections arrive; yesterday's row is
+ * history and never touched again.
+ */
+export const dailyCommentDigests = pgTable('daily_comment_digests', {
+  day: date('day').primaryKey(),
+  digest: text('digest').notNull(),
+  summariesConsidered: integer('summaries_considered').notNull().default(0),
+  model: text('model'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Operator-set runtime controls, one row per well-known key. The registry in
  * src/lib/controls.ts owns which keys exist and what shapes they take; this
  * table only makes an operator's departure from the code defaults durable.

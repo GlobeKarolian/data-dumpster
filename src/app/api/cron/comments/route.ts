@@ -13,6 +13,7 @@ import { assertCronAuthorized, cronJson } from '../../_lib/cron';
 import { publicSourceCredentials } from '@/lib/adapters/public-sources';
 import { runCommentCollection } from '@/lib/comments/collect';
 import { runCommentSummaryTick } from '@/lib/comments/summarize';
+import { runCommentDigestTick } from '@/lib/comments/digest';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,15 @@ async function handle(req: NextRequest): Promise<Response> {
       error: error instanceof Error ? error.message : 'Unknown summary failure.',
     });
   }
+  // The daily digest rides after the summaries it reads, same failure stance.
+  let digest = null;
+  try {
+    digest = await runCommentDigestTick();
+  } catch (error) {
+    console.error('[data-dumpster:cron/comments] digest tick failed', {
+      error: error instanceof Error ? error.message : 'Unknown digest failure.',
+    });
+  }
   return cronJson({
     claimed: result.postsClaimed,
     comments: result.commentsWritten,
@@ -45,6 +55,7 @@ async function handle(req: NextRequest): Promise<Response> {
     estimatedCents: result.estimatedCents,
     budgetExhausted: result.budgetExhausted,
     summaries,
+    digest,
   });
 }
 

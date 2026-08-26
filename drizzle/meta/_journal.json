@@ -253,6 +253,13 @@
       "when": 1787723412251,
       "tag": "0036_operator_control_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787755760417,
+      "tag": "0037_daily_comment_digests",
+      "breakpoints": true
     }
   ]
 }

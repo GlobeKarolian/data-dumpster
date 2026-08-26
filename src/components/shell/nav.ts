@@ -32,6 +32,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'social',
     label: 'Social Analytics',
     items: [
+      { href: '/today', label: 'Today', icon: Sparkles },
       { href: '/cross-channel', label: 'Cross-Channel', icon: LayoutGrid },
       ...NAV_PLATFORMS.map((p) => ({
         href: '/' + p,
@@ -108,4 +109,5 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/settings/companies': 'Companies and Social Profiles',
   '/settings/costs': 'Costs',
   '/settings/operations': 'Operations',
+  '/today': 'Today',
 };
