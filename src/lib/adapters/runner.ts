@@ -51,6 +51,12 @@ import { matchesRule, type TagRule } from './tagging';
 import { computeEngagementTotal, toDayString } from './util/normalize';
 import { publicSourceCredentials } from './public-sources';
 import { sanitizePooledPostRaw } from '@/lib/post-preview-source';
+import { installSpendMeter } from '@/lib/vendors/meter';
+
+// Every Bright Data delivery any adapter receives gets written to the spend
+// ledger from here on. Installed at runner load because the runner is the
+// one entrypoint all pooled collection flows through.
+installSpendMeter();
 import { sanitizePooledAudienceExtra } from '@/lib/channel-profile-meta';
 import { hasPendingBrightDataReceipt } from './brightdata-receipt';
 import {

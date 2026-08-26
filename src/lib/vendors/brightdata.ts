@@ -76,6 +76,39 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * Purchase metering, as an installed hook rather than an import.
+ *
+ * Every record this client receives was billed for, and for three weeks only
+ * two of the datasets wrote that fact down anywhere we could read it. The
+ * hook lets production install a recorder (vendors/meter.ts) that writes
+ * every delivery to the vendor_spend ledger, while unit tests, which mock
+ * fetch and never touch a database, install nothing and stay pure. The
+ * client stays a client: it reports deliveries, it does not know about
+ * ledgers.
+ */
+export interface SpendEvent {
+  datasetId: string;
+  platform: Platform;
+  records: number;
+  snapshotId: string | null;
+}
+
+let spendRecorder: ((event: SpendEvent) => void) | null = null;
+
+export function setSpendRecorder(recorder: ((event: SpendEvent) => void) | null): void {
+  spendRecorder = recorder;
+}
+
+function reportDelivery(datasetId: string, platform: Platform, rows: unknown[], snapshotId: string | null): void {
+  if (!spendRecorder || rows.length === 0) return;
+  try {
+    spendRecorder({ datasetId, platform, records: rows.length, snapshotId });
+  } catch {
+    // Metering must never break collection.
+  }
+}
+
+/**
  * A spend limit is only a limit if it is a whole number above zero. Bright Data
  * rejects `limit_per_input=0` and silently ignores a non-numeric value, and a
  * silently ignored limit is how an unbounded snapshot gets bought.
@@ -380,7 +413,9 @@ export async function scrapeSync<T = Record<string, unknown>>(
   const deadline = Date.now() + timeout;
 
   if (opts.resumeSnapshotId) {
-    return await awaitSnapshot(opts.resumeSnapshotId, opts, deadline) as T[];
+    const resumed = await awaitSnapshot(opts.resumeSnapshotId, opts, deadline) as T[];
+    reportDelivery(datasetId, opts.platform, resumed, opts.resumeSnapshotId);
+    return resumed;
   }
   // Always buy work through /trigger, even for a single exact URL. /scrape can
   // keep the socket open until the collection finishes; if our operation budget
@@ -414,10 +449,15 @@ export async function scrapeSync<T = Record<string, unknown>>(
 
   // The trigger endpoint returns a job handle. Retain array support only for a
   // defensive vendor-compatibility path and for old recorded fixtures.
-  if (Array.isArray(body)) return body as T[];
+  if (Array.isArray(body)) {
+    reportDelivery(datasetId, opts.platform, body, null);
+    return body as T[];
+  }
 
   if (isRecord(body) && typeof body.snapshot_id === 'string') {
-    return await awaitSnapshot(body.snapshot_id, opts, deadline) as T[];
+    const collected = await awaitSnapshot(body.snapshot_id, opts, deadline) as T[];
+    reportDelivery(datasetId, opts.platform, collected, body.snapshot_id);
+    return collected;
   }
 
   return [];
