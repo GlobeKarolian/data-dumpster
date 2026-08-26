@@ -342,9 +342,10 @@ function channelProvidesAudience(platform: Platform, handle: string): boolean {
 }
 
 /**
- * A company-platform total is only comparable after every configured profile
- * has completed collection. One successful profile out of several would make
- * the partial sum look like a real total, which is worse than leaving it blank.
+ * A company-platform total is only comparable when every configured profile
+ * was observably watched across the window (see the `tracked` CTE). One
+ * watched profile out of several would make the partial sum look like a real
+ * total, which is worse than leaving it blank.
  */
 function platformHasCompleteFlow(trackedChannels: number, ingestedChannels: number): boolean {
   return trackedChannels > 0 && ingestedChannels >= trackedChannels;
@@ -575,7 +576,7 @@ interface PlatformAgg {
   audienceChangeChannels: number;
   /** Active channels represented by this company+platform aggregate. */
   trackedChannels: number;
-  /** Active channels with at least one completed ingest. */
+  /** Active channels observably watched across the whole window. */
   ingestedChannels: number;
 }
 
@@ -661,16 +662,36 @@ async function companyPlatformAgg(
       SELECT ch.company_id,
              ch.platform,
              count(*)::int AS tracked_channels,
+             /*
+              * Watched across this window, derived from observation rather
+              * than vendor attestation. Vendors page newest-first and never
+              * certify absolute depth, so a gate that waited for certified
+              * coverage waited forever on Facebook, Instagram and TikTok.
+              * What a range comparison actually needs is narrower and
+              * provable from our own records:
+              *   1. crawls kept running through the window's visible end
+              *      (the attempt watermark advances only on settles that
+              *      captured everything the vendor exposes), and
+              *   2. the observed record demonstrably reaches back to the
+              *      window's start: either a post posted on or before it,
+              *      or one first seen by us on or before it. A channel
+              *      added mid-window fails this and keeps its honest dash.
+              */
              count(*) FILTER (
                WHERE EXISTS (
                  SELECT 1
                    FROM channel_collection_state state
                   WHERE state.channel_id = ch.id
-                    AND state.status = 'succeeded'
-                    AND state.outcome = 'certified_complete'
-                    AND NOT state.has_more
-                    AND state.coverage_since::date <= ${dayParam(range.start)}
-                    AND state.coverage_until::date >= ${dayParam(range.end)}
+                    AND state.attempted_until IS NOT NULL
+                    AND state.attempted_until::date
+                        >= least(${dayParam(range.end)}::date, current_date)
+               )
+               AND EXISTS (
+                 SELECT 1
+                   FROM posts hist
+                  WHERE hist.channel_id = ch.id
+                    AND least(hist.posted_at, hist.first_seen_at)::date
+                        <= ${dayParam(range.start)}
                )
              )::int
                AS ingested_channels
