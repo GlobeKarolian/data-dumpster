@@ -161,6 +161,22 @@ export async function fetchProfile(
  * does not reach back to the requested window, because a short list would
  * otherwise read as a quiet week rather than a truncated feed.
  */
+/**
+ * True when a profile-embedded post stub carries at least one engagement
+ * field. Around 22 Aug 2026 the vendor slimmed these stubs to seven fields
+ * (caption, datetime, id, image_url, post_hashtags, content_type, url):
+ * no likes, no comments, and a date-only datetime. Parsing those as posts
+ * wrote three days of Instagram at zero engagement and midnight UTC, which
+ * the Social Posts screen faithfully displayed as every Globe post landing
+ * at 8:00 PM with nothing to show for it. A stub without engagement fields
+ * is evidence a post exists, not an observation of how it performed, and
+ * this adapter only writes observations.
+ */
+function stubHasMetrics(item: Record<string, unknown>): boolean {
+  return ['likes', 'likes_count', 'comments', 'num_comments']
+    .some((key) => item[key] !== undefined && item[key] !== null);
+}
+
 export function postsFromProfile(
   raw: Record<string, unknown>,
   handle: string,
@@ -171,6 +187,8 @@ export function postsFromProfile(
   warnings: string[];
   exhaustive: boolean;
   incompleteReason?: string;
+  /** True when the vendor's stubs carried no engagement fields at all. */
+  stubsUnusable?: boolean;
 } {
   const warnings: string[] = [];
   const list = Array.isArray(raw.posts) ? raw.posts : [];
@@ -183,11 +201,28 @@ export function postsFromProfile(
     };
   }
 
+  const stubs = list.filter(isRecord);
+  if (stubs.length > 0 && !stubs.some(stubHasMetrics)) {
+    const reason = 'Instagram for @' + handle + ': the profile payload\'s '
+      + stubs.length + ' post stubs carry no engagement fields, so they are '
+      + 'existence evidence rather than observations. Collect this window '
+      + 'through the date-ranged post dataset.';
+    return {
+      posts: [],
+      warnings: [reason],
+      exhaustive: false,
+      incompleteReason: reason,
+      stubsUnusable: true,
+    };
+  }
+
   const posts: NormalizedPost[] = [];
   let oldest: Date | null = null;
 
-  for (const item of list) {
-    if (!isRecord(item)) continue;
+  for (const item of stubs) {
+    // A single metric-less stub inside an otherwise-metricked page is still
+    // not writable: zero is a claim, and we cannot claim it.
+    if (!stubHasMetrics(item)) continue;
     const postedAt = toDate(pick(item, ['datetime', 'date_posted', 'timestamp']));
     const externalId = str(pick(item, ['id', 'shortcode', 'post_id']));
     if (!postedAt || !externalId) continue;

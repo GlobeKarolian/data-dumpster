@@ -1298,7 +1298,7 @@ export const instagramAdapter: ChannelAdapter = {
       // daily poll and nowhere near enough for a 28-day window, so ask the
       // discovery endpoint for real history and fall back to the twelve if it
       // fails. Losing depth is much better than losing the channel.
-      let posts = raw
+      let posts: ReturnType<typeof postsFromProfile> = raw
         ? postsFromProfile(raw, ctx.handle, ctx.since, ctx.until)
         : {
             posts: [],
@@ -1309,14 +1309,19 @@ export const instagramAdapter: ChannelAdapter = {
           };
 
       const windowDays = (ctx.until.getTime() - ctx.since.getTime()) / 864e5;
-      if (pendingStage === 'instagram-posts' && windowDays <= 3) {
-        throw new AdapterError(
-          'Instagram has a date-ranged post receipt for a window that no longer requires the '
-            + 'post stage. Refusing to discard or replace the paid snapshot.',
-          { platform: IG, retryable: false },
-        );
-      }
-      if (windowDays > 3) {
+      // Daily polls used to live entirely off the profile stubs. Since the
+      // vendor slimmed those stubs to no engagement fields (Aug 2026), a poll
+      // that gets metric-less stubs must buy the date-ranged dataset instead:
+      // the alternative is writing fabricated zeros, which this codebase
+      // treats as worse than spending another few records. And a pending
+      // date-ranged receipt is always resumed whatever the window, because it
+      // is already paid for: short windows legitimately reach the post stage
+      // now, so the old "short window cannot have a post receipt" refusal
+      // would strand exactly the snapshots this path creates.
+      const deepRequired = windowDays > 3
+        || posts.stubsUnusable === true
+        || pendingStage === 'instagram-posts';
+      if (deepRequired) {
         try {
           const deepContext = pendingStage === 'instagram-profile'
             ? { ...ctx, cursor: { ...ctx.cursor, ...clearBrightDataReceipt() } }
