@@ -1882,6 +1882,7 @@ type PostDetailRow = {
   tags: unknown;
   urls: unknown;
   comment_count: string | number | null;
+  comment_summary: string | null;
   comments: unknown;
   metric_history: unknown;
 };
@@ -2049,6 +2050,7 @@ export async function getPostDetail(
            coalesce((
              SELECT count(*) FROM post_comments pc WHERE pc.post_id = p.id
            ), 0) AS comment_count,
+           (SELECT cs.summary FROM comment_summaries cs WHERE cs.post_id = p.id) AS comment_summary,
            -- The most-liked comments, because the dialog's question is "what
            -- did the audience say back", and likes are the audience agreeing
            -- with an answer. Capped small: this is a glance, not an archive.
@@ -2125,6 +2127,7 @@ export async function getPostDetail(
     urls: coerceDetailUrls(row.urls),
     comments: {
       collected: num(row.comment_count),
+      summary: row.comment_summary,
       items: coerceDetailComments(row.comments),
     },
     metricHistory: coerceMetricHistory(row.metric_history, summary.followersAtPost),

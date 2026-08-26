@@ -527,6 +527,16 @@ export function PostDetailDialog({
                       + ' collected'}
                   </span>
                 </div>
+                {resolved.comments.summary ? (
+                  <div className="mt-3 rounded-lg bg-zinc-50 px-3.5 py-3 dark:bg-zinc-900">
+                    <p className="text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-200">
+                      {resolved.comments.summary}
+                    </p>
+                    <p className="mt-1.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                      AI summary of the collected section
+                    </p>
+                  </div>
+                ) : null}
                 <ul className="mt-3 space-y-2.5">
                   {resolved.comments.items.map((comment) => (
                     <li key={comment.id} className="flex gap-3">

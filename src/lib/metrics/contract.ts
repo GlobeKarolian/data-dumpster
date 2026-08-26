@@ -118,6 +118,12 @@ export interface PostDetailDto extends Omit<PostDto, 'tags' | 'urls'> {
    */
   comments: {
     collected: number;
+    /**
+     * Model-written glance at the section, or null while it has not been
+     * written (or the section was too thin to deserve one). Renders above the
+     * raw sample, clearly labeled as an AI summary.
+     */
+    summary: string | null;
     items: {
       id: string;
       text: string | null;

@@ -1339,6 +1339,20 @@ export const commentCollectionState = pgTable('comment_collection_state', {
   index('comment_collection_state_next_idx').on(t.nextAttemptAt),
 ]);
 
+/**
+ * One glanceable summary per commented post, written by a model that read the
+ * section so the newsroom does not have to. NULL summary is a deliberate
+ * verdict: the section had too few text comments to be worth a paragraph, and
+ * recording that stops the job from re-judging it every tick.
+ */
+export const commentSummaries = pgTable('comment_summaries', {
+  postId: uuid('post_id').primaryKey().references(() => posts.id, { onDelete: 'cascade' }),
+  summary: text('summary'),
+  commentsConsidered: integer('comments_considered').notNull().default(0),
+  model: text('model'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const vendorSpend = pgTable('vendor_spend', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),

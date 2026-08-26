@@ -12,6 +12,7 @@ import { apiHandler } from '@/lib/session';
 import { assertCronAuthorized, cronJson } from '../../_lib/cron';
 import { publicSourceCredentials } from '@/lib/adapters/public-sources';
 import { runCommentCollection } from '@/lib/comments/collect';
+import { runCommentSummaryTick } from '@/lib/comments/summarize';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,17 @@ async function handle(req: NextRequest): Promise<Response> {
     return cronJson({ skipped: 'no Bright Data credential configured' });
   }
   const result = await runCommentCollection(apiKey);
+  // Summaries ride the same tick, after collection, so a freshly bought
+  // section gets its paragraph within the half hour. Failures here must not
+  // fail the tick: collection is the paid work, summaries are retryable.
+  let summaries = null;
+  try {
+    summaries = await runCommentSummaryTick();
+  } catch (error) {
+    console.error('[data-dumpster:cron/comments] summary tick failed', {
+      error: error instanceof Error ? error.message : 'Unknown summary failure.',
+    });
+  }
   return cronJson({
     claimed: result.postsClaimed,
     comments: result.commentsWritten,
@@ -32,6 +44,7 @@ async function handle(req: NextRequest): Promise<Response> {
     recordsBought: result.recordsBought,
     estimatedCents: result.estimatedCents,
     budgetExhausted: result.budgetExhausted,
+    summaries,
   });
 }
 
