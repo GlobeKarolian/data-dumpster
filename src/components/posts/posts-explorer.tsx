@@ -111,6 +111,7 @@ export function PostsExplorer({
     const next = new URLSearchParams(searchParams.toString());
     next.delete('columns');
     next.delete('showPostTags');
+    next.delete('post');
     return next;
   }, [searchParams]);
 
@@ -256,7 +257,54 @@ export function PostsExplorer({
 
   const selectPost = (post: PostDto) => {
     setSelectedPost(posts.find((candidate) => candidate.id === post.id) ?? post);
+    // The open post rides in the URL so a link can land someone on the exact
+    // dialog. "Where can I see the comments" should be answerable with a link,
+    // not a set of directions.
+    setParams({ post: post.id });
   };
+
+  const closePost = () => {
+    setSelectedPost(null);
+    setParams({ post: null });
+  };
+
+  // Honor ?post= on arrival. If the post is in the loaded page, open it during
+  // render, the same adjust-during-render pattern the search box uses, so no
+  // setState runs synchronously inside an effect. A post outside the page is
+  // fetched and down-mapped to the list shape, so a deep link works anywhere.
+  const urlPostId = searchParams.get('post');
+  const inPageLinked = urlPostId && selectedPost?.id !== urlPostId
+    ? posts.find((candidate) => candidate.id === urlPostId)
+    : undefined;
+  if (inPageLinked && selectedPost?.id !== inPageLinked.id) {
+    setSelectedPost(inPageLinked);
+  }
+  React.useEffect(() => {
+    if (!urlPostId || selectedPost?.id === urlPostId) return;
+    if (posts.some((candidate) => candidate.id === urlPostId)) return; // Render pass handles it.
+    if (!result) return; // Wait for the page before deciding to fetch.
+    let cancelled = false;
+    fetch(apiUrl('/api/posts/' + encodeURIComponent(urlPostId), apiSearchParams, landscapeId, {}))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return (await res.json()) as PostDetailDto;
+      })
+      .then((full) => {
+        if (cancelled) return;
+        setSelectedPost({
+          ...full,
+          tags: full.tags.map(({ id, name, color }) => ({ id, name, color })),
+          urls: full.urls.map(({ url, domain }) => ({ url, domain })),
+        });
+      })
+      .catch(() => {
+        // A dead link opens nothing rather than an error state.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlPostId, result]);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -610,7 +658,7 @@ export function PostsExplorer({
         detail={detail}
         loading={detailLoading}
         error={detailError}
-        onClose={() => setSelectedPost(null)}
+        onClose={closePost}
         onRetry={() => setDetailAttempt((attempt) => attempt + 1)}
       />
     </div>
