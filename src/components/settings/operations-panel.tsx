@@ -25,7 +25,14 @@ export interface OperationsControls {
     selectedLandscapeIds: string[];
   };
   summaries: { enabled: boolean; postsPerTick: number };
-  ingest: { enabled: boolean; recoverChannelsPerTick: number; refreshIntervalHours: number };
+  ingest: {
+    enabled: boolean;
+    recoverChannelsPerTick: number;
+    refreshIntervalHours: number;
+    postRefreshDays: number;
+    landscapeMode: 'all' | 'selected';
+    enabledLandscapeIds: string[];
+  };
   groups: { enabled: boolean };
   refresh: { enabled: boolean };
 }
@@ -46,6 +53,12 @@ export interface LandscapeOption {
   id: string;
   name: string;
   members: number;
+  /** Active channels this landscape asks for. */
+  channels?: number;
+  /** Channels no other landscape asks for: what pausing this actually stops. */
+  exclusiveChannels?: number;
+  /** Paid-platform posts per day attributable to it. */
+  paidPostsPerDay?: number;
 }
 
 function Toggle({ checked, onChange, disabled, label }: {
@@ -386,6 +399,68 @@ export function OperationsPanel({ controls, status, companies, landscapes }: {
               onChange={(recoverChannelsPerTick) => ingest.setValue({ ...ingest.value, recoverChannelsPerTick })}
               hint="The cron URL's own limit still caps one invocation"
             />
+            <NumberField
+              label="Re-read posts for (days)"
+              value={ingest.value.postRefreshDays}
+              min={1} max={60}
+              disabled={!ingest.value.enabled}
+              onChange={(postRefreshDays) => ingest.setValue({ ...ingest.value, postRefreshDays })}
+              hint="How long a post keeps getting its engagement re-read. Below this, its numbers freeze."
+            />
+          </div>
+
+          <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <SwitchRow
+              label="Collect only for selected landscapes"
+              sub="Off collects for every landscape. On pauses the rest — but only the channels nothing else asks for, since a brand in two landscapes keeps collecting for the live one."
+              checked={ingest.value.landscapeMode === 'selected'}
+              disabled={!ingest.value.enabled}
+              onChange={(selected) => ingest.setValue({
+                ...ingest.value,
+                landscapeMode: selected ? 'selected' : 'all',
+                // Default to everything on, so flipping the switch never
+                // silently stops all collection.
+                enabledLandscapeIds: selected && ingest.value.enabledLandscapeIds.length === 0
+                  ? landscapes.map((l) => l.id)
+                  : ingest.value.enabledLandscapeIds,
+              })}
+            />
+            {ingest.value.landscapeMode === 'selected' ? (
+              <div className="mt-2 flex flex-col gap-0.5">
+                {[...landscapes]
+                  .sort((a, b) => (b.paidPostsPerDay ?? 0) - (a.paidPostsPerDay ?? 0))
+                  .map((landscape) => {
+                    const on = ingest.value.enabledLandscapeIds.includes(landscape.id);
+                    return (
+                      <div key={landscape.id} className="flex items-center justify-between gap-3 rounded px-2 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs text-zinc-700 dark:text-zinc-300">{landscape.name}</p>
+                          <p className="text-[10px] text-zinc-500">
+                            {(landscape.channels ?? 0)} channels
+                            {landscape.exclusiveChannels !== undefined
+                              ? ' · ' + landscape.exclusiveChannels + ' only here'
+                              : ''}
+                            {landscape.paidPostsPerDay
+                              ? ' · ~' + landscape.paidPostsPerDay.toLocaleString() + ' paid posts/day'
+                              : ''}
+                          </p>
+                        </div>
+                        <Toggle
+                          label={'Collect for ' + landscape.name}
+                          checked={on}
+                          disabled={!ingest.value.enabled}
+                          onChange={(next) => ingest.setValue({
+                            ...ingest.value,
+                            enabledLandscapeIds: next
+                              ? [...ingest.value.enabledLandscapeIds, landscape.id]
+                              : ingest.value.enabledLandscapeIds.filter((id) => id !== landscape.id),
+                          })}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : null}
           </div>
           <SaveRow dirty={ingest.dirty} busy={ingest.busy} error={ingest.error} onSave={ingest.save} />
         </CardBody>

@@ -149,6 +149,19 @@ function asDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
+/**
+ * How far back a refresh re-reads posts it already has.
+ *
+ * This was two days, which quietly meant a post's metrics froze about two
+ * days after publication: the crawl asked the vendor only for that window, so
+ * anything older was never read again. A TikTok that had taken 3.6M views by
+ * its second day kept climbing for a week while our copy stayed at the
+ * two-day figure, and every leaderboard, report and post history inherited
+ * the stale number. Posts accrue engagement for roughly a week, so the
+ * re-read window has to cover that life, not just the moment of publication.
+ */
+export const POST_REFRESH_LOOKBACK_DAYS = 14;
+
 function collectionRunSince(input: {
   requiredSince: Date;
   coverageSince: Date | null;
@@ -156,7 +169,10 @@ function collectionRunSince(input: {
   attemptedUntil?: Date | null;
   outcome?: CollectionOutcome | null;
   hasMore: boolean;
+  /** Days of already-collected posts each refresh re-reads. */
+  lookbackDays?: number;
 }): Date {
+  const lookbackMs = (input.lookbackDays ?? POST_REFRESH_LOOKBACK_DAYS) * 86_400_000;
   if (input.hasMore) return input.requiredSince;
 
   // Certified coverage can move forward incrementally only when it already
@@ -168,7 +184,7 @@ function collectionRunSince(input: {
     if (canRefreshCertifiedWindow && input.coverageUntil) {
       return new Date(Math.max(
         input.requiredSince.getTime(),
-        input.coverageUntil.getTime() - 2 * 86_400_000,
+        input.coverageUntil.getTime() - lookbackMs,
       ));
     }
     // A recent exhaustive suffix may coexist with older history the source
@@ -179,8 +195,9 @@ function collectionRunSince(input: {
   }
 
   // A terminally limited source still needs fresh audience/posts later. Its
-  // attempt watermark permits a cheap two-day overlap without pretending that
-  // the older, uncertified history became coverage.
+  // attempt watermark permits an overlap back over the posts still accruing
+  // engagement, without pretending the older, uncertified history became
+  // coverage.
   // Operational/permanent failures never advance attemptedUntil. If a retry
   // still has one, it came from an earlier settled source response and remains
   // the correct freshness watermark through a transient failure.
@@ -188,7 +205,7 @@ function collectionRunSince(input: {
   return limitedAttempt
     ? new Date(Math.max(
         input.requiredSince.getTime(),
-        limitedAttempt.getTime() - 2 * 86_400_000,
+        limitedAttempt.getTime() - lookbackMs,
       ))
     : input.requiredSince;
 }
@@ -278,6 +295,7 @@ function escalateRetryableOutcome(
 
 export const collectionQueueTestHelpers = {
   collectionRunSince,
+  POST_REFRESH_LOOKBACK_DAYS,
   extendedTerminalSuffix,
   queueDisposition,
   escalateRetryableOutcome,
@@ -792,7 +810,27 @@ async function claim(input: {
   landscapeId?: string;
   channelIds?: readonly string[];
   platforms?: readonly Platform[];
+  /**
+   * Landscapes whose demand still counts. Null means every landscape, the
+   * shipped behavior. Pooling is preserved: a channel keeps collecting while
+   * ANY enabled landscape wants it, so pausing one landscape only stops the
+   * channels nothing else asks for.
+   */
+  enabledLandscapeIds?: readonly string[] | null;
 }): Promise<ClaimedItem[]> {
+  const pausedLandscapes = input.enabledLandscapeIds ?? null;
+  const demandIsLive = pausedLandscapes === null
+    ? sql`SELECT 1
+            FROM landscape_channel_demands live_demand
+           WHERE live_demand.channel_id = state.channel_id`
+    : pausedLandscapes.length === 0
+      // Every landscape paused means collect nothing, not collect everything.
+      ? sql`SELECT 1 WHERE false`
+      : sql`SELECT 1
+              FROM landscape_channel_demands live_demand
+             WHERE live_demand.channel_id = state.channel_id
+               AND live_demand.landscape_id IN (${sql.join(
+                 pausedLandscapes.map((id) => sql`${id}::uuid`), sql`, `)})`;
   const scopedLandscape = input.landscapeId && input.orgId
     ? sql`AND EXISTS (
         SELECT 1
@@ -822,11 +860,7 @@ async function claim(input: {
         FROM channel_collection_state state
         JOIN channels ch ON ch.id = state.channel_id
        WHERE ch.active
-         AND EXISTS (
-           SELECT 1
-             FROM landscape_channel_demands live_demand
-            WHERE live_demand.channel_id = state.channel_id
-         )
+         AND EXISTS (${demandIsLive})
          AND (
            (
              state.status IN ('queued', 'partial', 'failed')
@@ -1335,13 +1369,22 @@ export async function runCollectionQueue(input: {
 } = {}): Promise<CollectionQueueSummary> {
   if (input.runWindow) assertValidDemandWindow(input.runWindow);
   const startedAt = Date.now();
+  const ingestControls = await readControl('ingest');
   const items = await claim({
     limit: input.maxChannels ?? 24,
     orgId: input.orgId,
     landscapeId: input.landscapeId,
     channelIds: input.channelIds,
     platforms: input.platforms,
+    // An explicit channel or landscape request is an operator asking for
+    // exactly those, so the standing pause does not silently override it.
+    enabledLandscapeIds: input.channelIds?.length || input.landscapeId
+      ? null
+      : ingestControls.landscapeMode === 'selected'
+        ? ingestControls.enabledLandscapeIds
+        : null,
   });
+  const lookbackDays = ingestControls.postRefreshDays;
   const results: ChannelRunResult[] = [];
   const leaseTokens = new Map(items.map((item) => [item.channel_id, item.lease_token]));
   const heartbeat = new TokenFencedLeaseHeartbeat({
@@ -1428,6 +1471,7 @@ export async function runCollectionQueue(input: {
               attemptedUntil,
               outcome: item.outcome,
               hasMore: item.has_more,
+              lookbackDays,
             }));
         const runUntil = input.runWindow?.until ?? asDate(item.required_until);
         result = await runChannelIngest(item.channel_id, {

@@ -89,11 +89,32 @@ export default async function OperationsPage({ searchParams }: {
     liveStatus(),
     db.execute<{ id: string; name: string }>(sql`
       SELECT id::text AS id, name FROM companies ORDER BY name ASC LIMIT 500`),
-    db.execute<{ id: string; name: string; members: string | number }>(sql`
-      SELECT l.id::text AS id, l.name, count(lc.company_id) AS members
+    // Each landscape with what pausing it would actually stop: the channels
+    // nothing else asks for, and the paid-platform volume it drives.
+    db.execute<{
+      id: string; name: string; members: string | number;
+      channels: string | number; exclusive_channels: string | number;
+      paid_posts_per_day: string | number;
+    }>(sql`
+      SELECT l.id::text AS id, l.name,
+             count(DISTINCT lc.company_id) AS members,
+             count(DISTINCT c.id) FILTER (WHERE c.active) AS channels,
+             count(DISTINCT c.id) FILTER (
+               WHERE c.active AND NOT EXISTS (
+                 SELECT 1 FROM landscape_companies o
+                  WHERE o.company_id = lc.company_id
+                    AND o.landscape_id <> l.id)
+             ) AS exclusive_channels,
+             round(count(p.id) FILTER (
+               WHERE c.platform IN ('facebook','instagram','tiktok',
+                                    'threads','linkedin','twitter')
+             ) / 30.0, 0) AS paid_posts_per_day
         FROM landscapes l
         LEFT JOIN landscape_companies lc ON lc.landscape_id = l.id
-       GROUP BY 1, 2 ORDER BY l.name ASC`),
+        LEFT JOIN channels c ON c.company_id = lc.company_id
+        LEFT JOIN posts p ON p.channel_id = c.id
+             AND p.posted_at > now() - interval '30 days'
+       GROUP BY l.id, l.name ORDER BY l.name ASC`),
   ]);
   const companies: CompanyOption[] = companyRows.rows.map((row) => ({
     id: row.id,
@@ -103,6 +124,9 @@ export default async function OperationsPage({ searchParams }: {
     id: row.id,
     name: row.name,
     members: Number(row.members) || 0,
+    channels: Number(row.channels) || 0,
+    exclusiveChannels: Number(row.exclusive_channels) || 0,
+    paidPostsPerDay: Number(row.paid_posts_per_day) || 0,
   }));
 
   return (

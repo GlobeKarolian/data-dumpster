@@ -56,6 +56,20 @@ export const controlSchemas = {
     recoverChannelsPerTick: z.number().int().min(1).max(1_000),
     /** How stale a channel may grow before the recover tick re-crawls it. */
     refreshIntervalHours: z.number().int().min(1).max(168),
+    /**
+     * Days of already-collected posts each refresh re-reads. Posts keep
+     * accruing engagement for about a week; anything shorter freezes their
+     * metrics at whatever they had when the window passed them by.
+     */
+    postRefreshDays: z.number().int().min(1).max(60),
+    /**
+     * Landscapes whose demand still drives collection. 'all' is the shipped
+     * behavior. Pausing a landscape stops only the channels nothing else
+     * wants, because channels are pooled: a brand in a paused landscape and
+     * a live one keeps collecting for the live one.
+     */
+    landscapeMode: z.enum(['all', 'selected']),
+    enabledLandscapeIds: z.array(z.uuid()).max(200),
   }),
   groups: z.object({
     enabled: z.boolean(),
@@ -84,7 +98,14 @@ export const controlDefaults: { [K in ControlKey]: ControlValue<K> } = {
     selectedLandscapeIds: [],
   },
   summaries: { enabled: true, postsPerTick: 12 },
-  ingest: { enabled: true, recoverChannelsPerTick: 250, refreshIntervalHours: 12 },
+  ingest: {
+    enabled: true,
+    recoverChannelsPerTick: 250,
+    refreshIntervalHours: 12,
+    postRefreshDays: 14,
+    landscapeMode: 'all',
+    enabledLandscapeIds: [],
+  },
   groups: { enabled: true },
   refresh: { enabled: true },
 };

@@ -4,6 +4,8 @@ import { automaticRefreshWindowStart } from './automatic-refresh';
 import { collectionQueueTestHelpers } from './collection-queue';
 import { collectionOutcomeForFetch } from './runner';
 
+const LOOKBACK_MS = collectionQueueTestHelpers.POST_REFRESH_LOOKBACK_DAYS * 86_400_000;
+
 const {
   collectionRunSince,
   extendedTerminalSuffix,
@@ -263,13 +265,15 @@ describe('durable collection windows', () => {
   const requiredSince = new Date('2026-05-01T00:00:00Z');
   const coverageUntil = new Date('2026-07-30T12:00:00Z');
 
-  it('uses a two-day overlap after the historical window is complete', () => {
+  it('overlaps back across the posts still accruing after the window is complete', () => {
+    // Eight days, not two: a post keeps gaining engagement for about a week,
+    // and a shorter overlap freezes its metrics where the window left it.
     assert.equal(collectionRunSince({
       requiredSince,
       coverageSince: requiredSince,
       coverageUntil,
       hasMore: false,
-    }).toISOString(), '2026-07-28T12:00:00.000Z');
+    }).toISOString(), new Date(coverageUntil.getTime() - LOOKBACK_MS).toISOString());
   });
 
   it('keeps the full requested window while pagination remains', () => {
@@ -291,7 +295,7 @@ describe('durable collection windows', () => {
     }).toISOString(), expandedSince.toISOString());
   });
 
-  it('refreshes a terminally limited source with a two-day overlap', () => {
+  it('refreshes a terminally limited source across the accrual window', () => {
     assert.equal(collectionRunSince({
       requiredSince,
       coverageSince: null,
@@ -299,7 +303,7 @@ describe('durable collection windows', () => {
       attemptedUntil: coverageUntil,
       outcome: 'terminal_source_limitation',
       hasMore: false,
-    }).toISOString(), '2026-07-28T12:00:00.000Z');
+    }).toISOString(), new Date(coverageUntil.getTime() - LOOKBACK_MS).toISOString());
   });
 
   it('starts from the full boundary when no source response has settled', () => {
@@ -321,7 +325,7 @@ describe('durable collection windows', () => {
       attemptedUntil: coverageUntil,
       outcome: 'retryable_operational_failure',
       hasMore: false,
-    }).toISOString(), '2026-07-28T12:00:00.000Z');
+    }).toISOString(), new Date(coverageUntil.getTime() - LOOKBACK_MS).toISOString());
   });
 
   it('does not turn a recent overlap into certified historical coverage', () => {
@@ -345,7 +349,8 @@ describe('durable collection windows', () => {
       attemptedUntil: new Date('2026-08-01T12:00:00Z'),
       outcome: 'terminal_source_limitation',
       hasMore: false,
-    }).toISOString(), '2026-07-30T12:00:00.000Z');
+    }).toISOString(),
+      new Date(new Date('2026-08-01T12:00:00Z').getTime() - LOOKBACK_MS).toISOString());
   });
 
   it('merges an overlapping refresh into previously certified coverage', () => {
@@ -360,6 +365,38 @@ describe('durable collection windows', () => {
     assert.equal(merged.since.toISOString(), requiredSince.toISOString());
     assert.equal(merged.until.toISOString(), '2026-08-01T12:00:00.000Z');
     assert.equal(merged.complete, true);
+  });
+});
+
+describe('post refresh lookback', () => {
+  const day = (d: string) => new Date(d + 'T00:00:00Z');
+
+  it('re-reads far enough back that a live post keeps being updated', () => {
+    // A terminally limited source (every vendor-capped platform) refreshing on
+    // Aug 28. A post published Aug 19 is still accruing engagement, so the
+    // window has to reach it; at the old two-day overlap it never would.
+    const since = collectionRunSince({
+      requiredSince: day('2026-05-02'),
+      coverageSince: day('2026-08-01'),
+      coverageUntil: day('2026-08-05'),
+      attemptedUntil: day('2026-08-28'),
+      outcome: 'terminal_source_limitation',
+      hasMore: false,
+    });
+    assert.ok(since <= day('2026-08-19'), 'window must still cover an Aug 19 post');
+  });
+
+  it('never reaches back past the requested boundary', () => {
+    const since = collectionRunSince({
+      requiredSince: day('2026-08-25'),
+      coverageSince: day('2026-08-01'),
+      coverageUntil: day('2026-08-05'),
+      attemptedUntil: day('2026-08-28'),
+      outcome: 'terminal_source_limitation',
+      hasMore: false,
+      lookbackDays: 30,
+    });
+    assert.equal(since.toISOString(), day('2026-08-25').toISOString());
   });
 });
 
