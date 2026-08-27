@@ -672,10 +672,25 @@ async function companyPlatformAgg(
               *   1. crawls kept running through the window's visible end
               *      (the attempt watermark advances only on settles that
               *      captured everything the vendor exposes), and
-              *   2. the observed record demonstrably reaches back to the
-              *      window's start: either a post posted on or before it,
-              *      or one first seen by us on or before it. A channel
-              *      added mid-window fails this and keeps its honest dash.
+              *   2. we were already watching when the window opened.
+              *
+              * Watching is proved by an audience reading taken on or before
+              * the window opened, or by observed post history reaching back
+              * past it (which covers a channel added later whose vendor
+              * history predates the window).
+              *
+              * Audience snapshots are the load-bearing half. Requiring a POST
+              * that reaches back was the subtly wrong test: it failed every
+              * quiet channel. A dormant Threads account that has never posted
+              * is watched, and its silence contributes an honest zero to both
+              * weeks; demanding activity as proof of observation withheld
+              * week-over-week from sixteen of twenty-six Boston brands, each
+              * for one sleepy channel. Snapshots are taken daily whether or
+              * not anybody posts, which is exactly the evidence needed.
+              *
+              * channels.created_at is deliberately NOT used: every row in this
+              * estate was rewritten by the pooling migration, so it dates the
+              * row rather than the watching.
               */
              count(*) FILTER (
                WHERE EXISTS (
@@ -686,12 +701,20 @@ async function companyPlatformAgg(
                     AND state.attempted_until::date
                         >= least(${dayParam(range.end)}::date, current_date)
                )
-               AND EXISTS (
-                 SELECT 1
-                   FROM posts hist
-                  WHERE hist.channel_id = ch.id
-                    AND least(hist.posted_at, hist.first_seen_at)::date
-                        <= ${dayParam(range.start)}
+               AND (
+                 EXISTS (
+                   SELECT 1
+                     FROM audience_snapshots seen
+                    WHERE seen.channel_id = ch.id
+                      AND seen.day <= ${dayParam(range.start)}
+                 )
+                 OR EXISTS (
+                   SELECT 1
+                     FROM posts hist
+                    WHERE hist.channel_id = ch.id
+                      AND least(hist.posted_at, hist.first_seen_at)::date
+                          <= ${dayParam(range.start)}
+                 )
                )
              )::int
                AS ingested_channels
