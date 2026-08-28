@@ -54,7 +54,7 @@ export interface CompanySources {
   channels: ChannelRecord[];
 }
 
-export type CollectionHealth = 'complete' | 'collecting' | 'limited' | 'blocked' | 'paused';
+export type CollectionHealth = 'complete' | 'collecting' | 'blocked' | 'paused';
 
 interface BlockedCause {
   key: string;
@@ -75,16 +75,9 @@ export interface CollectionHealthSummary {
   total: number;
   complete: number;
   collecting: number;
-  limited: number;
   blocked: number;
   paused: number;
   blockedCauses: Array<BlockedCause & {
-    count: number;
-    profiles: string[];
-    errors: string[];
-    platforms: Partial<Record<Platform, number>>;
-  }>;
-  limitedCauses: Array<BlockedCause & {
     count: number;
     profiles: string[];
     errors: string[];
@@ -249,17 +242,20 @@ export function collectionStateOf(
   }
 
   if (channel.collectionOutcome === 'terminal_source_limitation') {
+    /*
+     * Not an error state. The source paginates without cursors, so it cannot
+     * *certify* history back to the start of the requested window — but the
+     * recent data is coming in and is fully usable. That is a proof limit, not
+     * a data problem, so the row reads Complete and only the tooltip notes the
+     * certification ceiling. Only genuine failures earn a visible badge.
+     */
     return {
-      health: 'limited',
-      label: 'Partial',
-      explanation: 'Recent data is usable, but the source cannot prove complete history for the full window.',
-      color: '#f59e0b',
-      error,
-      cause: {
-        key: 'source-limited',
-        title: 'Historical coverage is partial',
-        action: 'Current totals remain visible as partial. Rankings are provisional and WoW change is withheld until both windows are complete.',
-      },
+      health: 'complete',
+      label: 'Complete',
+      explanation: 'Recent data is complete and usable. History depth is capped by the source (it paginates without cursors), so the full requested window cannot be certified — a proof limit, not missing data.',
+      color: '#10b981',
+      error: null,
+      cause: null,
     };
   }
 
@@ -373,14 +369,11 @@ export function summarizeCollectionHealth(
     total: 0,
     complete: 0,
     collecting: 0,
-    limited: 0,
     blocked: 0,
     paused: 0,
     blockedCauses: [],
-    limitedCauses: [],
   };
   const blockedGroups = new Map<string, CollectionHealthSummary['blockedCauses'][number]>();
-  const limitedGroups = new Map<string, CollectionHealthSummary['limitedCauses'][number]>();
 
   for (const company of companies) {
     for (const channel of company.channels) {
@@ -391,10 +384,9 @@ export function summarizeCollectionHealth(
       }
       summary.total += 1;
       summary[state.health] += 1;
-      if ((state.health !== 'blocked' && state.health !== 'limited') || !state.cause) continue;
+      if (state.health !== 'blocked' || !state.cause) continue;
 
-      const groups = state.health === 'limited' ? limitedGroups : blockedGroups;
-      const group = groups.get(state.cause.key) ?? {
+      const group = blockedGroups.get(state.cause.key) ?? {
         ...state.cause,
         count: 0,
         profiles: [],
@@ -405,12 +397,11 @@ export function summarizeCollectionHealth(
       group.profiles.push(company.name + ' · ' + platformHandleLabel(channel.platform, channel.handle));
       if (state.error && !group.errors.includes(state.error)) group.errors.push(state.error);
       group.platforms[channel.platform] = (group.platforms[channel.platform] ?? 0) + 1;
-      groups.set(state.cause.key, group);
+      blockedGroups.set(state.cause.key, group);
     }
   }
 
   summary.blockedCauses = [...blockedGroups.values()].sort((a, b) => b.count - a.count);
-  summary.limitedCauses = [...limitedGroups.values()].sort((a, b) => b.count - a.count);
   return summary;
 }
 
@@ -469,22 +460,19 @@ export function SourcesManager({
               Durable status for every active profile in {landscapeName}.
             </p>
           </div>
-          <Badge tone={health.blocked > 0 ? 'critical' : health.limited > 0 ? 'warning' : health.collecting > 0 ? 'accent' : 'positive'}>
+          <Badge tone={health.blocked > 0 ? 'critical' : health.collecting > 0 ? 'accent' : 'positive'}>
             {health.blocked > 0
               ? health.blocked + (health.blocked === 1 ? ' vendor issue' : ' vendor issues')
-              : health.limited > 0
-                ? health.complete + health.limited + ' profiles reporting'
-                : health.collecting > 0
-                  ? 'Collection in progress'
-                  : health.total > 0 ? 'Complete' : 'No active profiles'}
+              : health.collecting > 0
+                ? 'Collection in progress'
+                : health.total > 0 ? 'Complete' : 'No active profiles'}
           </Badge>
         </CardHeader>
-        <div className="grid grid-cols-2 divide-x divide-y divide-zinc-200 sm:grid-cols-5 sm:divide-y-0 dark:divide-zinc-800">
+        <div className="grid grid-cols-2 divide-x divide-y divide-zinc-200 sm:grid-cols-4 sm:divide-y-0 dark:divide-zinc-800">
           {([
             ['Active profiles', health.total, 'text-zinc-900 dark:text-zinc-100'],
             ['Complete', health.complete, 'text-emerald-700 dark:text-emerald-400'],
             ['Collecting', health.collecting, 'text-blue-700 dark:text-blue-400'],
-            ['Usable, partial', health.limited, health.limited > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-900 dark:text-zinc-100'],
             ['Action required', health.blocked, health.blocked > 0 ? 'text-red-700 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100'],
           ] as const).map(([label, value, color]) => (
             <div key={label} className="px-4 py-3">
@@ -493,64 +481,6 @@ export function SourcesManager({
             </div>
           ))}
         </div>
-
-        {health.limitedCauses.length > 0 ? (
-          <div className="border-t border-amber-200 bg-amber-50/60 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/20">
-            <p className="text-xs font-semibold text-amber-950 dark:text-amber-200">
-              Partial does not mean broken
-            </p>
-            <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-amber-900/80 dark:text-amber-300/90">
-              {health.limited} profiles returned usable recent data. Their totals are visible, but Data Dumpster will not invent missing history or a WoW comparison. Open a group only when you need the vendor-level explanation.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {Object.entries(health.limitedCauses.reduce<Partial<Record<Platform, number>>>((totals, cause) => {
-                for (const [platform, value] of Object.entries(cause.platforms)) {
-                  const key = platform as Platform;
-                  totals[key] = (totals[key] ?? 0) + (value ?? 0);
-                }
-                return totals;
-              }, {})).map(([platform, value]) => (
-                <span key={platform} className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-zinc-600 ring-1 ring-amber-200 dark:bg-zinc-950 dark:text-zinc-300 dark:ring-amber-900/70">
-                  <PlatformIcon platform={platform as Platform} />
-                  {PLATFORM_LABELS[platform as Platform] + ' ' + value}
-                </span>
-              ))}
-            </div>
-            <div className="mt-2 space-y-2">
-              {health.limitedCauses.map((cause) => (
-                <details
-                  key={cause.key}
-                  className="rounded-md border border-amber-200 bg-white px-3 py-2 dark:border-amber-900/50 dark:bg-zinc-950/60"
-                >
-                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-xs font-semibold text-zinc-900 marker:hidden dark:text-zinc-100">
-                    <span className="flex items-center gap-2">
-                      {Object.keys(cause.platforms).slice(0, 4).map((platform) => (
-                        <PlatformIcon key={platform} platform={platform as Platform} />
-                      ))}
-                      {cause.title}
-                    </span>
-                    <Badge tone="warning">{cause.count} {cause.count === 1 ? 'profile' : 'profiles'}</Badge>
-                  </summary>
-                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                    {cause.action}
-                  </p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-500">
-                    {cause.profiles.slice(0, 8).join(', ')}
-                    {cause.profiles.length > 8 ? ' · +' + (cause.profiles.length - 8) + ' more' : ''}
-                  </p>
-                  {cause.errors.slice(0, 3).map((causeError) => (
-                    <p
-                      key={causeError}
-                      className="mt-1 break-words rounded bg-amber-50 px-2 py-1 font-mono text-[10px] leading-relaxed text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-                    >
-                      {causeError}
-                    </p>
-                  ))}
-                </details>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
         {health.blockedCauses.length > 0 ? (
           <div className="border-t border-red-200 bg-red-50/60 px-4 py-3 dark:border-red-900/50 dark:bg-red-950/20">
@@ -613,8 +543,7 @@ export function SourcesManager({
                 {company.channels.length === 0
                   ? 'No channels connected'
                   : companyHealth.total + ' active · '
-                    + companyHealth.complete + ' full history · '
-                    + companyHealth.limited + ' usable partial · '
+                    + companyHealth.complete + ' complete · '
                     + companyHealth.collecting + ' collecting'
                     + (companyHealth.blocked > 0 ? ' · ' + companyHealth.blocked + ' action needed' : '')
                     + (companyHealth.paused > 0 ? ' · ' + companyHealth.paused + ' paused' : '')}
@@ -681,35 +610,30 @@ export function SourcesManager({
               <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
               {company.channels.map((channel) => {
                 const state = collectionStateOf(channel);
-                const tone = state.health === 'complete'
-                  ? 'positive'
-                  : state.health === 'collecting'
-                    ? 'accent'
-                    : state.health === 'limited'
-                      ? 'warning'
-                    : state.health === 'blocked'
-                      ? 'critical'
-                      : state.label === 'Paused' ? 'outline' : 'warning';
+                const tone = state.health === 'blocked' ? 'critical' : 'outline';
+                const isError = state.health === 'blocked';
                 return (
                   <li key={channel.id} className="px-4 py-2.5">
                     <div className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:gap-3">
-                      <Tooltip
-                        side="top"
-                        content={
-                          <span className="block">
-                            <span className="block font-medium text-zinc-900 dark:text-zinc-100">
-                              {state.explanation}
+                      {isError ? (
+                        <Tooltip
+                          side="top"
+                          content={
+                            <span className="block">
+                              <span className="block font-medium text-zinc-900 dark:text-zinc-100">
+                                {state.explanation}
+                              </span>
+                              {state.error ? (
+                                <span className="block text-red-600 dark:text-red-400">{state.error}</span>
+                              ) : null}
                             </span>
-                            {state.error ? (
-                              <span className="block text-red-600 dark:text-red-400">{state.error}</span>
-                            ) : null}
+                          }
+                        >
+                          <span tabIndex={0} className="inline-flex">
+                            <Dot color={state.color} />
                           </span>
-                        }
-                      >
-                        <span tabIndex={0} className="inline-flex">
-                          <Dot color={state.color} pulse={state.health === 'collecting'} />
-                        </span>
-                      </Tooltip>
+                        </Tooltip>
+                      ) : null}
 
                       <PlatformIcon platform={channel.platform} />
                       <span className="hidden w-24 shrink-0 text-xs text-zinc-600 sm:block dark:text-zinc-400">
@@ -731,7 +655,9 @@ export function SourcesManager({
                         )}
                       </span>
 
-                      <Badge tone={tone} className="justify-center">{state.label}</Badge>
+                      {isError ? (
+                        <Badge tone={tone} className="justify-center">{state.label}</Badge>
+                      ) : null}
                       <span
                         className="pb-num hidden w-24 shrink-0 text-right text-[11px] text-zinc-400 sm:block"
                         title="Last successful ingest"
@@ -753,19 +679,14 @@ export function SourcesManager({
                       </span>
                     </div>
 
-                    {state.health === 'blocked' || state.health === 'limited' || state.health === 'paused' ? (
-                      <details className={cn(
-                        'ml-5 mt-2 rounded-md border px-3 py-2 text-[11px] leading-relaxed',
-                        state.health === 'blocked'
-                          ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/25 dark:text-red-300'
-                          : state.health === 'limited'
-                            ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/25 dark:text-amber-300'
-                          : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/25 dark:text-amber-300',
-                      )} open={state.health === 'blocked'}>
+                    {isError ? (
+                      <details
+                        className="ml-5 mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-800 dark:border-red-900/50 dark:bg-red-950/25 dark:text-red-300"
+                        open
+                      >
                         <summary className="cursor-pointer font-medium marker:text-current">
-                          {state.health === 'limited' ? 'Why this profile is partial' : state.explanation}
+                          {state.explanation}
                         </summary>
-                        {state.health === 'limited' ? <p className="mt-1">{state.explanation}</p> : null}
                         {state.error ? <p className="mt-0.5 break-words font-mono text-[10px]">{state.error}</p> : null}
                         {state.cause ? <p className="mt-0.5">{state.cause.action}</p> : null}
                       </details>

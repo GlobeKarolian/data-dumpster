@@ -36,6 +36,8 @@ import {
   verifyFactSheetAnswer,
   type FactSheetAnswerVerification,
 } from '@/lib/ai/verify';
+import { logAskInteraction } from '@/lib/ai/ask-log';
+import { track } from '@/lib/analytics/track';
 import { ModelError, type ModelMessage } from '@/lib/ai/types';
 import { parseRangeParams } from '@/lib/dates';
 import {
@@ -147,6 +149,11 @@ export const POST = apiHandler(async (req: NextRequest) => {
   let answer: string;
   let model: string;
   let verification: FactSheetAnswerVerification;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let costUsd = 0;
+  let repaired = false;
+  const startedAt = Date.now();
   try {
     const result = await complete(orgId, { ...request, messages }, {
       connectionId: body.connectionId,
@@ -154,10 +161,14 @@ export const POST = apiHandler(async (req: NextRequest) => {
     });
     answer = result.text.trim();
     model = result.model;
+    inputTokens += result.inputTokens ?? 0;
+    outputTokens += result.outputTokens ?? 0;
+    costUsd += result.costUsd ?? 0;
     verification = verifyFactSheetAnswer(answer, facts);
 
     if (!verification.ok) {
-      const repaired = await complete(orgId, {
+      repaired = true;
+      const repair = await complete(orgId, {
         ...request,
         messages: [
           ...messages,
@@ -169,13 +180,30 @@ export const POST = apiHandler(async (req: NextRequest) => {
         connection: result.connection,
         feature: 'ask_repair',
       });
-      answer = repaired.text.trim();
-      model = repaired.model;
+      answer = repair.text.trim();
+      model = repair.model;
+      inputTokens += repair.inputTokens ?? 0;
+      outputTokens += repair.outputTokens ?? 0;
+      costUsd += repair.costUsd ?? 0;
       verification = verifyFactSheetAnswer(answer, facts);
     }
   } catch (err) {
     // Provider messages are already written for a human and carry no secrets.
-    if (err instanceof ModelError) throw new HttpError(502, err.message, 'model_error');
+    if (err instanceof ModelError) {
+      await logAskInteraction({
+        orgId,
+        userId: session.userId,
+        landscapeId: landscape.id,
+        question: body.question,
+        answer: null,
+        factsFingerprint: body.factsFingerprint,
+        model: null,
+        outcome: 'error',
+        latencyMs: Date.now() - startedAt,
+        error: err.message,
+      });
+      throw new HttpError(502, err.message, 'model_error');
+    }
     throw err;
   }
 
@@ -185,12 +213,66 @@ export const POST = apiHandler(async (req: NextRequest) => {
       miscited: verification.miscited.length,
       violations: verification.violations.length,
     });
+    await logAskInteraction({
+      orgId,
+      userId: session.userId,
+      landscapeId: landscape.id,
+      question: body.question,
+      answer,
+      factsFingerprint: body.factsFingerprint,
+      model,
+      outcome: 'rejected',
+      verification: {
+        total: verification.stats.total,
+        unverified: verification.unverified.length,
+        miscited: verification.miscited.length,
+        violations: verification.violations.length,
+      },
+      inputTokens,
+      outputTokens,
+      costUsd,
+      latencyMs: Date.now() - startedAt,
+      error: 'unverified_ai_answer',
+    });
     throw new HttpError(
       422,
       'The model could not produce an answer that passed fact-sheet verification. No answer was shown.',
       'unverified_ai_answer',
     );
   }
+
+  await logAskInteraction({
+    orgId,
+    userId: session.userId,
+    landscapeId: landscape.id,
+    question: body.question,
+    answer,
+    factsFingerprint: body.factsFingerprint,
+    model,
+    outcome: repaired ? 'repaired' : 'verified',
+    verification: {
+      total: verification.stats.total,
+      unverified: verification.unverified.length,
+      miscited: verification.miscited.length,
+      violations: verification.violations.length,
+    },
+    inputTokens,
+    outputTokens,
+    costUsd,
+    latencyMs: Date.now() - startedAt,
+  });
+
+  await track({
+    orgId,
+    userId: session.userId,
+    surface: 'ask',
+    action: 'ask_question',
+    meta: {
+      landscapeId: landscape.id,
+      outcome: repaired ? 'repaired' : 'verified',
+      claims: verification.stats.total,
+    },
+  });
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {

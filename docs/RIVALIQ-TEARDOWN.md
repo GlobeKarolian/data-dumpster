@@ -92,6 +92,50 @@ Fourteen types, split by whether they describe one company or the whole set.
 The focus-company against landscape split runs through the entire product. It
 is the right primitive and worth copying exactly.
 
+## Report builder UX, verified live 16 August 2026
+
+Walked the builder end-to-end on Matt's account (chart-type picker → config →
+save → dashboard layout). Zero console errors. This section records how the
+builder *behaves*, which the widget catalogue above does not.
+
+**Chart-type picker.** Exactly the fourteen types above, grouped Charts /
+Social Content, then Focus Company / Landscape within each.
+
+**Config panel fields.** Type, Dimension, Filter, Source, Metric, Grouped By,
+Compare Against, Width, Title, Include Focus Company (Prepend/Append/None).
+Enumerated options:
+
+    Source          Cross-Channel, Facebook, Facebook Insights, Instagram,
+                    Instagram Insights, Twitter, Twitter Analytics, YouTube,
+                    LinkedIn Analytics, TikTok, Website
+    Grouped By      Auto, Day, Week, Month
+    Compare Against None, Competitor Average, Competitor Median,
+                    Landscape Average, Landscape Median
+    Metric          multi-metric ("Add a metric"), e.g. Audience
+    Width           Half / Full radio
+
+**Live preview: present and good.** Changing Grouped By Day→Week re-rendered
+the chart immediately (x-axis moved `08/17` → `08/16–08/22`) with no save.
+This is the one builder behaviour worth matching exactly; blocks must render
+from the real metrics layer as they are configured, not from placeholders.
+
+**Layout model: there is effectively none.** In dashboard edit mode,
+`draggable=true` appears on zero elements and no move/grab cursors exist.
+Widgets stack in creation order; the only layout lever is the Half/Full width
+chosen at creation. Edit mode exposes only dashboard-level Delete/Save. No
+drag-to-reorder, no resize, no per-widget reorder control.
+
+**Dashboards are not reports.** Sidebar "Reports" entries are just dashboards
+(`/dashboards/<id>`). There is no ordered, paginated document with a header,
+period and narrative that renders to a file. Scheduling is weekly-only and
+lives outside the builder.
+
+**Gaps this establishes as our floor-plus targets.** No layout control (we do
+a real grid), no narrative block (we do verified fact-sheet prose), dashboards
+and reports are siloed (we do one block registry rendered three ways), Compare
+Against is average/median only (we add targets and prior-period overlays), and
+scheduling is bolted on (we attach cadence to the document itself).
+
 ## Data policy, from their own documentation
 
     Twitter     last 3,200 posts        Facebook    up to 2,000

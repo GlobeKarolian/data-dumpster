@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { formatFullDate, formatRelative } from '@/components/ui/format';
 import { NoLandscape } from '@/components/common/no-landscape';
 import { NewReportButton } from '@/components/reports/new-report-button';
+import { NewCustomReportButton } from '@/components/reports/new-custom-report-button';
 import { DeleteReportButton } from '@/components/reports/delete-report-button';
 import { ScheduleManager } from '@/components/reports/schedule-manager';
 import { roleAtLeast } from '@/lib/roles';
@@ -28,6 +29,14 @@ type ReportRow = {
   landscape_name: string | null;
   manual_tables: number | string;
   narrative_sections: number | string;
+};
+
+type CustomReportRow = {
+  id: string;
+  name: string;
+  status: string;
+  updated_at: string;
+  block_count: number | string;
 };
 
 export default async function ReportsPage({
@@ -57,6 +66,18 @@ export default async function ReportsPage({
      LIMIT 60
   `);
 
+  const customReports = await query<CustomReportRow>(({ sql }) => sql`
+    SELECT d.id, d.name, d.status, d.updated_at,
+           CASE WHEN jsonb_typeof(d.blocks) = 'array'
+                THEN jsonb_array_length(d.blocks)
+                ELSE 0 END AS block_count
+      FROM report_documents d
+     WHERE d.org_id = ${ctx.orgId}::uuid
+       AND d.landscape_id = ${landscapeId}::uuid
+     ORDER BY d.updated_at DESC
+     LIMIT 40
+  `);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -77,6 +98,54 @@ export default async function ReportsPage({
           <NewReportButton landscapeId={ctx.landscape.id} />
         ) : null}
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="min-w-0">
+            <CardTitle>Custom reports</CardTitle>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              Block-based reports you assemble yourself — charts, tables and verified narrative, in
+              any order, rendered fresh each time. Build once, open or schedule later.
+            </p>
+          </div>
+          {roleAtLeast(ctx.role, 'editor') ? (
+            <NewCustomReportButton landscapeId={ctx.landscape.id} />
+          ) : null}
+        </CardHeader>
+        {customReports.error ? (
+          <p className="border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
+            {'Custom reports could not be listed: ' + customReports.error}
+          </p>
+        ) : customReports.data.length > 0 ? (
+          <ul className="divide-y divide-zinc-100 border-t border-zinc-100 dark:divide-zinc-800/60 dark:border-zinc-800">
+            {customReports.data.map((r) => (
+              <li key={r.id}>
+                <Link
+                  href={'/reports/builder/' + r.id + '?landscape=' + landscapeId}
+                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      {r.name}
+                    </p>
+                    <p className="pb-num mt-0.5 text-[11px] text-zinc-500">
+                      {(Number(r.block_count) || 0) + (Number(r.block_count) === 1 ? ' block' : ' blocks')
+                        + ' · edited ' + formatRelative(r.updated_at)}
+                    </p>
+                  </div>
+                  <Badge tone={r.status === 'published' ? 'positive' : 'neutral'}>
+                    {r.status === 'published' ? 'Published' : 'Draft'}
+                  </Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="border-t border-zinc-100 px-4 py-6 text-center text-xs text-zinc-400 dark:border-zinc-800">
+            No custom reports yet. Name one above and build it from blocks against a live preview.
+          </p>
+        )}
+      </Card>
 
       <ScheduleManager
         landscapeId={ctx.landscape.id}

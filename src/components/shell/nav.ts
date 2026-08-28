@@ -78,6 +78,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: '/settings/models', label: 'Models', icon: Cpu },
       { href: '/settings/sources', label: 'Social Profiles', icon: Radio },
       { href: '/settings/companies', label: 'Companies', icon: Building2 },
+      { href: '/settings/ask-analytics', label: 'Ask Analytics', icon: MessageSquare },
     ],
   },
 ];
@@ -102,4 +103,5 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/settings/models': 'Model Connections',
   '/settings/sources': 'Social Profiles',
   '/settings/companies': 'Companies and Social Profiles',
+  '/settings/ask-analytics': 'Ask (Alpha) Analytics',
 };

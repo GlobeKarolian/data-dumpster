@@ -44,18 +44,20 @@ test('requires durable bounds covering the entire requested window', () => {
     collectionCoverageSince: '2026-05-02T00:00:00Z',
   })).health, 'blocked');
   assert.equal(collectionStateOf(channel({ collectionOutcome: null })).health, 'blocked');
-  assert.equal(collectionStateOf(channel({ collectionOutcome: 'terminal_source_limitation' })).health, 'limited');
+  // A source-certification limit is not an error: recent data is usable, the
+  // history depth proof is capped. It reads complete, not a warning tier.
+  assert.equal(collectionStateOf(channel({ collectionOutcome: 'terminal_source_limitation' })).health, 'complete');
 });
 
-test('distinguishes source limitations, permanent failures, and retryable work', () => {
+test('a source limit reads complete; only genuine failures surface as blocked', () => {
   const limited = collectionStateOf(channel({
     collectionStatus: 'partial',
     collectionOutcome: 'terminal_source_limitation',
     collectionLastError: 'The source exposes a selected highlights feed, not a chronological timeline.',
   }));
-  assert.equal(limited.health, 'limited');
-  assert.equal(limited.label, 'Partial');
-  assert.equal(limited.cause?.key, 'source-limited');
+  assert.equal(limited.health, 'complete');
+  assert.equal(limited.label, 'Complete');
+  assert.equal(limited.cause, null);
 
   const permanent = collectionStateOf(channel({
     collectionStatus: 'failed',
@@ -159,7 +161,7 @@ test('groups vendor failures and counts active LinkedIn public profiles normally
   assert.equal(linkedin.label, 'Complete');
 });
 
-test('summarizes known source limits separately from operator failures', () => {
+test('source limits count as complete; only operator failures surface as blocked', () => {
   const company: CompanySources = {
     id: 'company-1',
     name: 'Example',
@@ -167,7 +169,7 @@ test('summarizes known source limits separately from operator failures', () => {
     channels: [
       channel({ id: 'complete' }),
       channel({
-        id: 'limited',
+        id: 'source-limited',
         collectionStatus: 'partial',
         collectionOutcome: 'terminal_source_limitation',
         collectionLastError: 'Only a selected feed is available.',
@@ -186,12 +188,11 @@ test('summarizes known source limits separately from operator failures', () => {
   };
 
   const summary = summarizeCollectionHealth([company]);
-  assert.equal(summary.complete, 1);
-  assert.equal(summary.limited, 1);
+  assert.equal(summary.complete, 2);
   assert.equal(summary.collecting, 1);
   assert.equal(summary.blocked, 1);
-  assert.equal(summary.limitedCauses[0]?.key, 'source-limited');
   assert.equal(summary.blockedCauses[0]?.key, 'permanent-failure');
+  assert.equal(summary.blockedCauses.length, 1);
 });
 
 test('normal settings UI cannot mutate or delete globally pooled profiles and companies', () => {

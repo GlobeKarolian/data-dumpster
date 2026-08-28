@@ -1016,3 +1016,106 @@ export const reportDeliveries = pgTable('report_deliveries', {
   uniqueIndex('report_deliveries_schedule_window_uq').on(t.scheduleId, t.scheduledFor),
   index('report_deliveries_org_time_idx').on(t.orgId, t.startedAt),
 ]);
+
+/* ------------------------------------------------------ Ask (Alpha) logging */
+
+/**
+ * Every Ask interaction, logged for backend improvement.
+ *
+ * The Ask feature is labelled Alpha and discloses that it will make mistakes;
+ * this table is how those mistakes get found and fixed rather than anecdotally
+ * reported. One row per question asked, carrying the question, the answer the
+ * model produced, the deterministic verification outcome, and the cost. The
+ * fact-sheet fingerprint ties the row to the exact evidence the answer was
+ * grounded in, so a bad answer can be replayed against the same sheet.
+ *
+ * Org-scoped, not pooled: a question reveals what a newsroom is watching.
+ */
+export const askInteractions = pgTable('ask_interactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  landscapeId: uuid('landscape_id').references(() => landscapes.id, { onDelete: 'set null' }),
+  question: text('question').notNull(),
+  answer: text('answer'),
+  /** The exact fact sheet the answer was verified against. */
+  factsFingerprint: text('facts_fingerprint'),
+  model: text('model'),
+  /** verified | repaired | rejected | error */
+  outcome: text('outcome').notNull(),
+  /** Counts from the verifier: total claims, unverified, miscited, violations. */
+  verification: jsonb('verification').$type<Record<string, number>>().notNull().default({}),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  costUsd: doublePrecision('cost_usd').notNull().default(0),
+  latencyMs: integer('latency_ms'),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('ask_interactions_org_time_idx').on(t.orgId, t.createdAt),
+  index('ask_interactions_outcome_idx').on(t.orgId, t.outcome, t.createdAt),
+  check(
+    'ask_interactions_outcome_ck',
+    sql`${t.outcome} IN ('verified', 'repaired', 'rejected', 'error')`,
+  ),
+]);
+
+/* ------------------------------------------------------ product analytics */
+
+/**
+ * First-party product-usage events.
+ *
+ * No third-party analytics script: the data this product handles (which
+ * companies a newsroom tracks) is itself competitive, so usage is recorded
+ * in our own tables and shown in an internal viewer. One row per meaningful
+ * action — page view, feature used, export run — tagged with the surface and
+ * an optional metadata bag. Org-scoped so usage can be read per tenant.
+ */
+export const analyticsEvents = pgTable('analytics_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** The surface: 'ask', 'dashboards', 'reports', 'election', 'content', ... */
+  surface: text('surface').notNull(),
+  /** The action: 'view', 'create', 'export', 'run', 'share', ... */
+  action: text('action').notNull(),
+  /** Optional context: report id, dashboard id, format, count, etc. */
+  meta: jsonb('meta').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('analytics_events_surface_time_idx').on(t.surface, t.createdAt),
+  index('analytics_events_org_time_idx').on(t.orgId, t.createdAt),
+]);
+
+/* ------------------------------------------------------ report documents */
+
+/**
+ * A report built from ordered blocks.
+ *
+ * The block registry (lib/blocks/definitions.ts) is the single vocabulary a
+ * dashboard widget, a report section and a scheduled export all render. A
+ * report document is an ordered list of those blocks plus a header (title,
+ * period, landscape) and optional narrative slots. Rendering a one-off report
+ * snapshots the blocks; attaching the document to a schedule makes it recur.
+ */
+export const reportDocuments = pgTable('report_documents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  landscapeId: uuid('landscape_id').references(() => landscapes.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull(),
+  /** Ordered BlockDefinition[]; shape validated by lib/blocks/definitions.ts. */
+  blocks: jsonb('blocks').$type<unknown[]>().notNull().default([]),
+  /** draft | published */
+  status: text('status').notNull().default('draft'),
+  /** Capability token for an explicitly published, read-only snapshot. */
+  shareToken: text('share_token'),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('report_documents_org_slug_uq').on(t.orgId, t.slug),
+  uniqueIndex('report_documents_share_uq').on(t.shareToken),
+  index('report_documents_org_idx').on(t.orgId, t.updatedAt),
+  check('report_documents_status_ck', sql`${t.status} IN ('draft', 'published')`),
+]);

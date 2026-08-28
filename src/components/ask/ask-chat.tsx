@@ -128,7 +128,22 @@ export function AskChat({
   };
 
   return (
-    <div className="flex gap-4">
+    <div className="flex flex-col gap-3">
+      <div
+        role="note"
+        className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40"
+      >
+        <span className="mt-0.5 inline-flex shrink-0 items-center rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+          Alpha test
+        </span>
+        <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+          This assistant is an early experiment and <strong>will make mistakes</strong>. Every
+          number it states is checked against the fact sheet before it appears, but treat the prose
+          with skepticism and verify anything you act on. We log every question and answer to
+          improve the system over time.
+        </p>
+      </div>
+      <div className="flex gap-4">
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-[24rem] flex-1 space-y-4">
           {turns.length === 0 ? (
@@ -252,6 +267,7 @@ export function AskChat({
           </div>
         ) : null}
       </aside>
+      </div>
     </div>
   );
 }
