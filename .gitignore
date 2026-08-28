@@ -44,3 +44,8 @@ next-env.d.ts
 .qa/
 .frames/
 .worktrees/
+
+# Local work artifacts (307MB of generated decks, exports, screenshots).
+# Kept off GitHub deliberately: they are outputs, not source.
+/outputs
+/.worktrees
