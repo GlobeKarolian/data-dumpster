@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Cross-Channel — Morning Briefing</title>
+<style>
+  :root{--bg:#fbfaf9;--card:#fff;--border:#e7e5e4;--fg:#1c1917;--muted:#78716c;--muted2:#a8a29e;--accent:#C8102E;--up:#15803d;--down:#b91c1c;--radius:4px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .topbar{position:sticky;top:0;background:rgba(251,250,249,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .topbar h1{font-size:14px;font-weight:600}
+  .sub{font-size:11px;color:var(--muted)}
+  .scope{margin-left:auto;display:flex;gap:6px}
+  .chip{font-size:11px;padding:3px 9px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--muted)}
+  .chip.strong{color:var(--fg);font-weight:500}
+  .wrap{max-width:760px;margin:0 auto;padding:26px 20px 80px}
+  .dateline{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted2);margin-bottom:8px}
+  .hed{font-size:24px;font-weight:600;letter-spacing:-.02em;line-height:1.25;margin-bottom:6px}
+  .dek{font-size:14px;color:var(--muted);margin-bottom:18px}
+  /* Briefing card */
+  .brief{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--fg);border-radius:var(--radius);padding:20px 22px;margin-bottom:14px}
+  .brief .tag{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .brief p{font-size:14px;line-height:1.65;margin-bottom:12px}
+  .brief p:last-of-type{margin-bottom:0}
+  .brief b{font-weight:600}
+  .verified{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);border-top:1px solid var(--border);margin-top:14px;padding-top:10px}
+  .check{color:var(--up);font-weight:600}
+  .figures{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
+  .fig .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .fig .l{font-size:11px;color:var(--muted)}
+  .fig .c{font-size:11px;font-variant-numeric:tabular-nums}
+  .up{color:var(--up)}.down{color:var(--down)}
+  .sec-h{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:26px 0 10px}
+  .sigrow{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border)}
+  .sigrow:last-child{border-bottom:0}
+  .sigrow .mk{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);width:86px;flex:0 0 auto;padding-top:2px}
+  .sigrow .mk.up{color:var(--up)} .sigrow .mk.down{color:var(--down)} .sigrow .mk.acc{color:var(--accent)}
+  .sigrow .bd{flex:1;font-size:13px;line-height:1.5}
+  .sigrow .bd .m{color:var(--muted);font-size:11px;margin-top:2px}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+  .panel h3{font-size:12px;font-weight:600;margin-bottom:2px}
+  .ph{font-size:11px;color:var(--muted);margin-bottom:8px}
+  .postrow{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #f5f5f4;font-size:13px}
+  .postrow:last-child{border-bottom:0}
+  .sq{width:40px;height:40px;border-radius:var(--radius);background:linear-gradient(135deg,#292524,#57534e);flex:0 0 auto}
+  .postrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .postrow .c{font-size:10px;color:var(--muted2)}
+  .ox{font-size:10px;font-weight:600;color:var(--accent);background:#fef2f2;border:1px solid #fecaca;padding:1px 6px;border-radius:99px;flex:0 0 auto}
+  .more{margin-top:10px}
+  a.link{color:var(--accent);font-size:12px;font-weight:500;text-decoration:none}
+  .foot{font-size:11px;color:var(--muted2);margin-top:28px;text-align:center}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div><h1>Cross-Channel</h1><div class="sub">Boston News Market</div></div>
+  <div class="scope"><span class="chip strong">22 companies</span><span class="chip">All platforms</span><span class="chip">Last 28 days</span><span class="chip">Export ▾</span></div>
+</header>
+<main class="wrap">
+
+  <div class="dateline">Tuesday, August 18, 2026 · window Jul 22 – Aug 18</div>
+  <div class="hed">The Globe is holding the market, but WBUR is closing</div>
+  <div class="dek">Engagement up 11% on the window; one breakout post did more work than the entire gap to first place.</div>
+
+  <!-- BRIEFING -->
+  <div class="brief">
+    <div class="tag">Morning briefing</div>
+    <p>The Boston Globe published <b>412 posts</b> across nine platforms in the last 28 days, earning <b>5,182 engagements</b> — up <b>11.2%</b> on the prior window. <b>WBUR</b> holds the market lead at <b>5,739</b>, a gap of <b>557</b> engagements.</p>
+    <p>That gap is smaller than a single post. The Globe's Bluesky story about a Cambridge cycling advocate earned <b>613 engagements</b>, <b>38×</b> the account's median and the strongest post in the market this window. GBH News is publishing <b>2.1×</b> more than the prior window while holding its engagement rate at <b>0.42%</b> — the best rate in the market. Boston.com and the Herald produced <b>127</b> and <b>48</b> engagements; both are below the sample floor and their ranks are not meaningful.</p>
+    <div class="verified"><span class="check">✓</span><span>9 of 9 figures traced to source · fact sheet stored with this summary</span></div>
+  </div>
+
+  <!-- FIGURES -->
+  <div class="figures">
+    <div class="fig"><div class="v">1.24M</div><div class="l">Audience</div><div class="c up">▲ 0.8%</div></div>
+    <div class="fig"><div class="v">412</div><div class="l">Posts</div><div class="c down">▼ 3.1%</div></div>
+    <div class="fig"><div class="v">5,182</div><div class="l">Engagement</div><div class="c up">▲ 11.2%</div></div>
+    <div class="fig"><div class="v">0.31%</div><div class="l">Eng rate</div><div class="c down">▼ mkt 0.38%</div></div>
+  </div>
+
+  <!-- SIGNALS -->
+  <div class="sec-h">What moved</div>
+  <div class="panel" style="padding:4px 16px">
+    <div class="sigrow"><div class="mk acc">Breakout</div><div class="bd">Globe cycling-advocate post hit 38× account median on Bluesky<div class="m">613 engagements · top 1% this quarter</div></div></div>
+    <div class="sigrow"><div class="mk down">Rank</div><div class="bd">WBUR passed the Globe on total engagement — gap is 557<div class="m">One post is bigger than the gap</div></div></div>
+    <div class="sigrow"><div class="mk up">Cadence</div><div class="bd">GBH publishing 2.1× more than prior window; rate holding at 0.42%<div class="m">Best engagement rate in the market</div></div></div>
+    <div class="sigrow"><div class="mk">Floor</div><div class="bd">Boston.com (127) and Herald (48) below sample floor<div class="m">Ranks 3–5 are noise this window</div></div></div>
+  </div>
+
+  <!-- CHART -->
+  <div class="sec-h">Engagement over time</div>
+  <div class="panel">
+    <svg viewBox="0 0 700 180" style="width:100%;height:180px">
+      <line x1="0" y1="150" x2="700" y2="150" stroke="#e7e5e4"/><line x1="0" y1="100" x2="700" y2="100" stroke="#f5f5f4"/><line x1="0" y1="50" x2="700" y2="50" stroke="#f5f5f4"/>
+      <polyline points="0,125 70,116 140,122 210,102 280,108 350,88 420,93 490,68 560,62 630,42 700,48" fill="none" stroke="#C8102E" stroke-width="2"/>
+      <polyline points="0,118 70,108 140,114 210,96 280,92 350,99 420,76 490,81 560,54 630,59 700,38" fill="none" stroke="#a8a29e" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <circle cx="630" cy="42" r="4" fill="#C8102E"/><text x="586" y="30" font-size="10" fill="#C8102E" font-weight="600">38× outlier</text>
+    </svg>
+  </div>
+
+  <!-- POSTS -->
+  <div class="sec-h">Top posts across the market</div>
+  <div class="panel" style="padding:4px 16px">
+    <div class="postrow"><div class="sq"></div><div style="min-width:0"><div class="t">"A Cambridge cycling advocate spent six years…"</div><div class="c">Boston Globe · Bluesky · 613 engagements</div></div><span class="ox">38×</span></div>
+    <div class="postrow"><div class="sq"></div><div style="min-width:0"><div class="t">"Inside the last typewriter repair shop in Boston…"</div><div class="c">WBUR · Instagram · 1,251 engagements</div></div><span class="ox">12×</span></div>
+    <div class="postrow"><div class="sq"></div><div style="min-width:0"><div class="t">"We asked Bostonians to pronounce these town names…"</div><div class="c">GBH · TikTok · 3,002 engagements</div></div><span class="ox">9×</span></div>
+  </div>
+  <div class="more"><a class="link" href="#">Read the full weekly brief →</a> &nbsp;·&nbsp; <a class="link" href="#">All posts →</a></div>
+
+  <div class="foot">Audience is latest snapshot · changePct suppressed on zero baseline · <a class="link" href="#">Open the analytics view →</a></div>
+</main>
+</body>
+</html>

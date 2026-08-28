@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Cross-Channel — Signals First</title>
+<style>
+  :root {
+    --bg:#fafafa; --card:#ffffff; --border:#e4e4e7; --border2:#d4d4d8;
+    --fg:#18181b; --muted:#71717a; --muted2:#a1a1aa;
+    --accent:#C8102E; --up:#15803d; --down:#b91c1c;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  .topbar{position:sticky;top:0;z:10;background:rgba(250,250,250,.9);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .topbar h1{font-size:14px;font-weight:600;letter-spacing:-.01em}
+  .topbar .sub{font-size:11px;color:var(--muted)}
+  .scope{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .chip{font-size:11px;padding:3px 9px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--muted)}
+  .chip.strong{color:var(--fg);border-color:var(--border2);font-weight:500}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 20px 60px}
+  .section{margin-top:18px}
+  .sec-h{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+  .sec-t{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .sec-d{font-size:11px;color:var(--muted2)}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 13px}
+  .sig{border-left:3px solid var(--accent);display:flex;flex-direction:column;gap:5px;min-height:96px}
+  .sig .k{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .sig .v{font-size:13px;font-weight:500;line-height:1.35}
+  .sig .m{font-size:11px;color:var(--muted)}
+  .sig.up{border-left-color:var(--up)} .sig.up .k{color:var(--up)}
+  .sig.down{border-left-color:var(--down)} .sig.down .k{color:var(--down)}
+  .sig.neutral{border-left-color:#a1a1aa} .sig.neutral .k{color:var(--muted)}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .metric .lab{font-size:11px;color:var(--muted)}
+  .metric .val{font-size:24px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:2px 0}
+  .metric .chg{font-size:11px;font-variant-numeric:tabular-nums}
+  .up-t{color:var(--up)} .down-t{color:var(--down)} .flat-t{color:var(--muted2)}
+  .spark{height:28px;width:100%;margin-top:6px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 13px}
+  .panel h3{font-size:12px;font-weight:600;margin-bottom:2px}
+  .panel .ph{font-size:11px;color:var(--muted);margin-bottom:10px}
+  .bars{display:flex;flex-direction:column;gap:7px}
+  .brow{display:grid;grid-template-columns:130px 1fr 52px;gap:8px;align-items:center;font-size:12px}
+  .brow .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg)}
+  .brow.focus .name{font-weight:600}
+  .track{height:8px;background:#f4f4f5;border-radius:99px;position:relative;overflow:hidden}
+  .fill{height:100%;border-radius:99px;background:#d4d4d8}
+  .focus .fill{background:var(--accent)}
+  .num{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .focus .num{color:var(--fg);font-weight:600}
+  .posts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .post{display:flex;flex-direction:column;gap:6px}
+  .thumb{aspect-ratio:16/9;background:linear-gradient(135deg,#27272a,#3f3f46);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#a1a1aa;font-size:11px}
+  .post .co{font-size:11px;font-weight:600}
+  .post .tx{font-size:11px;color:var(--muted);line-height:1.4}
+  .score{margin-left:auto;font-size:10px;font-weight:600;color:var(--accent);background:#fef2f2;border:1px solid #fecaca;padding:1px 6px;border-radius:99px}
+  .rowline{display:flex;align-items:center;gap:8px}
+  .footer-note{font-size:11px;color:var(--muted2);margin-top:24px;text-align:center}
+  a.link{color:var(--accent);font-size:11px;font-weight:500;text-decoration:none}
+  .more{margin-top:8px;text-align:right}
+  @media (max-width:900px){.cards,.metrics{grid-template-columns:repeat(2,1fr)}.split,.posts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>Cross-Channel</h1>
+    <div class="sub">Boston News Market</div>
+  </div>
+  <div class="scope">
+    <span class="chip strong">22 companies</span>
+    <span class="chip">All platforms</span>
+    <span class="chip">Last 28 days</span>
+    <span class="chip" style="cursor:pointer" onclick="alert('Export menu')">Export ▾</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- SIGNALS -->
+  <section class="section" id="signals">
+    <div class="sec-h">
+      <div class="sec-t">What moved this week</div>
+      <div class="sec-d">Auto-generated from the same fact sheet as the weekly brief</div>
+    </div>
+    <div class="cards">
+      <div class="card sig up">
+        <div class="k">Breakout</div>
+        <div class="v">Globe cycling-advocate post hit <b>38×</b> account median on Bluesky</div>
+        <div class="m">613 engagements · top 1% this quarter</div>
+      </div>
+      <div class="card sig down">
+        <div class="k">Rank change</div>
+        <div class="v">WBUR passed the Globe on total engagement — gap is 557</div>
+        <div class="m">One post is bigger than the gap</div>
+      </div>
+      <div class="card sig neutral">
+        <div class="k">Quiet</div>
+        <div class="v">Boston.com &amp; Herald below sample floor — ranks 3–5 are noise this window</div>
+        <div class="m">127 and 48 engagements respectively</div>
+      </div>
+      <div class="card sig up">
+        <div class="k">Cadence</div>
+        <div class="v">GBH publishing 2.1× more than window before; rate holding</div>
+        <div class="m">Engagement/follower steady at 0.42%</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AT A GLANCE -->
+  <section class="section">
+    <div class="sec-h"><div class="sec-t">The Globe at a glance</div><div class="sec-d">vs prior 28 days</div></div>
+    <div class="metrics">
+      <div class="card metric"><div class="lab">Audience</div><div class="val">1.24M</div><div class="chg up-t">▲ 0.8%</div><svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="0,20 12,19 24,21 36,18 48,17 60,16 72,15 84,13 100,12" fill="none" stroke="#15803d" stroke-width="1.5"/></svg></div>
+      <div class="card metric"><div class="lab">Posts</div><div class="val">412</div><div class="chg flat-t">▼ 3.1%</div><svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="0,12 12,13 24,12 36,14 48,15 60,14 72,16 84,17 100,18" fill="none" stroke="#a1a1aa" stroke-width="1.5"/></svg></div>
+      <div class="card metric"><div class="lab">Engagement</div><div class="val">5,182</div><div class="chg up-t">▲ 11.2%</div><svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="0,22 12,20 24,21 36,18 48,19 60,15 72,14 84,10 100,8" fill="none" stroke="#15803d" stroke-width="1.5"/></svg></div>
+      <div class="card metric"><div class="lab">Engagement rate</div><div class="val">0.31%</div><div class="chg down-t">▼ vs market avg 0.38%</div><svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="0,14 12,15 24,14 36,16 48,15 60,17 72,16 84,18 100,17" fill="none" stroke="#b91c1c" stroke-width="1.5"/></svg></div>
+    </div>
+  </section>
+
+  <!-- BENCHMARK + MIX -->
+  <section class="section">
+    <div class="split">
+      <div class="panel">
+        <h3>Engagement vs the market</h3>
+        <div class="ph">Total engagement, 28 days · dashed = peer average excluding Globe</div>
+        <div class="bars">
+          <div class="brow"><span class="name">WBUR</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="num">5,739</span></div>
+          <div class="brow focus"><span class="name">Boston Globe</span><div class="track"><div class="fill" style="width:90%"></div></div><span class="num">5,182</span></div>
+          <div class="brow"><span class="name">GBH News</span><div class="track"><div class="fill" style="width:18%"></div></div><span class="num">1,054</span></div>
+          <div class="brow"><span class="name">Boston.com <span class="score" style="color:#a1a1aa;background:#f4f4f5;border-color:#e4e4e7">floor</span></span><div class="track"><div class="fill" style="width:2%"></div></div><span class="num">127</span></div>
+          <div class="brow"><span class="name">Boston Herald <span class="score" style="color:#a1a1aa;background:#f4f4f5;border-color:#e4e4e7">floor</span></span><div class="track"><div class="fill" style="width:1%"></div></div><span class="num">48</span></div>
+        </div>
+        <div class="more"><a class="link" href="#" onclick="alert('Full leaderboard');return false">Full market view →</a></div>
+      </div>
+      <div class="panel">
+        <h3>Engagement over time</h3>
+        <div class="ph">Daily total · click legend to drop a company</div>
+        <svg viewBox="0 0 400 180" style="width:100%;height:180px">
+          <line x1="0" y1="150" x2="400" y2="150" stroke="#e4e4e7"/><line x1="0" y1="100" x2="400" y2="100" stroke="#f4f4f5"/><line x1="0" y1="50" x2="400" y2="50" stroke="#f4f4f5"/>
+          <polyline points="0,120 40,110 80,115 120,95 160,100 200,80 240,85 280,60 320,55 360,40 400,45" fill="none" stroke="#C8102E" stroke-width="2"/>
+          <polyline points="0,110 40,100 80,105 120,90 160,85 200,90 240,70 280,75 320,50 360,55 400,35" fill="none" stroke="#71717a" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <circle cx="360" cy="40" r="4" fill="#C8102E"/><text x="330" y="28" font-size="10" fill="#C8102E" font-weight="600">outlier 38×</text>
+          <text x="4" y="146" font-size="9" fill="#a1a1aa">Jul 22</text><text x="372" y="146" font-size="9" fill="#a1a1aa">Aug 18</text>
+        </svg>
+        <div class="rowline" style="margin-top:6px;font-size:11px;color:var(--muted)"><span style="color:var(--accent)">●</span> Globe <span style="color:#71717a">◌</span> WBUR <span style="color:#a1a1aa">+3 more</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TOP POSTS -->
+  <section class="section">
+    <div class="sec-h"><div class="sec-t">Top posts across the market</div><div class="sec-d">Scored against each account's own median</div></div>
+    <div class="posts">
+      <div class="card post"><div class="thumb">Bluesky · image</div><div class="rowline"><span class="co">Boston Globe</span><span class="score">38×</span></div><div class="tx">"A Cambridge cycling advocate spent six years fighting for one protected lane…"</div><div class="rowline" style="font-size:11px;color:var(--muted)"><span>♥ 412</span><span>💬 96</span><span>↻ 105</span></div></div>
+      <div class="card post"><div class="thumb">Instagram · reel</div><div class="rowline"><span class="co">WBUR</span><span class="score">12×</span></div><div class="tx">"Inside the last typewriter repair shop in Boston — 54 years and counting…"</div><div class="rowline" style="font-size:11px;color:var(--muted)"><span>♥ 890</span><span>💬 141</span><span>↻ 220</span></div></div>
+      <div class="card post"><div class="thumb">TikTok · video</div><div class="rowline"><span class="co">GBH News</span><span class="score">9×</span></div><div class="tx">"We asked Bostonians to pronounce these Massachusetts town names…"</div><div class="rowline" style="font-size:11px;color:var(--muted)"><span>♥ 2.1k</span><span>💬 388</span><span>↻ 504</span></div></div>
+    </div>
+    <div class="more"><a class="link" href="#" onclick="alert('Social Posts explorer');return false">All posts →</a></div>
+  </section>
+
+  <div class="footer-note">Window: Jul 22 – Aug 18, 2026 · Audience is latest snapshot · changePct suppressed on zero baseline</div>
+</main>
+</body>
+</html>
