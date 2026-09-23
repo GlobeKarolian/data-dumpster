@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { processRefreshJobWave } from './refresh-jobs';
+import { runWavesWithinBudget } from './refresh-wave-loop';
 
 function trustedAppOrigin(): string {
   // A developer may keep production APP_URL in .env.local for links. Never let
@@ -50,11 +51,13 @@ export async function dispatchRefreshJob(jobId: string): Promise<void> {
 }
 
 /**
- * Run one wave after the caller's response, then wake a fresh invocation.
- * Each wave therefore gets its own function-duration budget.
+ * Run waves after the caller's response until this invocation's time budget
+ * is spent, then wake one fresh invocation for whatever remains. Chaining a
+ * new request per wave hit Vercel's recursion protection (HTTP 508) on large
+ * refreshes; see refresh-wave-loop.ts.
  */
 export async function runRefreshJobAndContinue(jobId: string): Promise<void> {
-  const result = await processRefreshJobWave(jobId);
+  const result = await runWavesWithinBudget(() => processRefreshJobWave(jobId));
   if (!result.dispatchNext) return;
   try {
     await dispatchRefreshJob(jobId);
