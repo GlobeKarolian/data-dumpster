@@ -64,7 +64,16 @@ export default async function SourcesPage({
            ch.handle,
            ch.profile_url,
            ch.active,
-           ch.last_ingested_at,
+           -- Pooled collection records its last write per source in
+           -- public_channel_source_state; the channel column is only the
+           -- legacy path. Reading the channel column alone showed "Last
+           -- collected: never" beside shared profiles with hundreds of posts.
+           GREATEST(
+             ch.last_ingested_at,
+             (SELECT max(pss.last_ingested_at)
+                FROM public_channel_source_state pss
+               WHERE pss.channel_id = ch.id)
+           ) AS last_ingested_at,
            run.status AS last_run_status,
            run.error  AS last_run_error,
            CASE

@@ -28,7 +28,7 @@ export type AdapterSupportedPlatform = (typeof ADAPTER_SUPPORTED_PLATFORMS)[numb
  * without importing adapters, vendor clients, or deployment configuration.
  */
 export const POOLED_SOURCE_DISCLOSURE = {
-  vendors: 'Bright Data is the primary purchased public source for Facebook, Instagram, TikTok, X, Threads and LinkedIn. Truth Social uses the approved Apify actor. YouTube and Bluesky keep their sanctioned public interfaces; Reddit keeps its existing publisher-account source until a like-for-like Bright Data feed is verified.',
+  vendors: 'Bright Data is the primary purchased public source for Facebook, Instagram, TikTok, Threads and LinkedIn. X is collected through the official X API. Truth Social uses the approved Apify actor. YouTube and Bluesky keep their sanctioned public interfaces; Reddit keeps its existing publisher-account source until a like-for-like Bright Data feed is verified.',
   facebook: 'Existing Facebook profiles use Bright Data only. New Facebook profile onboarding remains unavailable while verification would purchase the same crawl twice.',
   meta: 'Meta / PPCA is not connected to pooled collection. Meta verification does not activate it in Settings or change the source route.',
 } as const;
