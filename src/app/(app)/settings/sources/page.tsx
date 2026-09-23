@@ -68,11 +68,20 @@ export default async function SourcesPage({
            -- public_channel_source_state; the channel column is only the
            -- legacy path. Reading the channel column alone showed "Last
            -- collected: never" beside shared profiles with hundreds of posts.
+           -- Both of those only advance when a full history window is
+           -- certified, which a profile with partial history may never reach,
+           -- so Bright Data rows read "Collected Jul 29" on pages collected
+           -- today. The newest successful or partial run is the honest
+           -- "last collected" for the operator.
            GREATEST(
              ch.last_ingested_at,
              (SELECT max(pss.last_ingested_at)
                 FROM public_channel_source_state pss
-               WHERE pss.channel_id = ch.id)
+               WHERE pss.channel_id = ch.id),
+             (SELECT max(r2.finished_at)
+                FROM ingestion_runs r2
+               WHERE r2.channel_id = ch.id
+                 AND r2.status IN ('succeeded', 'partial'))
            ) AS last_ingested_at,
            run.status AS last_run_status,
            run.error  AS last_run_error,
