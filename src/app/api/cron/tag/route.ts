@@ -17,11 +17,22 @@ import { orgsWithAiTags, runTaggingTick, type TagTickResult } from '@/lib/taggin
 import { runCurationPass, type CurationPassResult } from '@/lib/tagging/curation';
 import { runNarrativeTick, type NarrativeTickResult } from '@/lib/tagging/narrative-jobs';
 import { runGroupTaggingTick, type GroupTagTickResult } from '@/lib/tagging/group-queue';
+import { runWavesWithinBudget } from '@/lib/adapters/refresh-wave-loop';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 /** One completion per org, sequential; four orgs of 20 posts fit comfortably. */
 export const maxDuration = 300;
+
+/**
+ * Brand-post tagging keeps claiming batches until this much of the tick has
+ * elapsed. One 20-post completion per company group per ten-minute tick read
+ * about 140 posts an hour against a backlog of 368k (23 Sep 2026), so the
+ * newest posts took days to tag after a large collection. Stopping at 170s
+ * leaves room for group tagging, curation and narratives inside the 300s
+ * limit; the daily USD ceiling still bounds spend exactly as before.
+ */
+const BRAND_TAGGING_BUDGET_MS = 170_000;
 
 async function handle(req: NextRequest): Promise<Response> {
   assertCronAuthorized(req);
@@ -30,9 +41,14 @@ async function handle(req: NextRequest): Promise<Response> {
   const curation: CurationPassResult[] = [];
   const narratives: NarrativeTickResult[] = [];
   const groups: GroupTagTickResult[] = [];
+  const startedAt = Date.now();
   for (const orgId of orgIds) {
     try {
-      results.push(await runTaggingTick(orgId));
+      await runWavesWithinBudget(async () => {
+        const tick = await runTaggingTick(orgId);
+        results.push(tick);
+        return { dispatchNext: tick.claimed > 0 && !tick.budgetExhausted && !tick.skipped };
+      }, { budgetMs: Math.max(0, BRAND_TAGGING_BUDGET_MS - (Date.now() - startedAt)) });
     } catch (error) {
       // One org's broken model connection must not starve the others.
       console.error('[data-dumpster:cron/tag] org tick failed', {
