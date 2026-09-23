@@ -479,6 +479,25 @@ export function pooledFetchCursor(cursor: Record<string, unknown>): Record<strin
  * this ever disagrees with the adapter's own order, the continuity guard will
  * discard every response from the mismatched source.
  */
+/**
+ * Whether a run planned on another source must first honor a pending Bright
+ * Data receipt for the same channel, so an already-paid snapshot is resumed
+ * rather than hidden behind a different vendor's cursor.
+ *
+ * X on the official API is the exception (23 Sep 2026). X reads go through
+ * the API alone when a Bearer is configured, so an old receipt must not turn
+ * the run into a Bright Data attempt: doing so made the API's response fail
+ * the source-continuity check and every paid read was fetched, then discarded.
+ */
+export function inheritsBrightDataReceipt(
+  platform: Platform,
+  plannedSourceKey: PublicSourceKey,
+): boolean {
+  if (plannedSourceKey === 'brightdata') return false;
+  if (platform === 'twitter') return plannedSourceKey !== 'x-api-v2';
+  return platform === 'instagram' || platform === 'threads' || platform === 'tiktok';
+}
+
 export function selectedPublicSourceKey(
   platform: Platform,
   credentials: Record<string, string>,
@@ -1608,15 +1627,7 @@ export async function runChannelIngest(
   let sourceState: PublicSourceCursorState;
   try {
     sourceState = await loadPublicSourceCursorState(channel, plannedSourceKey);
-    if (
-      plannedSourceKey !== 'brightdata'
-      && (
-        channel.platform === 'instagram'
-        || channel.platform === 'threads'
-        || channel.platform === 'tiktok'
-        || channel.platform === 'twitter'
-      )
-    ) {
+    if (inheritsBrightDataReceipt(channel.platform, plannedSourceKey)) {
       const brightDataState = await loadPublicSourceCursorState(channel, 'brightdata');
       const attemptState = publicSourceCursorStateForAttempt(sourceState, brightDataState);
       if (attemptState.sourceKey === 'brightdata') {

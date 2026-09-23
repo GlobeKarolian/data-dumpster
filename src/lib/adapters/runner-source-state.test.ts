@@ -6,8 +6,7 @@ import {
   publicSourceCursorStateForAttempt,
   publicSourceResponseMatchesAttempt,
   reconcilePublicSourceCursorState,
-  selectedPublicSourceKey,
-} from './runner';
+  selectedPublicSourceKey, inheritsBrightDataReceipt } from './runner';
 
 describe('public source-specific runner state', () => {
   it('selects the same deterministic public source as the adapter policy', () => {
@@ -182,5 +181,23 @@ describe('public source-specific runner state', () => {
       ...legacyReceipt,
       lastIngestedAt: stored.lastIngestedAt,
     });
+  });
+});
+
+describe('inheritsBrightDataReceipt', () => {
+  it('never pins an X API run to a Bright Data receipt', () => {
+    assert.equal(inheritsBrightDataReceipt('twitter', 'x-api-v2'), false);
+  });
+
+  it('still protects paid receipts on the platforms without an official route', () => {
+    assert.equal(inheritsBrightDataReceipt('twitter', 'ensembledata'), true);
+    assert.equal(inheritsBrightDataReceipt('instagram', 'ensembledata'), true);
+    assert.equal(inheritsBrightDataReceipt('threads', 'ensembledata'), true);
+    assert.equal(inheritsBrightDataReceipt('tiktok', 'ensembledata'), true);
+  });
+
+  it('is a no-op when Bright Data is itself the planned source', () => {
+    assert.equal(inheritsBrightDataReceipt('instagram', 'brightdata'), false);
+    assert.equal(inheritsBrightDataReceipt('twitter', 'brightdata'), false);
   });
 });
