@@ -215,19 +215,27 @@ describe('X source routing and failover', { concurrency: false }, () => {
     // app-only auth (verified live 17 Aug 2026), so the Bearer serves pooled
     // collection with the same public basis as a vendor key. Only the API can
     // certify a chronological window; the vendors are the degradation path.
+    // With a Bearer, the official API is the only X source (23 Sep 2026).
     assert.deepEqual(twitterSourceOrder({
       owned: true,
       hasBearer: true,
       hasEnsemble: true,
       hasBrightData: true,
-    }), ['x-api-v2', 'brightdata']);
+    }), ['x-api-v2']);
 
     assert.deepEqual(twitterSourceOrder({
       owned: false,
       hasBearer: true,
       hasEnsemble: true,
       hasBrightData: true,
-    }), ['x-api-v2', 'brightdata']);
+    }), ['x-api-v2']);
+
+    assert.deepEqual(twitterSourceOrder({
+      owned: false,
+      hasBearer: false,
+      hasEnsemble: true,
+      hasBrightData: true,
+    }), ['brightdata']);
 
     assert.deepEqual(twitterSourceOrder({
       owned: false,
@@ -293,6 +301,64 @@ describe('X source routing and failover', { concurrency: false }, () => {
     });
     assert.ok(hosts.every((h) => h === 'api.x.com'),
       'no vendor host may be contacted when the API succeeds: ' + hosts.join(','));
+  });
+
+  it('routes a channel pinned by a stale Bright Data receipt to the X API and clears the receipt', async () => {
+    // Production, 23 Sep 2026: every X channel held a stale Bright Data
+    // snapshot whose automatic recovery had ended. The receipt forced
+    // Bright Data only, the account was suspended, and the funded X API was
+    // never called. With a Bearer, the receipt must not route anything.
+    const hosts: string[] = [];
+    await withMockFetch(async (input) => {
+      const url = urlOf(input);
+      hosts.push(new URL(url).hostname);
+      if (url.includes('/2/users/by/username/')) {
+        return json({ data: {
+          id: '95431448', name: 'The Boston Globe', username: 'BostonGlobe',
+          public_metrics: { followers_count: 771903 },
+        } });
+      }
+      if (url.includes('/2/users/95431448/tweets')) {
+        return json({ data: [], meta: { result_count: 0 } });
+      }
+      throw new Error('Unexpected source: ' + url);
+    }, async () => {
+      const result = await twitterAdapter.fetch(context({
+        cursor: {
+          __isOwned: false,
+          source: 'brightdata',
+          brightDataStage: 'twitter-posts',
+          pendingSnapshotId: 'sd_stale_receipt',
+          pendingSince: '2026-09-16T12:00:00.000Z',
+          brightDataReplacementAttempts: 1,
+        },
+        credentials: { bearerToken: 'bearer', brightDataApiKey: 'bright' },
+      }));
+      assert.equal(result.audience[0]?.followers, 771903);
+      assert.equal(result.cursor?.pendingSnapshotId, null,
+        'the stale receipt must be cleared so the channel is no longer pinned');
+      assert.equal(result.cursor?.brightDataStage, null);
+    });
+    assert.ok(hosts.length > 0 && hosts.every((h) => h === 'api.x.com'),
+      'Bright Data must not be contacted: ' + hosts.join(','));
+  });
+
+  it('does not fall back to Bright Data when the X API fails', async () => {
+    const hosts: string[] = [];
+    await withMockFetch(async (input) => {
+      const url = urlOf(input);
+      hosts.push(new URL(url).hostname);
+      return new Response(JSON.stringify({ title: 'Service Unavailable' }), {
+        status: 503, headers: { 'content-type': 'application/json' },
+      });
+    }, async () => {
+      await assert.rejects(twitterAdapter.fetch(context({
+        cursor: { __isOwned: false },
+        credentials: { bearerToken: 'bearer', brightDataApiKey: 'bright' },
+      })));
+    });
+    assert.ok(hosts.every((h) => h === 'api.x.com'),
+      'a failed API read must not buy the same read from Bright Data: ' + hosts.join(','));
   });
 
   it('uses EnsembleData for public collection when Bright Data is absent', async () => {

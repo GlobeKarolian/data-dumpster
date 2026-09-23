@@ -36,6 +36,7 @@ import { PlatformIcon } from '@/components/ui/platform-icon';
 import { useUrlState } from '@/components/common/use-url-state';
 import { AddChannelForm } from '@/components/settings/sources-manager';
 import { LandscapeImportDialog } from '@/components/settings/landscape-import-dialog';
+import { companyInitials } from '@/lib/company-initials';
 
 export interface CompanyProfileRecord {
   id: string;
@@ -431,7 +432,10 @@ function MembersTable({
   onRemove: (companyId: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto [scrollbar-width:thin]">
+    // `relative` makes the scroller the containing block for the absolutely
+    // positioned sr-only header labels. Without it the hidden "Actions" label
+    // escaped the scroller and widened the whole page by the table overflow.
+    <div className="relative overflow-x-auto [scrollbar-width:thin]">
       <table className="w-full min-w-[56rem] border-collapse text-left">
         <thead>
           <tr className="border-b border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -460,7 +464,7 @@ function MembersTable({
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm"
                     style={{ backgroundColor: company.color ?? '#71717a' }}
                   >
-                    {company.name.slice(0, 2).toUpperCase()}
+                    {companyInitials(company.name)}
                   </span>
                   <span className="min-w-0">
                     <span className="flex min-w-0 items-center gap-2">
@@ -774,7 +778,7 @@ function ProfilesDialogBody({
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
               style={{ backgroundColor: company.color ?? '#71717a' }}
             >
-              {company.name.slice(0, 2).toUpperCase()}
+              {companyInitials(company.name)}
             </span>
             <div className="min-w-0 flex-1">
               <h2 id="company-profiles-title" className="text-base font-semibold text-zinc-950 dark:text-zinc-50">

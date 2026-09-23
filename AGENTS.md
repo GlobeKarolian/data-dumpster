@@ -89,8 +89,10 @@ Before using it, apply the schema change and configure the delivery variables in
   `/twitter/user/tweets` returns a Twitter-selected Highlights feed rather than
   a chronological timeline. Neither path currently certifies full post-window
   coverage.
-- Recurring collection is active: pooled ingest runs every three hours and two
-  same-day coverage sweeps protect audience snapshots before Eastern midnight.
+- Recurring collection is active: scheduled collection windows open twice daily
+  (00:00 and 12:00 UTC in vercel.json), recovery passes run every ten minutes,
+  and two same-day coverage sweeps protect audience snapshots before Eastern
+  midnight.
 - Audience history begins on July 28. Earlier follower stocks cannot be
   reconstructed, so mid-July net-change reads remain blank. Not a bug.
 - `GBH News` has 380 posts belonging to no landscape. Needs a product decision, not a code fix.

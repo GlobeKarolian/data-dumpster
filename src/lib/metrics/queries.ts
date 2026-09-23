@@ -1643,6 +1643,7 @@ type PostRow = {
   text: string | null;
   permalink: string | null;
   thumbnail_url: string | null;
+  has_archived_thumbnail: boolean | null;
   applause: string | number | null;
   conversation: string | number | null;
   amplification: string | number | null;
@@ -1768,7 +1769,8 @@ async function loadPosts(
       SELECT p.id, p.company_id, p.channel_id, p.platform, p.type, p.posted_at, p.text,
              p.permalink, p.thumbnail_url, p.applause, p.conversation,
              p.amplification, p.saves, p.views, p.engagement_total,
-             p.engagement_rate_by_follower, p.followers_at_post
+             p.engagement_rate_by_follower, p.followers_at_post,
+             (p.archived_thumbnail_url IS NOT NULL) AS has_archived_thumbnail
         FROM posts p
        WHERE ${postWhere(scope, range, f)}
     ),
@@ -1793,6 +1795,7 @@ async function loadPosts(
            f.text,
            f.permalink,
            f.thumbnail_url,
+           f.has_archived_thumbnail,
            f.applause,
            f.conversation,
            f.amplification,
@@ -1848,6 +1851,7 @@ async function loadPosts(
       text: r.text,
       permalink: r.permalink,
       thumbnailUrl: r.thumbnail_url,
+      hasArchivedThumbnail: r.has_archived_thumbnail === true,
       applause: num(r.applause),
       conversation: num(r.conversation),
       amplification: num(r.amplification),

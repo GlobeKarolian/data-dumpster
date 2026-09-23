@@ -21,10 +21,7 @@ import {
   RateGate,
 } from './rate-gate';
 import { TokenFencedLeaseHeartbeat } from './lease-heartbeat';
-import {
-  AUTOMATIC_REFRESH_INTERVAL_MS,
-  automaticRefreshWindowStart,
-} from './automatic-refresh';
+import { automaticRefreshWindowStart } from './automatic-refresh';
 import { readControl } from '@/lib/controls';
 
 const DEFAULT_HISTORY_DAYS = 90;

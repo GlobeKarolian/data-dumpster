@@ -90,7 +90,10 @@ export function ReportPresentation({
             />
             {hasVisualBrandMetrics ? (
               <PortfolioCharts computed={doc.computed} />
-            ) : (
+            ) : isSharedReport ? null : (
+              // Edit instructions are for colleagues inside the tool. A share
+              // link recipient cannot edit or recompute, so they get the
+              // report as it stands without a to-do addressed to someone else.
               <aside className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
                 This saved report predates the visual brand scorecards. An editor can switch to Edit report and recompute it to add the new charts.
               </aside>

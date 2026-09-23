@@ -72,19 +72,30 @@ async function loadSections(landscapeId: string): Promise<SectionRow[]> {
   return rows;
 }
 
-async function loadPulse(landscapeId: string): Promise<PulseRow> {
+/**
+ * The pulse tiles read the exact window the story cloud was computed over.
+ *
+ * The cloud is cached for fifteen minutes, so a pulse on a live `now()`
+ * window described a different 24 hours than the panel beneath it: the Posts
+ * tile and "from N posts" disagreed whenever a post aged out or arrived
+ * inside the cache lifetime. Both now describe one snapshot, with the same
+ * inclusive bounds getStoryCloud applies.
+ */
+async function loadPulse(landscapeId: string, range: { start: string; end: string }): Promise<PulseRow> {
   const { rows } = await db.execute<PulseRow>(sql`
     WITH member_posts AS (
       SELECT p.id, p.engagement_total, p.company_id
         FROM posts p
         JOIN landscape_companies lc ON lc.company_id = p.company_id
        WHERE lc.landscape_id = ${landscapeId}::uuid
-         AND p.posted_at > now() - make_interval(hours => ${WINDOW_HOURS})
+         AND p.posted_at >= ${range.start}::timestamptz
+         AND p.posted_at <= ${range.end}::timestamptz
     )
     SELECT (SELECT count(*) FROM member_posts) AS posts_24h,
            (SELECT coalesce(sum(engagement_total), 0) FROM member_posts) AS engagement_24h,
            (SELECT count(*) FROM post_comments pc
-             WHERE pc.collected_at > now() - make_interval(hours => ${WINDOW_HOURS})
+             WHERE pc.collected_at >= ${range.start}::timestamptz
+               AND pc.collected_at <= ${range.end}::timestamptz
                AND pc.post_id IN (
                  SELECT p2.id FROM posts p2
                    JOIN landscape_companies lc2 ON lc2.company_id = p2.company_id
@@ -96,6 +107,24 @@ async function loadPulse(landscapeId: string): Promise<PulseRow> {
              AS loudest_company`);
   return rows[0];
 }
+
+/** The trailing 24 hours ending now. Called only inside the cached loader. */
+function trailingWindow(): { start: Date; end: Date } {
+  const end = new Date();
+  return { start: new Date(end.getTime() - WINDOW_HOURS * 3_600_000), end };
+}
+
+/**
+ * Clustering a national-scale day takes tens of seconds; a glanceable page
+ * cannot. Cache per landscape (the argument is part of the key) for fifteen
+ * minutes. The returned range is the window the pulse tiles then read, so the
+ * whole top of the page describes one snapshot.
+ */
+const cachedCloud = unstable_cache(
+  async (landscapeId: string) => getStoryCloud({ landscapeId, ...trailingWindow() }),
+  ['today-story-cloud'],
+  { revalidate: 900 },
+);
 
 function PlatformDot({ platform }: { platform: string }) {
   return (
@@ -122,25 +151,11 @@ export default async function TodayPage({ searchParams }: {
     );
   }
 
-  const end = new Date();
-  const start = new Date(end.getTime() - WINDOW_HOURS * 3_600_000);
-  // Clustering a national-scale day takes tens of seconds; a glanceable page
-  // cannot. Cache per landscape for fifteen minutes -- the digest and the
-  // pulse stay live, and stories move slower than that anyway.
-  const cachedCloud = unstable_cache(
-    async (landscapeId: string) => getStoryCloud({
-      landscapeId,
-      start: new Date(Date.now() - WINDOW_HOURS * 3_600_000),
-      end: new Date(),
-    }),
-    ['today-story-cloud'],
-    { revalidate: 900 },
-  );
-  const [digest, cloud, sections, pulse] = await Promise.all([
+  const cloud = await cachedCloud(ctx.landscape.id);
+  const [digest, sections, pulse] = await Promise.all([
     loadDigest(),
-    cachedCloud(ctx.landscape.id),
     loadSections(ctx.landscape.id),
-    loadPulse(ctx.landscape.id),
+    loadPulse(ctx.landscape.id, cloud.range),
   ]);
   const stories = [...cloud.clusters]
     .sort((a, b) => b.totalEngagement - a.totalEngagement)
@@ -171,9 +186,14 @@ export default async function TodayPage({ searchParams }: {
 
         <Panel
           title="What the comment sections are arguing about"
+          // daily_comment_digests has one row per day for the whole
+          // deployment (see lib/comments/digest.ts), so this paragraph covers
+          // every watched brand. Say so rather than implying it is scoped to
+          // the landscape named at the top of the page.
           description={digest
-            ? 'Distilled from ' + digest.summaries_considered + ' section summaries · updated ' + digest.generated_at
-            : undefined}
+            ? 'Across every brand Data Dumpster watches, including brands outside this landscape. Distilled from '
+              + digest.summaries_considered + ' section summaries · updated ' + digest.generated_at
+            : 'Across every brand Data Dumpster watches, including brands outside this landscape.'}
         >
           {digest ? (
             <p className="p-4 text-[15px] leading-relaxed text-zinc-800 dark:text-zinc-200">

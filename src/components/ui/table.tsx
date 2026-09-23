@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { InsideInteractiveContext } from './tooltip';
 
 export type SortDirection = 'asc' | 'desc';
 export type Align = 'left' | 'right' | 'center';
@@ -141,7 +142,9 @@ export function DataTable<T>({
                         align === 'right' && 'flex-row-reverse',
                       )}
                     >
-                      {c.header}
+                      <InsideInteractiveContext.Provider value>
+                        {c.header}
+                      </InsideInteractiveContext.Provider>
                       <Icon
                         className={cn('h-3 w-3 shrink-0', active ? 'opacity-100' : 'opacity-40')}
                         aria-hidden

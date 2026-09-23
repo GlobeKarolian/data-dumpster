@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { CalendarDays, Check, ChevronDown } from 'lucide-react';
-import { PRESETS, parseLocalDay, toDayString } from '@/lib/dates';
+import { DEFAULT_PRESET_ID, PRESETS, parseLocalDay, toDayString } from '@/lib/dates';
 import { cn } from '@/lib/utils';
 import { useUrlState } from '@/components/common/use-url-state';
 import { Popover, PopoverTriggerSurface } from './popover';
@@ -18,8 +18,11 @@ function label(startIso: string | null, endIso: string | null, preset: string | 
     const e = parseLocalDay(endIso);
     if (s && e) return fmt.format(s) + ' – ' + fmt.format(e);
   }
-  const found = PRESETS.find((p) => p.id === preset);
-  return found ? found.label : 'Last 28 days';
+  // An absent or unknown preset falls back exactly as parseRangeParams does.
+  // This used to say "Last 28 days" after the default moved to seven, so every
+  // screen opened on 7-day numbers under a 28-day label.
+  const found = PRESETS.find((p) => p.id === preset) ?? PRESETS.find((p) => p.id === DEFAULT_PRESET_ID);
+  return found ? found.label : 'Last 7 days';
 }
 
 /**
@@ -50,7 +53,9 @@ export function DateRangePicker({ className }: { className?: string }) {
   const custom = Boolean(startIso && endIso);
   // Must match parseRangeParams' fallback, or the picker labels a window the
   // data layer is not actually using.
-  const activePreset = custom ? null : (preset ?? '7d');
+  const activePreset = custom
+    ? null
+    : (PRESETS.some((p) => p.id === preset) ? preset : DEFAULT_PRESET_ID);
   const invalid = Boolean(draftStart && draftEnd && draftStart > draftEnd);
 
   return (

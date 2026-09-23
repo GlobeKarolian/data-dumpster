@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { clusterPosts, type ClusterablePost } from './cluster';
+import { clusterPosts, provisionalLabel, type ClusterablePost } from './cluster';
 
 let counter = 0;
 function post(text: string, company: string, hoursAgo: number): ClusterablePost {
@@ -85,5 +85,30 @@ describe('cluster-level merge', () => {
     ];
     const clusters = clusterPosts([...gameStory, ...tradeStory], { minSize: 2 });
     assert.equal(clusters.length, 2, 'one shared entity is not one story');
+  });
+});
+
+describe('provisionalLabel', () => {
+  it('leaves short text alone', () => {
+    assert.equal(provisionalLabel('  Red Sox  win \n again '), 'Red Sox win again');
+  });
+
+  it('breaks at a word boundary and marks the cut', () => {
+    const text = 'Red Sox remove interim tag from manager Chad Tracy, exercise contract options on chief baseball officer';
+    const label = provisionalLabel(text);
+    assert.ok(label.endsWith('…'), label);
+    assert.ok(Array.from(label).length <= 90, label);
+    assert.ok(!/\bbas…$/.test(label), 'must not end mid-word: ' + label);
+    assert.ok(text.startsWith(label.slice(0, -1)), label);
+  });
+
+  it('never splits an emoji into a lone surrogate', () => {
+    const label = provisionalLabel('a'.repeat(88) + '🦞🦞🦞 lobster');
+    assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(label), 'dangling high surrogate');
+    assert.ok(label.endsWith('…'));
+  });
+
+  it('returns empty for missing text so the keyword fallback applies', () => {
+    assert.equal(provisionalLabel(null), '');
   });
 });

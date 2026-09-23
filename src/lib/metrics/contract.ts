@@ -60,6 +60,12 @@ export interface PostDto {
   text: string | null;
   permalink: string | null;
   thumbnailUrl: string | null;
+  /**
+   * True when a durable copy of the thumbnail sits in the private archive.
+   * Optional because only the post explorer query computes it; readers that
+   * leave it undefined keep the old archive-first behavior.
+   */
+  hasArchivedThumbnail?: boolean;
   applause: number;
   conversation: number;
   amplification: number;

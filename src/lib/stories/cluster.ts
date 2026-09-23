@@ -213,6 +213,27 @@ export interface ClusterOptions {
  * so transitive linking through intermediate posts is a feature rather than the
  * chaining failure it would be in a static corpus.
  */
+const LABEL_MAX_CHARS = 90;
+
+/**
+ * A readable provisional label from a post's text.
+ *
+ * This was `.slice(0, 90)`, which cut headlines mid-word with no sign they
+ * were cut ("exercise contract options on chief bas") and, because slice
+ * counts UTF-16 units, could split an emoji into a stray replacement glyph.
+ * Now it counts code points, breaks at the last word boundary when one is
+ * reasonably close, and marks the cut with an ellipsis.
+ */
+export function provisionalLabel(text: string | null | undefined, max = LABEL_MAX_CHARS): string {
+  const clean = (text ?? '').replace(/\s+/g, ' ').trim();
+  const chars = Array.from(clean);
+  if (chars.length <= max) return clean;
+  const head = chars.slice(0, max - 1).join('');
+  const lastSpace = head.lastIndexOf(' ');
+  const cut = lastSpace >= Math.floor(max * 0.6) ? head.slice(0, lastSpace) : head;
+  return cut.replace(/[\s,;:.\-–—]+$/u, '') + '…';
+}
+
 export function clusterPosts(posts: ClusterablePost[], opts: ClusterOptions = {}): StoryCluster[] {
   const threshold = opts.threshold ?? 0.30;
   const halfLifeHours = opts.halfLifeHours ?? 240;
@@ -443,7 +464,7 @@ export function clusterPosts(posts: ClusterablePost[], opts: ClusterOptions = {}
 
     clusters.push({
       id: 'story_' + idxs[0].toString(36) + '_' + members.length,
-      label: (top.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 90) || keywords.slice(0, 4).join(', '),
+      label: provisionalLabel(top.text) || keywords.slice(0, 4).join(', '),
       postIds: members.map((p) => p.id),
       posts: members,
       companies: [...byCompany.values()].sort((a, b) => b.engagement - a.engagement),

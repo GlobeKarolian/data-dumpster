@@ -194,7 +194,15 @@ export function parseDateValue(value: string | Date): Date {
  * The app-wide default window is 7 days: the tool's daily users think in
  * weeks, and 28 days buried this week's movement under last month's.
  */
-export function parseRangeParams(sp: URLSearchParams, fallbackDays = 7): DateRange {
+/**
+ * The window every screen uses when the URL names none. The picker's label
+ * reads this too, so the button can never describe a different window than
+ * the one the numbers underneath it were computed over.
+ */
+export const DEFAULT_PRESET_ID = '7d';
+const DEFAULT_RANGE_DAYS = PRESETS.find((p) => p.id === DEFAULT_PRESET_ID)?.days ?? 7;
+
+export function parseRangeParams(sp: URLSearchParams, fallbackDays = DEFAULT_RANGE_DAYS): DateRange {
   const s = sp.get('start'); const e = sp.get('end');
   if (s && e) {
     const parsedStart = parseLocalDay(s);

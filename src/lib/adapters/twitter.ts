@@ -55,6 +55,7 @@ import { classifyPostType, extractHashtags, extractMentions, extractUrls, toDayS
 import { DATASETS } from '@/lib/vendors/brightdata';
 import {
   clearBrightDataReceipt,
+  hasPendingBrightDataReceipt,
   pendingBrightDataStage,
   runBrightDataStage,
 } from './brightdata-receipt';
@@ -439,16 +440,19 @@ export interface TwitterSourceAvailability {
 export function twitterSourceOrder(
   availability: TwitterSourceAvailability,
 ): TwitterSourceId[] {
-  const vendors: TwitterSourceId[] = availability.hasBrightData
+  // Decision, 23 Sep 2026: when the deployment holds an X API Bearer token,
+  // every X read goes through the official API and nothing else. The Bright
+  // Data fallback is gone: it could only ever fire when the API failed, it
+  // spent a second vendor's money on the same read, and a stuck Bright Data
+  // receipt could pin a channel to that vendor indefinitely. Without a Bearer
+  // (local development, a deployment that never configured one) the old
+  // vendor order still applies so collection is not left with no source.
+  if (availability.hasBearer) return ['x-api-v2'];
+  return availability.hasBrightData
     ? ['brightdata']
     : availability.hasEnsemble
       ? ['ensembledata']
       : [];
-
-  if (availability.hasBearer) {
-    return ['x-api-v2', ...vendors];
-  }
-  return vendors;
 }
 
 const SOURCE_LABEL: Record<TwitterSourceId, string> = {
@@ -811,6 +815,21 @@ export const twitterAdapter: ChannelAdapter = {
     const bearer = ctx.credentials.bearerToken?.trim() || '';
     const ensembleToken = ctx.credentials.ensembleDataToken?.trim() || '';
     const brightDataKey = ctx.credentials.brightDataApiKey?.trim() || '';
+    // With the official API configured, a leftover Bright Data receipt is not
+    // a reason to call Bright Data. On 23 Sep 2026 all 123 X channels were
+    // held on stale Bright Data snapshots whose automatic recovery had ended,
+    // so every run routed back to a suspended account and the X API was never
+    // asked, even with a funded Bearer in the deployment. The receipt is
+    // cleared on the first successful API read (see below) so the channel is
+    // no longer pinned; any rows that snapshot would have produced are
+    // covered by the API's own chronological window.
+    if (bearer) {
+      const result = await fetchWithFailover(ctx, [{ id: 'x-api-v2', run: () => fetchViaXApi(ctx, bearer) }]);
+      return hasPendingBrightDataReceipt(ctx.cursor)
+        ? { ...result, cursor: { ...(result.cursor ?? {}), ...clearBrightDataReceipt() } }
+        : result;
+    }
+
     const pendingStage = pendingBrightDataStage(ctx.cursor, PLATFORM);
     if (pendingStage !== undefined && pendingStage !== 'twitter-posts') {
       throw new AdapterError(
