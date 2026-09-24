@@ -159,7 +159,7 @@ function useAnalysis(result: Result) {
     try {
       const response = await fetch('/api/leakage/runs/' + result.runId + '/analysis' + (force ? '?force=1' : ''), { method: 'POST' });
       const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error((body && (body.error?.message ?? body.message)) || 'Reading the posts failed.');
+      if (!response.ok) throw new Error((body && (typeof body.error === 'string' ? body.error : body.error?.message ?? body.message)) || 'Reading the posts failed.');
       setAnalysis(body.analysis as LeakageAnalysis);
       setStatus('idle');
     } catch (err) {
@@ -577,7 +577,7 @@ export function LeakageTool({ initialUrl, initialTerms, initialRun }: { initialU
       const response = await fetch(path, { cache: 'no-store' });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
-        const message = (body && (body.error?.message ?? body.message)) || 'The request failed (' + response.status + ').';
+        const message = (body && (typeof body.error === 'string' ? body.error : body.error?.message ?? body.message)) || 'The request failed (' + response.status + ').';
         setState({ status: 'error', message });
         return;
       }

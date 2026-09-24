@@ -9,6 +9,7 @@
 import type { NextRequest } from 'next/server';
 import { apiHandler, HttpError } from '@/lib/session';
 import { complete } from '@/lib/ai/client';
+import { ModelError } from '@/lib/ai/types';
 import { requireLeakageUser } from '@/lib/leakage/guard';
 import { getRun, saveAnalysis } from '@/lib/leakage/store';
 import { buildAnalysisPrompt, validateAnalysis, type AnalysisAccount, type LeakageAnalysis } from '@/lib/leakage/analysis';
@@ -60,7 +61,22 @@ export const POST = apiHandler(async (req: NextRequest, context: { params: Promi
     accounts,
     posts,
   });
-  const completion = await complete(session.orgId, request, { feature: 'article-leakage' });
+  let completion;
+  try {
+    completion = await complete(session.orgId, request, { feature: 'article-leakage' });
+  } catch (error) {
+    // Say what actually happened; a bare 500 hid an empty AI account.
+    if (error instanceof ModelError) {
+      const status = error.opts.status;
+      const message = status === 402
+        ? 'The AI account (' + error.opts.provider + ') is out of credits, so the posts could not be read. Add credits and try again; the numbers above are unaffected.'
+        : status === 401 || status === 403
+          ? 'The AI connection was refused (' + error.opts.provider + ' ' + status + '). Check Settings > Model Connections.'
+          : 'The AI model did not answer (' + error.opts.provider + (status ? ' ' + status : '') + '). Try again in a minute.';
+      throw new HttpError(status === 402 ? 402 : 502, message, 'model_error');
+    }
+    throw error;
+  }
   const leakedUrls = new Set(posts.filter((p) => p.link === 'bypass').map((p) => p.url));
   const validated = validateAnalysis(completion.json ?? safeParse(completion.text), accounts, postIds, leakedUrls);
   const analysis: LeakageAnalysis = {
