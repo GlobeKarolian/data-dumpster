@@ -125,3 +125,85 @@ export function placement(referenced: Array<{ type: string }> | undefined): Plac
   if (types.has('replied_to')) return 'reply';
   return 'original';
 }
+
+/** Accounts that answer mentions automatically; counted, never treated as people sharing. */
+export const AUTOMATED_ACCOUNTS = new Set(['grok']);
+
+export interface SharePost {
+  url: string;
+  createdAt: string | null;
+  author: string;
+  followers: number;
+  placement: Placement;
+  link: LinkKind;
+  tool: string | null;
+  likes: number;
+  reposts: number;
+  quotes: number;
+  replies: number;
+  views: number;
+  text: string;
+}
+
+export interface ShareGroup {
+  posts: number;
+  accounts: number;
+  views: number;
+  medianFollowers: number;
+}
+
+export interface ShareSummary {
+  people: number;
+  posts: number;
+  automatedPosts: number;
+  views: number;
+  reposts: number;
+  linked: ShareGroup;
+  leaked: ShareGroup & { asReplies: number; tools: Record<string, number> };
+  unlinked: ShareGroup;
+  /** Leaked copies as a share of every post that carried a link to the story. */
+  leakShareOfLinks: number | null;
+  byDay: Record<string, number>;
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function group(posts: SharePost[]): ShareGroup {
+  return {
+    posts: posts.length,
+    accounts: new Set(posts.map((p) => p.author)).size,
+    views: posts.reduce((sum, p) => sum + p.views, 0),
+    medianFollowers: median(posts.map((p) => p.followers)),
+  };
+}
+
+export function summarizeShares(all: SharePost[]): ShareSummary {
+  const people = all.filter((p) => !AUTOMATED_ACCOUNTS.has(p.author.toLowerCase()));
+  const leaked = people.filter((p) => p.link === 'bypass');
+  const linked = people.filter((p) => p.link === 'direct');
+  const unlinked = people.filter((p) => p.link === 'none');
+  const tools: Record<string, number> = {};
+  for (const p of leaked) if (p.tool) tools[p.tool] = (tools[p.tool] ?? 0) + 1;
+  const byDay: Record<string, number> = {};
+  for (const p of people) {
+    const day = (p.createdAt ?? '').slice(0, 10);
+    if (day) byDay[day] = (byDay[day] ?? 0) + 1;
+  }
+  const withLinks = leaked.length + linked.length;
+  return {
+    people: new Set(people.map((p) => p.author)).size,
+    posts: people.length,
+    automatedPosts: all.length - people.length,
+    views: people.reduce((sum, p) => sum + p.views, 0),
+    reposts: people.reduce((sum, p) => sum + p.reposts, 0),
+    linked: group(linked),
+    leaked: { ...group(leaked), asReplies: leaked.filter((p) => p.placement === 'reply').length, tools },
+    unlinked: group(unlinked),
+    leakShareOfLinks: withLinks > 0 ? leaked.length / withLinks : null,
+    byDay,
+  };
+}

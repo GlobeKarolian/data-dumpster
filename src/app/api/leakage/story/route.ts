@@ -9,10 +9,13 @@
 import type { NextRequest } from 'next/server';
 import { apiHandler, HttpError, requireRole } from '@/lib/session';
 import {
+  AUTOMATED_ACCOUNTS,
   buildShareQueries,
   linkKind,
   parseStoryUrl,
   placement,
+  summarizeShares,
+  type SharePost,
   type XUrlEntity,
 } from '@/lib/leakage/story-shares';
 
@@ -135,7 +138,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     });
   }
 
-  const posts = [...tweets.values()].map((tweet) => {
+  const posts: SharePost[] = [...tweets.values()].map((tweet) => {
     const author = users.get(tweet.author_id);
     const link = linkKind(story, tweet.entities?.urls ?? []);
     return {
@@ -155,43 +158,43 @@ export const GET = apiHandler(async (req: NextRequest) => {
     };
   }).sort((a, b) => b.followers - a.followers);
 
-  const byAccount = new Map<string, { posts: number; followers: number }>();
+  const byAccount = new Map<string, { posts: number; followers: number; leaked: number; linked: number }>();
   for (const post of posts) {
-    const current = byAccount.get(post.author) ?? { posts: 0, followers: post.followers };
+    const current = byAccount.get(post.author) ?? { posts: 0, followers: post.followers, leaked: 0, linked: 0 };
     current.posts += 1;
+    if (post.link === 'bypass') current.leaked += 1;
+    if (post.link === 'direct') current.linked += 1;
     byAccount.set(post.author, current);
   }
-  const tally = <K extends string>(pick: (p: (typeof posts)[number]) => K) =>
-    posts.reduce<Record<string, number>>((acc, p) => { acc[pick(p)] = (acc[pick(p)] ?? 0) + 1; return acc; }, {});
-
+  const usersByName = new Map([...users.values()].map((u) => [u.username, u]));
   const accounts = [...byAccount.entries()].map(([username, a]) => {
-    const user = [...users.values()].find((u) => u.username === username);
+    const user = usersByName.get(username);
     return {
       username,
       name: user?.name ?? null,
       followers: a.followers,
       posts: a.posts,
+      leaked: a.leaked,
+      linked: a.linked,
+      automated: AUTOMATED_ACCOUNTS.has(username.toLowerCase()),
       accountCreated: user?.created_at ?? null,
       verified: user?.verified_type ?? (user?.verified ? 'verified' : null),
       bio: (user?.description ?? '').slice(0, 160),
     };
   }).sort((a, b) => b.followers - a.followers);
 
-  return Response.json({
+  return new Response(JSON.stringify({
     story: story.key,
     window: 'last 7 days (X recent search)',
     queries: counts,
-    summary: {
-      posts: posts.length,
-      distinctAccounts: accounts.length,
-      combinedFollowers: accounts.reduce((sum, a) => sum + a.followers, 0),
-      views: posts.reduce((sum, p) => sum + p.views, 0),
-      reposts: posts.reduce((sum, p) => sum + p.reposts, 0),
-      byPlacement: tally((p) => p.placement),
-      byLink: tally((p) => (p.tool ? 'bypass:' + p.tool : p.link)),
-      capped: posts.length >= maxPosts,
-    },
+    summary: { ...summarizeShares(posts), capped: posts.length >= maxPosts },
     accounts,
     posts,
-  }, { headers: { 'cache-control': 'no-store' } });
+  }), {
+    headers: {
+      // Explicit charset: Safari rendered emoji in names and bios as mojibake.
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
 });

@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, CircleDollarSign, Cpu, LayoutDashboard, LayoutGrid,
   MessageSquare, MonitorUp, Radio, SlidersHorizontal, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
-  Vote, UsersRound,
+  Vote, UsersRound, ShieldAlert,
 } from 'lucide-react';
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -58,6 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/elections', label: 'Election Center', icon: Vote, matchPrefix: true },
       { href: '/groups', label: 'Group View', icon: UsersRound, matchPrefix: true },
+      { href: '/leakage', label: 'Article Leakage', icon: ShieldAlert },
       { href: '/reports', label: 'Weekly Report', icon: FileSpreadsheet, matchPrefix: true },
       { href: '/briefs', label: 'Briefs', icon: Sparkles, matchPrefix: true },
       { href: '/ask', label: 'Ask', icon: MessageSquare },
@@ -102,6 +103,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/newsroom': 'Newsroom Screen',
   '/elections': 'Election Center',
   '/groups': 'Group View',
+  '/leakage': 'Article Leakage',
   '/elections/2028': 'Election Tracker · 2028 Preview',
   '/settings/users': 'Users and Access',
   '/settings/models': 'Model Connections',
