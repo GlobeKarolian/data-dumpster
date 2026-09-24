@@ -19,7 +19,8 @@ export function CreedGif({ size = 160, credit = true, className }: { size?: numb
   const height = Math.round((size * 400) / 480);
   return (
     <div className={cn('relative shrink-0 overflow-hidden rounded-lg bg-zinc-900', className)} style={{ width: size, height }}>
-      <Image src={GIF} alt="Creed from The Office, the resident thief" fill sizes={size + 'px'} unoptimized className="object-cover motion-reduce:hidden" />
+      {/* Eager, like the login hero: lazy loading left a black box in background tabs. */}
+      <Image src={GIF} alt="Creed from The Office, the resident thief" fill sizes={size + 'px'} unoptimized loading="eager" className="object-cover motion-reduce:hidden" />
       <Image src={STILL} alt="Creed from The Office, the resident thief" fill sizes={size + 'px'} unoptimized className="hidden object-cover motion-reduce:block" />
       {credit ? (
         <a
@@ -39,7 +40,7 @@ export function CreedGif({ size = 160, credit = true, className }: { size?: numb
 export function CreedBadge({ className }: { className?: string }) {
   return (
     <span className={cn('group relative inline-block h-9 w-11 shrink-0 overflow-hidden rounded-md bg-zinc-900', className)} title="Creed approves">
-      <Image src={STILL} alt="" fill sizes="44px" unoptimized className="object-cover group-hover:hidden" />
+      <Image src={STILL} alt="" fill sizes="44px" unoptimized loading="eager" className="object-cover group-hover:hidden" />
       <Image src={GIF} alt="" fill sizes="44px" unoptimized className="hidden object-cover group-hover:block motion-reduce:!hidden" />
     </span>
   );
