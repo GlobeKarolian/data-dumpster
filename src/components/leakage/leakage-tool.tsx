@@ -12,6 +12,7 @@ import {
   ACCOUNT_TYPE_LABEL, STANCE_LABEL, breakdownByType, type LeakageAnalysis,
 } from '@/lib/leakage/analysis';
 import type { StoryMeta } from '@/lib/leakage/story-page';
+import { CreedBadge, CreedGif, CreedSearching } from './creed';
 
 interface Account {
   username: string;
@@ -58,12 +59,15 @@ function n(value: number): string {
   return value >= 10_000 ? compactNumber(value) : value.toLocaleString('en-US');
 }
 
-function Tile({ label, value, note }: { label: string; value: string; note?: string }) {
+function Tile({ label, value, note, adornment }: { label: string; value: string; note?: string; adornment?: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{value}</p>
-      {note ? <p className="mt-1 text-xs text-zinc-500">{note}</p> : null}
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{label}</p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{value}</p>
+        {note ? <p className="mt-1 text-xs text-zinc-500">{note}</p> : null}
+      </div>
+      {adornment}
     </div>
   );
 }
@@ -209,6 +213,7 @@ function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => v
               label="Leaked copies"
               value={n(s.leaked.posts)}
               note={s.leakShareOfLinks === null ? 'No posts linked the story' : Math.round(s.leakShareOfLinks * 100) + '% of posts that linked it'}
+              adornment={s.leaked.posts > 0 ? <CreedBadge /> : undefined}
             />
             <Tile label="Shared with no link" value={n(s.unlinked.posts)} note={n(s.unlinked.views) + ' views that send no readers'} />
           </div>
@@ -517,7 +522,17 @@ function Leakers() {
   }, []);
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!rows) return <p className="text-sm text-zinc-500">Loading…</p>;
-  if (rows.length === 0) return <p className="text-sm text-zinc-500">No leaked copies found yet. Check a few stories and repeat leakers appear here.</p>;
+  if (rows.length === 0) {
+    return (
+      <div className="flex items-center gap-4 rounded-lg border border-dashed border-zinc-300 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900/40">
+        <CreedGif size={140} />
+        <div>
+          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">No repeat offenders yet.</p>
+          <p className="mt-1 text-sm text-zinc-500">Check a few stories; accounts that leak more than one show up here.</p>
+        </div>
+      </div>
+    );
+  }
   const repeat = rows.filter((r) => r.stories > 1).length;
   return (
     <Card>
@@ -672,7 +687,19 @@ export function LeakageTool({ initialUrl, initialTerms, initialRun }: { initialU
             </CardBody>
           </Card>
 
-          {state.status === 'loading' ? <p className="text-sm text-zinc-500">{state.what}</p> : null}
+          {state.status === 'loading' ? <CreedSearching message={state.what} /> : null}
+          {state.status === 'idle' ? (
+            <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-zinc-300 bg-white px-6 py-8 text-center sm:flex-row sm:text-left dark:border-zinc-700 dark:bg-zinc-900/40">
+              <CreedGif size={200} />
+              <div>
+                <p className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Who has been helping themselves to our stories?</p>
+                <p className="mt-1 max-w-md text-sm text-zinc-600 dark:text-zinc-400">
+                  Paste a story link above. You will see everyone sharing it on X, who passed around archive and paywall-bypass
+                  copies, and who retold it without linking back.
+                </p>
+              </div>
+            </div>
+          ) : null}
           {state.status === 'error' ? (
             <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{state.message}</p>
           ) : null}

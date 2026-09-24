@@ -76,6 +76,14 @@ const nextConfig: NextConfig = {
         pathname: '/media/B7aksBgcJzFDO/**',
         search: '',
       },
+      {
+        // Article Leakage mascot (Creed, The Office official GIPHY channel).
+        protocol: 'https',
+        hostname: 'media.giphy.com',
+        port: '',
+        pathname: '/media/DWxKllu8w3ZxmFU4zN/**',
+        search: '',
+      },
     ],
   },
   async headers() {
