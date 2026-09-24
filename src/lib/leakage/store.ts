@@ -2,6 +2,8 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import type { SharePost, ShareSummary } from './story-shares';
+import type { LeakageAnalysis } from './analysis';
+import type { StoryMeta } from './story-page';
 
 /**
  * Saved Article Leakage runs. The tables are created on first use with
@@ -26,6 +28,8 @@ const DDL = [
   )`,
   sql`CREATE INDEX IF NOT EXISTS leakage_runs_org_created_idx ON leakage_runs (org_id, created_at DESC)`,
   sql`CREATE INDEX IF NOT EXISTS leakage_runs_org_story_idx ON leakage_runs (org_id, story_key, created_at DESC)`,
+  sql`ALTER TABLE leakage_runs ADD COLUMN IF NOT EXISTS story_meta jsonb`,
+  sql`ALTER TABLE leakage_runs ADD COLUMN IF NOT EXISTS analysis jsonb`,
 ];
 
 let ready: Promise<void> | null = null;
@@ -50,18 +54,20 @@ export interface SavedRunInput {
   queries: unknown;
   accounts: unknown;
   posts: SharePost[];
+  storyMeta: StoryMeta | null;
 }
 
 export async function saveRun(run: SavedRunInput): Promise<string> {
   await ensureLeakageSchema();
   const { rows } = await db.execute<{ id: string }>(sql`
-    INSERT INTO leakage_runs (org_id, created_by, story_key, story_url, terms, window_label, summary, queries, accounts, posts)
+    INSERT INTO leakage_runs (org_id, created_by, story_key, story_url, terms, window_label, summary, queries, accounts, posts, story_meta)
     VALUES (${run.orgId}::uuid, ${run.userId}::uuid, ${run.storyKey}, ${run.storyUrl},
             -- A JS array param expands to a tuple, which cannot cast to text[];
             -- pass JSON and unpack it, which also handles an empty list.
             ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(run.terms)}::jsonb)), ${run.windowLabel},
             ${JSON.stringify(run.summary)}::jsonb, ${JSON.stringify(run.queries)}::jsonb,
-            ${JSON.stringify(run.accounts)}::jsonb, ${JSON.stringify(run.posts)}::jsonb)
+            ${JSON.stringify(run.accounts)}::jsonb, ${JSON.stringify(run.posts)}::jsonb,
+            ${run.storyMeta ? JSON.stringify(run.storyMeta) : null}::jsonb)
     RETURNING id`);
   return rows[0].id;
 }
@@ -77,6 +83,7 @@ export type RunListItem = {
   leaked: number;
   leak_share: number | null;
   runs_for_story: number;
+  headline: string | null;
 };
 
 export async function listRuns(orgId: string): Promise<RunListItem[]> {
@@ -88,7 +95,8 @@ export async function listRuns(orgId: string): Promise<RunListItem[]> {
            coalesce((summary->>'views')::bigint, 0) AS views,
            coalesce((summary->'leaked'->>'posts')::int, 0) AS leaked,
            (summary->>'leakShareOfLinks')::float AS leak_share,
-           count(*) OVER (PARTITION BY story_key)::int AS runs_for_story
+           count(*) OVER (PARTITION BY story_key)::int AS runs_for_story,
+           story_meta->>'headline' AS headline
       FROM leakage_runs
      WHERE org_id = ${orgId}::uuid
      ORDER BY created_at DESC
@@ -101,8 +109,9 @@ export async function getRun(orgId: string, id: string) {
   const { rows } = await db.execute<{
     id: string; story_key: string; story_url: string; terms: string[]; window_label: string;
     summary: unknown; queries: unknown; accounts: unknown; posts: unknown; created_at: string;
+    story_meta: StoryMeta | null; analysis: LeakageAnalysis | null;
   }>(sql`
-    SELECT id, story_key, story_url, terms, window_label, summary, queries, accounts, posts,
+    SELECT id, story_key, story_url, terms, window_label, summary, queries, accounts, posts, story_meta, analysis,
            to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
       FROM leakage_runs
      WHERE org_id = ${orgId}::uuid AND id = ${id}::uuid`);
@@ -152,4 +161,11 @@ export async function repeatLeakers(orgId: string): Promise<RepeatLeaker[]> {
      ORDER BY count(DISTINCT story_key) DESC, count(*) DESC, sum((p->>'views')::bigint) DESC
      LIMIT 500`);
   return rows.map((r) => ({ ...r, views: Number(r.views), followers: Number(r.followers) }));
+}
+
+export async function saveAnalysis(orgId: string, id: string, analysis: LeakageAnalysis): Promise<void> {
+  await ensureLeakageSchema();
+  await db.execute(sql`
+    UPDATE leakage_runs SET analysis = ${JSON.stringify(analysis)}::jsonb
+     WHERE org_id = ${orgId}::uuid AND id = ${id}::uuid`);
 }

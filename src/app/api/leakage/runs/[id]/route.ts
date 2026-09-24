@@ -25,5 +25,8 @@ export const GET = apiHandler(async (_req: NextRequest, context: { params: Promi
     summary: run.summary,
     accounts: run.accounts,
     posts: run.posts,
+    terms: run.terms,
+    storyMeta: run.story_meta,
+    analysis: run.analysis,
   }), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 });

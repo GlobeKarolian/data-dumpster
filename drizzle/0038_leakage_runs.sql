@@ -18,3 +18,7 @@ CREATE TABLE IF NOT EXISTS leakage_runs (
 CREATE INDEX IF NOT EXISTS leakage_runs_org_created_idx ON leakage_runs (org_id, created_at DESC);
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS leakage_runs_org_story_idx ON leakage_runs (org_id, story_key, created_at DESC);
+--> statement-breakpoint
+ALTER TABLE leakage_runs ADD COLUMN IF NOT EXISTS story_meta jsonb;
+--> statement-breakpoint
+ALTER TABLE leakage_runs ADD COLUMN IF NOT EXISTS analysis jsonb;

@@ -8,6 +8,10 @@ import { Input } from '@/components/ui/input';
 import { formatDateTime } from '@/components/ui/format';
 import { compactNumber } from '@/lib/utils';
 import type { ShareGroup, SharePost, ShareSummary } from '@/lib/leakage/story-shares';
+import {
+  ACCOUNT_TYPE_LABEL, STANCE_LABEL, breakdownByType, type LeakageAnalysis,
+} from '@/lib/leakage/analysis';
+import type { StoryMeta } from '@/lib/leakage/story-page';
 
 interface Account {
   username: string;
@@ -23,6 +27,9 @@ interface Account {
 }
 
 interface Result {
+  storyMeta?: StoryMeta | null;
+  terms?: string[];
+  analysis?: LeakageAnalysis | null;
   runId?: string;
   savedAt?: string;
   storyUrl?: string;
@@ -70,7 +77,7 @@ function Pill({ tone, children }: { tone: 'red' | 'zinc' | 'blue'; children: Rea
   return <span className={'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ' + tones[tone]}>{children}</span>;
 }
 
-function PostList({ posts, empty }: { posts: SharePost[]; empty: string }) {
+function PostList({ posts, empty, analysis }: { posts: SharePost[]; empty: string; analysis?: LeakageAnalysis | null }) {
   if (posts.length === 0) return <p className="px-4 py-6 text-sm text-zinc-500">{empty}</p>;
   return (
     <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -86,6 +93,11 @@ function PostList({ posts, empty }: { posts: SharePost[]; empty: string }) {
                 {post.link === 'bypass' && post.tool ? post.tool : LINK_LABEL[post.link]}
               </Pill>
               <Pill tone="zinc">{PLACEMENT_LABEL[post.placement]}</Pill>
+              {analysis?.accountTypes[post.author] && analysis.accountTypes[post.author] !== 'reader' ? (
+                <Pill tone="zinc">{ACCOUNT_TYPE_LABEL[analysis.accountTypes[post.author]]}</Pill>
+              ) : null}
+              {analysis?.stance[post.url] ? <Pill tone="blue">{STANCE_LABEL[analysis.stance[post.url]]}</Pill> : null}
+              {analysis?.workaround[post.url] ? <Pill tone="red">Paywall workaround</Pill> : null}
               <span className="text-xs text-zinc-400">{formatDateTime(post.createdAt)}</span>
             </div>
             <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">{post.text}</p>
@@ -137,12 +149,50 @@ function downloadCsv(result: Result) {
   URL.revokeObjectURL(a.href);
 }
 
+function useAnalysis(result: Result) {
+  const [analysis, setAnalysis] = React.useState<LeakageAnalysis | null>(result.analysis ?? null);
+  const [status, setStatus] = React.useState<'idle' | 'loading' | 'error'>(result.analysis ? 'idle' : 'loading');
+  const [error, setError] = React.useState<string | null>(null);
+  const request = React.useCallback(async (force: boolean) => {
+    if (!result.runId) return;
+    setStatus('loading');
+    try {
+      const response = await fetch('/api/leakage/runs/' + result.runId + '/analysis' + (force ? '?force=1' : ''), { method: 'POST' });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((body && (body.error?.message ?? body.message)) || 'Reading the posts failed.');
+      setAnalysis(body.analysis as LeakageAnalysis);
+      setStatus('idle');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reading the posts failed.');
+      setStatus('error');
+    }
+  }, [result.runId]);
+  const asked = React.useRef(false);
+  React.useEffect(() => {
+    if (asked.current || result.analysis || !result.runId) return;
+    asked.current = true;
+    void Promise.resolve().then(() => request(false));
+  }, [result.analysis, result.runId, request]);
+  return { analysis, status, error, retry: () => request(true) };
+}
+
 function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => void }) {
   const s = result.summary;
+  const { analysis, status: analysisStatus, error: analysisError, retry } = useAnalysis(result);
   const people = result.posts.filter((p) => !result.accounts.find((a) => a.username === p.author)?.automated);
   const byViews = (list: SharePost[]) => [...list].sort((a, b) => b.views - a.views);
   return (
     <>
+      {result.storyMeta?.headline ? (
+        <div>
+          <a href={result.storyUrl || 'https://www.' + result.story} target="_blank" rel="noreferrer" className="text-base font-semibold text-zinc-900 hover:underline dark:text-zinc-50">
+            {result.storyMeta.headline}
+          </a>
+          {result.terms && result.terms.length > 0 ? (
+            <p className="mt-0.5 text-xs text-zinc-500">Searched X for the link and for “{result.terms.join('” + “')}”.</p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
         <span>
           {result.savedAt ? 'Checked ' + formatDateTime(result.savedAt) + ' · saved, reopening it is free' : ''}
@@ -162,6 +212,84 @@ function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => v
             />
             <Tile label="Shared with no link" value={n(s.unlinked.posts)} note={n(s.unlinked.views) + ' views that send no readers'} />
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>What stands out</CardTitle>
+              <CardDescription>
+                {analysisStatus === 'loading'
+                  ? 'Reading the posts to work out who is sharing it and why. This takes about half a minute.'
+                  : analysis
+                    ? 'Written by AI from this run’s posts and numbers' + (analysis.model ? ' (' + analysis.model + ')' : '') + '. Check anything you plan to repeat.'
+                    : ''}
+              </CardDescription>
+            </CardHeader>
+            <CardBody>
+              {analysisStatus === 'error' ? (
+                <p className="text-sm text-red-600">
+                  {analysisError} <button type="button" className="underline" onClick={retry}>Try again</button>
+                </p>
+              ) : null}
+              {analysis && analysis.findings.length > 0 ? (
+                <ol className="space-y-3">
+                  {analysis.findings.map((f, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-600 text-[11px] font-semibold text-white">{i + 1}</span>
+                      <div>
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{f.headline}</p>
+                        <p className="text-sm text-zinc-600 dark:text-zinc-400">{f.detail}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {analysis ? (
+                <p className="mt-3 text-xs text-zinc-400">
+                  <button type="button" className="underline" onClick={retry}>Read the posts again</button>
+                </p>
+              ) : null}
+            </CardBody>
+          </Card>
+
+          {analysis ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Who shared it</CardTitle>
+                <CardDescription>Account types are the AI’s read of each profile; every number is counted from the posts.</CardDescription>
+              </CardHeader>
+              <div className="relative overflow-x-auto">
+                <table className="w-full min-w-[40rem] text-left text-sm">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+                      <th className="px-4 py-2 font-semibold">Who</th>
+                      <th className="px-4 py-2 text-right font-semibold">Accounts</th>
+                      <th className="px-4 py-2 text-right font-semibold">Views</th>
+                      <th className="px-4 py-2 text-right font-semibold">Linked</th>
+                      <th className="px-4 py-2 text-right font-semibold">No link</th>
+                      <th className="px-4 py-2 text-right font-semibold">Leaked</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breakdownByType(people, analysis.accountTypes).map((row) => (
+                      <tr key={row.type} className="border-t border-zinc-100 dark:border-zinc-800">
+                        <td className="px-4 py-2 text-zinc-900 dark:text-zinc-100">{ACCOUNT_TYPE_LABEL[row.type]}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{n(row.accounts)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{n(row.views)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{n(row.linked)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{n(row.unlinked)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{row.leaked > 0 ? <Pill tone="red">{row.leaked}</Pill> : 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {Object.values(analysis.workaround).some(Boolean) ? (
+                <p className="px-4 pb-4 text-xs text-zinc-500">
+                  {Object.values(analysis.workaround).filter(Boolean).length} of {s.leaked.posts} leaked copies were handed to someone as a way around the paywall.
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -202,14 +330,14 @@ function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => v
                 <CardTitle>Biggest reach</CardTitle>
                 <CardDescription>The posts that put the story in front of the most people.</CardDescription>
               </CardHeader>
-              <PostList posts={byViews(people).slice(0, 10)} empty="No posts found." />
+              <PostList posts={byViews(people).slice(0, 10)} empty="No posts found." analysis={analysis} />
             </Card>
             <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>Leaked copies</CardTitle>
                 <CardDescription>Archive and paywall-bypass links to this story, most-seen first.</CardDescription>
               </CardHeader>
-              <PostList posts={byViews(people.filter((p) => p.link === 'bypass'))} empty="No archive or bypass copies found." />
+              <PostList posts={byViews(people.filter((p) => p.link === 'bypass'))} empty="No archive or bypass copies found." analysis={analysis} />
             </Card>
           </div>
 
@@ -218,7 +346,7 @@ function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => v
               <CardTitle>Talked about it without linking</CardTitle>
               <CardDescription>Attention the story earned that sends no readers back. Outlets retelling it show up here.</CardDescription>
             </CardHeader>
-            <PostList posts={byViews(people.filter((p) => p.link === 'none')).slice(0, 10)} empty="Every post found carried a link." />
+            <PostList posts={byViews(people.filter((p) => p.link === 'none')).slice(0, 10)} empty="Every post found carried a link." analysis={analysis} />
           </Card>
 
           <Card>
@@ -234,6 +362,7 @@ function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => v
                     <th className="px-4 py-2 text-right font-semibold">Followers</th>
                     <th className="px-4 py-2 text-right font-semibold">Posts</th>
                     <th className="px-4 py-2 font-semibold">How</th>
+                    <th className="px-4 py-2 font-semibold">Type</th>
                     <th className="px-4 py-2 font-semibold">On X since</th>
                     <th className="px-4 py-2 font-semibold">Bio</th>
                   </tr>
@@ -256,6 +385,7 @@ function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => v
                           {account.linked === 0 && account.leaked === 0 ? <Pill tone="zinc">No link</Pill> : null}
                         </span>
                       </td>
+                      <td className="px-4 py-2 text-xs text-zinc-500">{analysis?.accountTypes[account.username] ? ACCOUNT_TYPE_LABEL[analysis.accountTypes[account.username]] : ''}</td>
                       <td className="px-4 py-2 text-xs text-zinc-500">{account.accountCreated ? account.accountCreated.slice(0, 4) : ''}</td>
                       <td className="px-4 py-2 text-xs text-zinc-500">{account.bio}</td>
                     </tr>
@@ -293,6 +423,7 @@ interface RunRow {
   leaked: number;
   leak_share: number | null;
   runs_for_story: number;
+  headline: string | null;
 }
 
 interface LeakerRow {
@@ -355,7 +486,7 @@ function History({ onOpen, onRecheck }: { onOpen: (id: string) => void; onRechec
                   <a href={row.story_url} target="_blank" rel="noreferrer" className="block truncate font-medium text-zinc-900 hover:underline dark:text-zinc-100">
                     {row.story_key.split('/').filter(Boolean).pop()}
                   </a>
-                  <span className="block truncate text-xs text-zinc-500">{row.story_key}</span>
+                  <span className="block truncate text-xs text-zinc-500">{row.headline ?? row.story_key}</span>
                 </td>
                 <td className="px-4 py-2 text-xs text-zinc-500">{formatDateTime(row.created_at)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">{n(row.people)}</td>
@@ -522,7 +653,7 @@ export function LeakageTool({ initialUrl, initialTerms, initialRun }: { initialU
                 </label>
                 <label className="block text-sm">
                   <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Key words (optional)</span>
-                  <Input value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="Last Ditch, Greenfield" />
+                  <Input value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="Found automatically from the story" />
                 </label>
                 <Button type="submit" variant="primary" disabled={state.status === 'loading' || !url.trim()}>
                   <Search className="h-4 w-4" aria-hidden />
@@ -534,8 +665,9 @@ export function LeakageTool({ initialUrl, initialTerms, initialRun }: { initialU
                 </label>
               </form>
               <p className="mt-3 text-xs text-zinc-500">
-                Key words catch archive copies whose links hide the source, and posts with no link. Two or three distinctive
-                words from the headline work best. Each check reads up to 300 posts from your X API credits and is saved to History.
+                Just paste the link: the story’s own page supplies the names to search for, which catch archive copies whose links
+                hide the source and posts with no link. Type key words only to override them. Each check reads up to 300 posts
+                from your X API credits, is read by AI for who’s sharing and why, and is saved to History.
               </p>
             </CardBody>
           </Card>

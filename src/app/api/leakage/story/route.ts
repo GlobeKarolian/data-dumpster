@@ -11,6 +11,7 @@ import type { NextRequest } from 'next/server';
 import { apiHandler, HttpError } from '@/lib/session';
 import { requireLeakageUser } from '@/lib/leakage/guard';
 import { saveRun } from '@/lib/leakage/store';
+import { extractStoryMeta, type StoryMeta } from '@/lib/leakage/story-page';
 import {
   AUTOMATED_ACCOUNTS,
   buildShareQueries,
@@ -56,6 +57,21 @@ interface XTweet {
   };
 }
 
+/** Our own story page, for its headline and identifying names. Best effort. */
+async function readStoryPage(url: string): Promise<StoryMeta | null> {
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; DataDumpster/1.0; +https://www.datadumpster.boston)' },
+      signal: AbortSignal.timeout(8_000),
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    return extractStoryMeta((await response.text()).slice(0, 400_000));
+  } catch {
+    return null;
+  }
+}
+
 async function x<T>(path: string, params: Record<string, string>, bearer: string): Promise<T> {
   const response = await fetch(X_API + path + '?' + new URLSearchParams(params).toString(), {
     headers: { authorization: 'Bearer ' + bearer },
@@ -81,7 +97,10 @@ export const GET = apiHandler(async (req: NextRequest) => {
   } catch (error) {
     throw new HttpError(400, error instanceof Error ? error.message : 'Bad story URL.');
   }
-  const terms = (params.get('terms') ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+  const typedTerms = (params.get('terms') ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+  // parseStoryUrl already limited this to our own domains.
+  const storyMeta = await readStoryPage('https://www.' + story.key);
+  const terms = typedTerms.length > 0 ? typedTerms : (storyMeta?.terms ?? []);
   const maxPosts = Math.min(MAX_POSTS_CAP, Math.max(10, Number(params.get('maxPosts')) || 300));
   const queries = buildShareQueries(story, terms);
 
@@ -199,10 +218,13 @@ export const GET = apiHandler(async (req: NextRequest) => {
     queries: counts,
     accounts,
     posts,
+    storyMeta,
   });
 
   return new Response(JSON.stringify({
     runId,
+    storyMeta,
+    terms,
     savedAt: new Date().toISOString(),
     story: story.key,
     storyUrl: params.get('url') ?? '',
