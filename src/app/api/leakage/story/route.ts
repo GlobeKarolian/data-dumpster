@@ -81,25 +81,34 @@ export const GET = apiHandler(async (req: NextRequest) => {
 
   const tweets = new Map<string, XTweet & { matchedBy: string }>();
   const users = new Map<string, XUser>();
-  const counts: Array<{ id: string; label: string; query: string; totalLast7Days: number | null; read: number }> = [];
+  const counts: Array<{
+    id: string; label: string; query: string; totalLast7Days: number | null; read: number;
+    countError?: string; searchMeta?: unknown; searchErrors?: unknown;
+  }> = [];
+  const readIds = new Set(params.get('read')?.split(',').filter(Boolean) ?? ['direct', 'slug', 'bypass']);
 
   for (const q of queries) {
     let total: number | null = null;
+    let countError: string | undefined;
     try {
       const c = await x<{ meta?: { total_tweet_count?: number } }>(
         '/tweets/counts/recent', { query: q.query, granularity: 'day' }, bearer,
       );
       total = c.meta?.total_tweet_count ?? null;
-    } catch {
+    } catch (error) {
       total = null; // Counts are a sizing aid; a plan without them still reads.
+      countError = error instanceof Error ? error.message : String(error);
     }
     let read = 0;
     let nextToken: string | undefined;
-    while (tweets.size < maxPosts) {
+    let searchMeta: unknown;
+    let searchErrors: unknown;
+    while (readIds.has(q.id) && tweets.size < maxPosts) {
       const page = await x<{
         data?: XTweet[];
         includes?: { users?: XUser[] };
         meta?: { next_token?: string };
+        errors?: unknown;
       }>('/tweets/search/recent', {
         query: q.query,
         max_results: String(Math.min(100, Math.max(10, maxPosts - tweets.size))),
@@ -113,10 +122,17 @@ export const GET = apiHandler(async (req: NextRequest) => {
         read += 1;
         if (!tweets.has(tweet.id)) tweets.set(tweet.id, { ...tweet, matchedBy: q.id });
       }
+      searchMeta = page.meta;
+      searchErrors = page.errors;
       nextToken = page.meta?.next_token;
       if (!nextToken || (page.data ?? []).length === 0) break;
     }
-    counts.push({ id: q.id, label: q.label, query: q.query, totalLast7Days: total, read });
+    counts.push({
+      id: q.id, label: q.label, query: q.query, totalLast7Days: total, read,
+      ...(countError ? { countError } : {}),
+      ...(searchMeta !== undefined ? { searchMeta } : {}),
+      ...(searchErrors !== undefined ? { searchErrors } : {}),
+    });
   }
 
   const posts = [...tweets.values()].map((tweet) => {

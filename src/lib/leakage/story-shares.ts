@@ -56,18 +56,26 @@ function termClause(terms: string[]): string {
 }
 
 export interface ShareQuery {
-  id: 'direct' | 'bypass';
+  id: 'direct' | 'slug' | 'bypass' | 'mentions';
   label: string;
   query: string;
 }
 
 export function buildShareQueries(story: StoryTarget, terms?: string[]): ShareQuery[] {
   const words = (terms && terms.length > 0 ? terms : story.slugTerms.slice(0, 3)).filter(Boolean);
+  const slug = story.path.split('/').filter(Boolean).pop() ?? '';
   const queries: ShareQuery[] = [
     {
       id: 'direct',
       label: 'Links to the story (including archive copies that embed its URL)',
-      query: 'url:"' + story.key + '"',
+      query: 'url:"https://www.' + story.key + '"',
+    },
+    {
+      // X tokenizes URLs; the slug alone also matches links with tracking
+      // parameters, gift tokens or a different host prefix.
+      id: 'slug',
+      label: 'Links containing the story slug',
+      query: 'url:"' + slug + '"',
     },
   ];
   if (words.length > 0) {
@@ -76,6 +84,11 @@ export function buildShareQueries(story: StoryTarget, terms?: string[]): ShareQu
       id: 'bypass',
       label: 'Archive or paywall-bypass links matching the story\'s words',
       query: '(' + bypass + ') ' + termClause(words),
+    });
+    queries.push({
+      id: 'mentions',
+      label: 'Posts naming the story by its words, with or without a link',
+      query: termClause(words) + ' -is:retweet',
     });
   }
   return queries;

@@ -19,8 +19,10 @@ describe('parseStoryUrl', () => {
 
 describe('buildShareQueries', () => {
   it('searches the URL directly and bypass hosts by headline words', () => {
-    const [direct, bypass] = buildShareQueries(parseStoryUrl(URL_), ['Last Ditch', 'Greenfield']);
-    assert.equal(direct.query, 'url:"bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash"');
+    const [direct, slug, bypass, mentions] = buildShareQueries(parseStoryUrl(URL_), ['Last Ditch', 'Greenfield']);
+    assert.equal(direct.query, 'url:"https://www.bostonglobe.com/2026/09/22/magazine/greenfield-last-ditch-bar-backlash"');
+    assert.equal(slug.query, 'url:"greenfield-last-ditch-bar-backlash"');
+    assert.equal(mentions.query, '"Last Ditch" Greenfield -is:retweet');
     assert.ok(bypass.query.startsWith('(url:archive.ph OR url:archive.today'));
     assert.ok(bypass.query.endsWith(') "Last Ditch" Greenfield'));
   });
