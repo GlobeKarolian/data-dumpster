@@ -57,7 +57,9 @@ export async function saveRun(run: SavedRunInput): Promise<string> {
   const { rows } = await db.execute<{ id: string }>(sql`
     INSERT INTO leakage_runs (org_id, created_by, story_key, story_url, terms, window_label, summary, queries, accounts, posts)
     VALUES (${run.orgId}::uuid, ${run.userId}::uuid, ${run.storyKey}, ${run.storyUrl},
-            ${run.terms}::text[], ${run.windowLabel},
+            -- A JS array param expands to a tuple, which cannot cast to text[];
+            -- pass JSON and unpack it, which also handles an empty list.
+            ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(run.terms)}::jsonb)), ${run.windowLabel},
             ${JSON.stringify(run.summary)}::jsonb, ${JSON.stringify(run.queries)}::jsonb,
             ${JSON.stringify(run.accounts)}::jsonb, ${JSON.stringify(run.posts)}::jsonb)
     RETURNING id`);
