@@ -3,11 +3,14 @@
  *
  * Who is sharing one of our stories on X in the last seven days, and how:
  * direct links, archive or paywall-bypass copies, replies, quotes. Admin only,
- * because every returned post is a paid X read. The Bearer token never leaves
+ * because every returned post is a paid X read (limited to the named users in
+ * lib/leakage/access.ts). Every run is saved so it can be reopened for free. The Bearer token never leaves
  * the server. Query logic and classification live in lib/leakage.
  */
 import type { NextRequest } from 'next/server';
-import { apiHandler, HttpError, requireRole } from '@/lib/session';
+import { apiHandler, HttpError } from '@/lib/session';
+import { requireLeakageUser } from '@/lib/leakage/guard';
+import { saveRun } from '@/lib/leakage/store';
 import {
   AUTOMATED_ACCOUNTS,
   buildShareQueries,
@@ -67,7 +70,7 @@ async function x<T>(path: string, params: Record<string, string>, bearer: string
 }
 
 export const GET = apiHandler(async (req: NextRequest) => {
-  await requireRole('admin');
+  const session = await requireLeakageUser();
   const bearer = process.env.TWITTER_BEARER_TOKEN?.trim();
   if (!bearer) throw new HttpError(503, 'TWITTER_BEARER_TOKEN is not configured.', 'x_unconfigured');
 
@@ -183,11 +186,29 @@ export const GET = apiHandler(async (req: NextRequest) => {
     };
   }).sort((a, b) => b.followers - a.followers);
 
-  return new Response(JSON.stringify({
-    story: story.key,
-    window: 'last 7 days (X recent search)',
+  const summary = { ...summarizeShares(posts), capped: posts.length >= maxPosts };
+  const windowLabel = 'last 7 days (X recent search)';
+  const runId = await saveRun({
+    orgId: session.orgId,
+    userId: session.userId,
+    storyKey: story.key,
+    storyUrl: params.get('url') ?? '',
+    terms,
+    windowLabel,
+    summary,
     queries: counts,
-    summary: { ...summarizeShares(posts), capped: posts.length >= maxPosts },
+    accounts,
+    posts,
+  });
+
+  return new Response(JSON.stringify({
+    runId,
+    savedAt: new Date().toISOString(),
+    story: story.key,
+    storyUrl: params.get('url') ?? '',
+    window: windowLabel,
+    queries: counts,
+    summary,
     accounts,
     posts,
   }), {

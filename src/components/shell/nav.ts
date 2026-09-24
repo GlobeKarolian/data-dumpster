@@ -19,6 +19,8 @@ export interface NavItem {
   platform?: Platform;
   /** Match child routes as active, e.g. /settings/models under /settings. */
   matchPrefix?: boolean;
+  /** Named-user features; shown only when the shell grants the capability. */
+  restricted?: 'leakage';
 }
 
 export interface NavSection {
@@ -58,7 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/elections', label: 'Election Center', icon: Vote, matchPrefix: true },
       { href: '/groups', label: 'Group View', icon: UsersRound, matchPrefix: true },
-      { href: '/leakage', label: 'Article Leakage', icon: ShieldAlert },
+      { href: '/leakage', label: 'Article Leakage', icon: ShieldAlert, restricted: 'leakage' },
       { href: '/reports', label: 'Weekly Report', icon: FileSpreadsheet, matchPrefix: true },
       { href: '/briefs', label: 'Briefs', icon: Sparkles, matchPrefix: true },
       { href: '/ask', label: 'Ask', icon: MessageSquare },

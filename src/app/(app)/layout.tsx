@@ -2,6 +2,7 @@ import * as React from 'react';
 import { redirect } from 'next/navigation';
 import { AppShell, type ShellLandscape } from '@/components/shell/app-shell';
 import { canTriggerManualRefresh } from '@/lib/manual-refresh-policy';
+import { canUseLeakage } from '@/lib/leakage/access';
 import type { Role } from '@/lib/roles';
 import { query } from './_lib/data';
 import { visibleLandscapesQuery } from './_lib/landscapes';
@@ -38,12 +39,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let userId: string;
   let role: Role;
   let manualRefreshAllowed: boolean;
+  let leakageAccess: boolean;
   try {
     const session = await requireOrg();
     orgId = session.orgId;
     userId = session.userId;
     role = session.role;
     manualRefreshAllowed = canTriggerManualRefresh(session.email);
+    leakageAccess = canUseLeakage(session.email);
   } catch {
     redirect('/login');
   }
@@ -102,6 +105,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       landscapes={shellLandscapes}
       role={role}
       manualRefreshAllowed={manualRefreshAllowed}
+      leakageAccess={leakageAccess}
       pendingAccessRequests={Number(pendingAccess.data[0]?.count ?? 0)}
     >
       {children}

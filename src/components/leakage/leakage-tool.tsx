@@ -23,6 +23,9 @@ interface Account {
 }
 
 interface Result {
+  runId?: string;
+  savedAt?: string;
+  storyUrl?: string;
   story: string;
   window: string;
   queries: Array<{ id: string; label: string; query: string; totalLast7Days: number | null; read: number }>;
@@ -115,98 +118,40 @@ function GroupRow({ label, group, note }: { label: string; group: ShareGroup; no
   );
 }
 
-export function LeakageTool({ initialUrl, initialTerms }: { initialUrl: string; initialTerms: string }) {
-  const [url, setUrl] = React.useState(initialUrl);
-  const [terms, setTerms] = React.useState(initialTerms);
-  const [mentions, setMentions] = React.useState(true);
-  const [state, setState] = React.useState<
-    { status: 'idle' } | { status: 'loading' } | { status: 'error'; message: string } | { status: 'done'; result: Result }
-  >({ status: 'idle' });
 
-  const run = React.useCallback(async (storyUrl: string, storyTerms: string, withMentions: boolean) => {
-    if (!storyUrl.trim()) return;
-    setState({ status: 'loading' });
-    const next = new URLSearchParams({ url: storyUrl.trim() });
-    if (storyTerms.trim()) next.set('terms', storyTerms.trim());
-    window.history.replaceState(null, '', '/leakage?' + next.toString());
-    const api = new URLSearchParams(next);
-    api.set('read', withMentions ? 'direct,slug,bypass,mentions' : 'direct,slug,bypass');
-    api.set('maxPosts', '300');
-    try {
-      const response = await fetch('/api/leakage/story?' + api.toString(), { cache: 'no-store' });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = (body && (body.error?.message ?? body.message)) || 'The search failed (' + response.status + ').';
-        setState({ status: 'error', message: response.status === 403 ? 'Only admins can run this, because each search spends X API credits.' : message });
-        return;
-      }
-      setState({ status: 'done', result: body as Result });
-    } catch {
-      setState({ status: 'error', message: 'Could not reach Data Dumpster. Check your connection and try again.' });
-    }
-  }, []);
+function toCsv(result: Result): string {
+  const cols = ['url', 'createdAt', 'author', 'followers', 'placement', 'link', 'tool', 'views', 'likes', 'reposts', 'quotes', 'replies', 'text'] as const;
+  const esc = (v: unknown) => {
+    const text = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+  };
+  return [cols.join(','), ...result.posts.map((p) => cols.map((c) => esc(p[c])).join(','))].join('\n');
+}
 
-  const ranOnLoad = React.useRef(false);
-  React.useEffect(() => {
-    if (ranOnLoad.current || !initialUrl) return;
-    ranOnLoad.current = true;
-    void run(initialUrl, initialTerms, true);
-  }, [initialUrl, initialTerms, run]);
+function downloadCsv(result: Result) {
+  const blob = new Blob([toCsv(result)], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'leakage-' + result.story.split('/').filter(Boolean).pop() + '-' + (result.savedAt ?? '').slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
-  const result = state.status === 'done' ? state.result : null;
-  const s = result?.summary;
-  const people = result ? result.posts.filter((p) => !result.accounts.find((a) => a.username === p.author)?.automated) : [];
+function RunResults({ result, onRecheck }: { result: Result; onRecheck?: () => void }) {
+  const s = result.summary;
+  const people = result.posts.filter((p) => !result.accounts.find((a) => a.username === p.author)?.automated);
   const byViews = (list: SharePost[]) => [...list].sort((a, b) => b.views - a.views);
-
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <div>
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Article Leakage</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-600 dark:text-zinc-400">
-          Who is sharing one of our stories on X in the last seven days, and how: linking it, talking about it without a link,
-          or passing around an archive or paywall-bypass copy.
-        </p>
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+        <span>
+          {result.savedAt ? 'Checked ' + formatDateTime(result.savedAt) + ' · saved, reopening it is free' : ''}
+        </span>
+        <span className="flex gap-2">
+          {onRecheck ? <Button size="sm" onClick={onRecheck}>Check again now</Button> : null}
+          <Button size="sm" onClick={() => downloadCsv(result)}>Download CSV</Button>
+        </span>
       </div>
-
-      <Card>
-        <CardBody>
-          <form
-            className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto] md:items-end"
-            onSubmit={(event) => { event.preventDefault(); void run(url, terms, mentions); }}
-          >
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Story link</span>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.bostonglobe.com/2026/09/22/..." inputMode="url" />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Key words (optional)</span>
-              <Input value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="Last Ditch, Greenfield" />
-            </label>
-            <Button type="submit" variant="primary" disabled={state.status === 'loading' || !url.trim()}>
-              <Search className="h-4 w-4" aria-hidden />
-              {state.status === 'loading' ? 'Searching X…' : 'Find shares'}
-            </Button>
-            <label className="flex items-center gap-2 text-xs text-zinc-600 md:col-span-3 dark:text-zinc-400">
-              <input type="checkbox" checked={mentions} onChange={(e) => setMentions(e.target.checked)} />
-              Also read posts that name the story without linking it (reads more posts, costs a little more)
-            </label>
-          </form>
-          <p className="mt-3 text-xs text-zinc-500">
-            Key words catch archive copies whose links hide the source, and posts with no link. Two or three distinctive words
-            from the headline work best. Admins only; each search reads up to 300 posts from your X API credits.
-          </p>
-        </CardBody>
-      </Card>
-
-      {state.status === 'loading' ? (
-        <p className="text-sm text-zinc-500">Searching X. This can take up to a minute for a widely shared story.</p>
-      ) : null}
-      {state.status === 'error' ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{state.message}</p>
-      ) : null}
-
-      {result && s ? (
-        <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Tile label="People sharing" value={n(s.people)} note={n(s.posts) + ' posts · ' + n(s.reposts) + ' reposts'} />
             <Tile label="Views" value={n(s.views)} note="X impressions on those posts" />
@@ -331,6 +276,275 @@ export function LeakageTool({ initialUrl, initialTerms }: { initialUrl: string; 
               ))}
             </ul>
           </details>
+        </>
+  );
+}
+
+type Tab = 'check' | 'history' | 'leakers';
+
+interface RunRow {
+  id: string;
+  story_key: string;
+  story_url: string;
+  terms: string[];
+  created_at: string;
+  people: number;
+  views: number;
+  leaked: number;
+  leak_share: number | null;
+  runs_for_story: number;
+}
+
+interface LeakerRow {
+  author: string;
+  stories: number;
+  leaks: number;
+  views: number;
+  followers: number;
+  tools: string[];
+  last_seen: string | null;
+  story_keys: string[];
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'border-b-2 px-3 py-2 text-sm font-medium transition-colors '
+        + (active ? 'border-accent-600 text-zinc-900 dark:text-zinc-50' : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200')
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function History({ onOpen, onRecheck }: { onOpen: (id: string) => void; onRecheck: (url: string, terms: string) => void }) {
+  const [rows, setRows] = React.useState<RunRow[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    fetch('/api/leakage/runs', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: { runs: RunRow[] }) => setRows(body.runs))
+      .catch(() => setError('Could not load saved runs.'));
+  }, []);
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!rows) return <p className="text-sm text-zinc-500">Loading saved runs…</p>;
+  if (rows.length === 0) return <p className="text-sm text-zinc-500">No stories checked yet. Every check is saved here.</p>;
+  return (
+    <Card>
+      <div className="relative overflow-x-auto">
+        <table className="w-full min-w-[48rem] text-left text-sm">
+          <thead>
+            <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+              <th className="px-4 py-2 font-semibold">Story</th>
+              <th className="px-4 py-2 font-semibold">Checked</th>
+              <th className="px-4 py-2 text-right font-semibold">People</th>
+              <th className="px-4 py-2 text-right font-semibold">Views</th>
+              <th className="px-4 py-2 text-right font-semibold">Leaked copies</th>
+              <th className="px-4 py-2 text-right font-semibold">Leak rate</th>
+              <th className="px-4 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-zinc-100 dark:border-zinc-800">
+                <td className="max-w-[22rem] px-4 py-2">
+                  <a href={row.story_url} target="_blank" rel="noreferrer" className="block truncate font-medium text-zinc-900 hover:underline dark:text-zinc-100">
+                    {row.story_key.split('/').filter(Boolean).pop()}
+                  </a>
+                  <span className="block truncate text-xs text-zinc-500">{row.story_key}</span>
+                </td>
+                <td className="px-4 py-2 text-xs text-zinc-500">{formatDateTime(row.created_at)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{n(row.people)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{n(row.views)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{n(row.leaked)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{row.leak_share === null ? '–' : Math.round(row.leak_share * 100) + '%'}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-right">
+                  <Button size="sm" onClick={() => onOpen(row.id)}>Open</Button>{' '}
+                  <Button size="sm" variant="ghost" onClick={() => onRecheck(row.story_url, row.terms.join(', '))}>Check again</Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function Leakers() {
+  const [rows, setRows] = React.useState<LeakerRow[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    fetch('/api/leakage/leakers', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: { leakers: LeakerRow[] }) => setRows(body.leakers))
+      .catch(() => setError('Could not load leakers.'));
+  }, []);
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!rows) return <p className="text-sm text-zinc-500">Loading…</p>;
+  if (rows.length === 0) return <p className="text-sm text-zinc-500">No leaked copies found yet. Check a few stories and repeat leakers appear here.</p>;
+  const repeat = rows.filter((r) => r.stories > 1).length;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Accounts sharing leaked copies</CardTitle>
+        <CardDescription>
+          Across the latest check of every story. {repeat} of {rows.length} accounts leaked more than one story. Public profile details only.
+        </CardDescription>
+      </CardHeader>
+      <div className="relative max-h-[40rem] overflow-auto">
+        <table className="w-full min-w-[52rem] text-left text-sm">
+          <thead className="sticky top-0 bg-white dark:bg-zinc-900">
+            <tr className="text-[11px] uppercase tracking-wide text-zinc-500">
+              <th className="px-4 py-2 font-semibold">Account</th>
+              <th className="px-4 py-2 text-right font-semibold">Stories leaked</th>
+              <th className="px-4 py-2 text-right font-semibold">Leaked posts</th>
+              <th className="px-4 py-2 text-right font-semibold">Views</th>
+              <th className="px-4 py-2 text-right font-semibold">Followers</th>
+              <th className="px-4 py-2 font-semibold">Tools</th>
+              <th className="px-4 py-2 font-semibold">Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.author} className="border-t border-zinc-100 align-top dark:border-zinc-800">
+                <td className="px-4 py-2">
+                  <a href={'https://x.com/' + row.author} target="_blank" rel="noreferrer" className="font-medium text-zinc-900 hover:underline dark:text-zinc-100">@{row.author}</a>
+                  <span className="block max-w-[18rem] truncate text-xs text-zinc-500">{row.story_keys.map((k) => k.split('/').filter(Boolean).pop()).join(', ')}</span>
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">{row.stories > 1 ? <Pill tone="red">{row.stories}</Pill> : row.stories}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{row.leaks}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{n(row.views)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{n(row.followers)}</td>
+                <td className="px-4 py-2 text-xs text-zinc-500">{row.tools.join(', ')}</td>
+                <td className="px-4 py-2 text-xs text-zinc-500">{formatDateTime(row.last_seen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+export function LeakageTool({ initialUrl, initialTerms, initialRun }: { initialUrl: string; initialTerms: string; initialRun?: string }) {
+  const [tab, setTab] = React.useState<Tab>('check');
+  const [url, setUrl] = React.useState(initialUrl);
+  const [terms, setTerms] = React.useState(initialTerms);
+  const [mentions, setMentions] = React.useState(true);
+  const [state, setState] = React.useState<
+    { status: 'idle' } | { status: 'loading'; what: string } | { status: 'error'; message: string } | { status: 'done'; result: Result }
+  >({ status: 'idle' });
+
+  const load = React.useCallback(async (path: string, what: string) => {
+    setState({ status: 'loading', what });
+    try {
+      const response = await fetch(path, { cache: 'no-store' });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = (body && (body.error?.message ?? body.message)) || 'The request failed (' + response.status + ').';
+        setState({ status: 'error', message });
+        return;
+      }
+      const result = body as Result;
+      setState({ status: 'done', result });
+      if (result.runId) window.history.replaceState(null, '', '/leakage?run=' + result.runId);
+      if (result.storyUrl) setUrl(result.storyUrl);
+    } catch {
+      setState({ status: 'error', message: 'Could not reach Data Dumpster. Check your connection and try again.' });
+    }
+  }, []);
+
+  const run = React.useCallback((storyUrl: string, storyTerms: string, withMentions: boolean) => {
+    if (!storyUrl.trim()) return;
+    setTab('check');
+    setUrl(storyUrl);
+    setTerms(storyTerms);
+    const api = new URLSearchParams({ url: storyUrl.trim() });
+    if (storyTerms.trim()) api.set('terms', storyTerms.trim());
+    api.set('read', withMentions ? 'direct,slug,bypass,mentions' : 'direct,slug,bypass');
+    api.set('maxPosts', '300');
+    void load('/api/leakage/story?' + api.toString(), 'Searching X. This can take up to a minute for a widely shared story.');
+  }, [load]);
+
+  const open = React.useCallback((id: string) => {
+    setTab('check');
+    void load('/api/leakage/runs/' + encodeURIComponent(id), 'Opening saved run…');
+  }, [load]);
+
+  const started = React.useRef(false);
+  React.useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    // Deferred a tick so the effect itself sets no state (react-hooks rule).
+    void Promise.resolve().then(() => {
+      if (initialRun) open(initialRun);
+      else if (initialUrl) run(initialUrl, initialTerms, true);
+    });
+  }, [initialRun, initialUrl, initialTerms, open, run]);
+
+  const result = state.status === 'done' ? state.result : null;
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-5">
+      <div>
+        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Article Leakage</h1>
+        <p className="mt-1 max-w-3xl text-sm text-zinc-600 dark:text-zinc-400">
+          Who is sharing our stories on X, and how: linking them, talking about them without a link, or passing around
+          archive and paywall-bypass copies. Visible only to you.
+        </p>
+      </div>
+
+      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        <TabButton active={tab === 'check'} onClick={() => setTab('check')}>Check a story</TabButton>
+        <TabButton active={tab === 'history'} onClick={() => setTab('history')}>History</TabButton>
+        <TabButton active={tab === 'leakers'} onClick={() => setTab('leakers')}>Repeat leakers</TabButton>
+      </div>
+
+      {tab === 'history' ? <History onOpen={open} onRecheck={(u, t) => run(u, t, true)} /> : null}
+      {tab === 'leakers' ? <Leakers /> : null}
+
+      {tab === 'check' ? (
+        <>
+          <Card>
+            <CardBody>
+              <form
+                className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto] md:items-end"
+                onSubmit={(event) => { event.preventDefault(); run(url, terms, mentions); }}
+              >
+                <label className="block text-sm">
+                  <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Story link</span>
+                  <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.bostonglobe.com/2026/09/22/..." inputMode="url" />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Key words (optional)</span>
+                  <Input value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="Last Ditch, Greenfield" />
+                </label>
+                <Button type="submit" variant="primary" disabled={state.status === 'loading' || !url.trim()}>
+                  <Search className="h-4 w-4" aria-hidden />
+                  {state.status === 'loading' ? 'Working…' : 'Find shares'}
+                </Button>
+                <label className="flex items-center gap-2 text-xs text-zinc-600 md:col-span-3 dark:text-zinc-400">
+                  <input type="checkbox" checked={mentions} onChange={(e) => setMentions(e.target.checked)} />
+                  Also read posts that name the story without linking it (reads more posts, costs a little more)
+                </label>
+              </form>
+              <p className="mt-3 text-xs text-zinc-500">
+                Key words catch archive copies whose links hide the source, and posts with no link. Two or three distinctive
+                words from the headline work best. Each check reads up to 300 posts from your X API credits and is saved to History.
+              </p>
+            </CardBody>
+          </Card>
+
+          {state.status === 'loading' ? <p className="text-sm text-zinc-500">{state.what}</p> : null}
+          {state.status === 'error' ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{state.message}</p>
+          ) : null}
+          {result ? <RunResults result={result} onRecheck={result.storyUrl ? () => run(result.storyUrl ?? '', terms, mentions) : undefined} /> : null}
         </>
       ) : null}
     </div>

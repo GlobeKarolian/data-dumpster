@@ -20,6 +20,8 @@ export interface SidebarProps {
   mobileOpen: boolean;
   onMobileClose: () => void;
   pendingAccessRequests: number;
+  /** Named-user capability for Article Leakage; hides the item for everyone else. */
+  leakageAccess?: boolean;
 }
 
 export function Sidebar({
@@ -28,6 +30,7 @@ export function Sidebar({
   mobileOpen,
   onMobileClose,
   pendingAccessRequests,
+  leakageAccess = false,
 }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -96,7 +99,7 @@ export function Sidebar({
               </h2>
             ) : null}
             <ul className="space-y-0.5">
-              {section.items.map((item) => {
+              {section.items.filter((item) => item.restricted !== 'leakage' || leakageAccess).map((item) => {
                 const active = item.matchPrefix
                   ? pathname === item.href || pathname.startsWith(item.href + '/')
                   : pathname === item.href;
