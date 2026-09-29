@@ -84,9 +84,9 @@ export type BrandRow = {
   engagementTotal?: number | null;
   /** Total engagement during the window, split by platform. */
   engagementByPlatform?: Partial<Record<ReportPlatform, number>>;
-  /** Captured video views during the window; unsupported sources do not contribute. */
+  /** Views each platform reported during the window (X impressions; video plays elsewhere); unsupported sources do not contribute. */
   viewsTotal?: number | null;
-  /** Captured video views split by platforms that reported the metric. */
+  /** Reported views split by platforms that returned the metric. */
   viewsByPlatform?: Partial<Record<ReportPlatform, number>>;
   engagementChangePct?: number | null;
   engagementRateByFollower?: number | null;

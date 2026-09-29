@@ -23,7 +23,10 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
 export const PLATFORM_COLORS: Record<Platform, string> = {
   facebook: '#1877F2', instagram: '#E1306C', twitter: '#0F1419',
   youtube: '#FF0000', tiktok: '#00F2EA', linkedin: '#0A66C2',
-  bluesky: '#0085FF', threads: '#000000', reddit: '#FF4500',
+  // Threads is drawn mid-gray, not its black brand color: next to X (#0F1419)
+  // in a stacked bar the two were indistinguishable, and a viral X post read as
+  // Threads in the weekly report. Icons for both use currentColor regardless.
+  bluesky: '#0085FF', threads: '#71717A', reddit: '#FF4500',
   truth_social: '#5448EE', rss: '#F26522',
 };
 
