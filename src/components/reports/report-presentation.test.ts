@@ -14,8 +14,8 @@ describe('weekly report presentation', () => {
     const compute = readFileSync(resolve(root, 'src/lib/reports/compute.ts'), 'utf8');
 
     assert.match(panel, /title="Total Engagement by BGM Brand"/);
-    assert.match(panel, /title="Views by BGM Brand"/);
-    assert.match(panel, /X counts an impression every time any post appears on screen/);
+    assert.match(panel, /title="Video Views by BGM Brand"/);
+    assert.match(panel, /X and Threads are left out because they report impressions and post views rather than plays/);
     assert.doesNotMatch(panel, /title="Engagement Rate Change by BGM Brand"/);
     assert.match(panel, /brand\.engagementByPlatform/);
     assert.match(panel, /<Tooltip/);

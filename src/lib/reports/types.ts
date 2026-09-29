@@ -84,9 +84,9 @@ export type BrandRow = {
   engagementTotal?: number | null;
   /** Total engagement during the window, split by platform. */
   engagementByPlatform?: Partial<Record<ReportPlatform, number>>;
-  /** Views each platform reported during the window (X impressions; video plays elsewhere); unsupported sources do not contribute. */
+  /** Video plays during the window (video posts on TikTok, YouTube, Facebook, Instagram); see lib/reports/video-views.ts. */
   viewsTotal?: number | null;
-  /** Reported views split by platforms that returned the metric. */
+  /** Video plays split by platform. */
   viewsByPlatform?: Partial<Record<ReportPlatform, number>>;
   engagementChangePct?: number | null;
   engagementRateByFollower?: number | null;

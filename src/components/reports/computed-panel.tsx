@@ -746,18 +746,11 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
       </SectionCard>
 
       <SectionCard
-        title="Views by BGM Brand"
+        title="Video Views by BGM Brand"
         kind="computed"
-        description="Views each platform reported for the week, split by platform. Platforms count differently: X counts an impression every time any post appears on screen, including inside other people's quote posts; TikTok, YouTube and Facebook count video plays. Only platforms whose source returned view counts appear."
+        description="Plays of video posts (videos, reels, Shorts and live) on TikTok, YouTube, Facebook and Instagram, for the week. X and Threads are left out because they report impressions and post views rather than plays."
       >
         <div className="space-y-3 p-4">
-          {viewBrands.some((brand) => dominantViewPlatform(brand) === 'twitter') ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-              X impressions make up most of the views for{' '}
-              {viewBrands.filter((brand) => dominantViewPlatform(brand) === 'twitter').map((brand) => brand.name).join(', ')}.
-              Those are times a post was shown, not videos watched, and one widely quoted post can outweigh everything else.
-            </p>
-          ) : null}
           {viewPlatforms.length > 0 ? (
             <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-zinc-100 pb-3 dark:border-zinc-800">
               {viewPlatforms.map((platform) => (
@@ -801,7 +794,7 @@ export function PortfolioCharts({ computed }: { computed: ComputedBlock }) {
           {viewBrands.length === 0 ? <EmptyChart /> : null}
           {viewBrands.length > 0 && viewBrands.every((brand) => brand.viewsTotal === undefined) ? (
             <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300">
-              Recompute this saved report to add its views breakdown.
+              Recompute this saved report to add its video-view breakdown.
             </p>
           ) : null}
         </div>
@@ -869,15 +862,6 @@ function ChartSegment({
       />
     </Tooltip>
   );
-}
-
-/** The platform supplying more than half of a brand's reported views, if any. */
-function dominantViewPlatform(brand: { viewsByPlatform?: Partial<Record<ReportPlatform, number>> }): ReportPlatform | null {
-  const entries = Object.entries(brand.viewsByPlatform ?? {}) as Array<[ReportPlatform, number]>;
-  const total = entries.reduce((sum, [, value]) => sum + Math.max(0, value), 0);
-  if (total <= 0) return null;
-  const [platform, value] = entries.sort((a, b) => b[1] - a[1])[0];
-  return value / total > 0.5 ? platform : null;
 }
 
 function EmptyChart() {

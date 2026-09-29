@@ -24,6 +24,8 @@ import {
 } from '@/lib/metrics/queries';
 import { endOfZoneDay, parseLocalDay, startOfZoneDay } from '@/lib/dates';
 import type { PostDto } from '@/lib/metrics/contract';
+import { videoViewsByCompany } from './video-views';
+import { getVideoViewRows } from './video-views-query';
 import {
   REPORT_PLATFORMS,
   type BrandRow,
@@ -174,12 +176,13 @@ export async function computeWeeklyReport(
   };
   const brandScope = { ...base, platforms: [...REPORT_PLATFORMS] };
 
-  const [facts, summary, followerBoard, netFollowerBoard, viewsBoard, topPosts, bgmCompanyIds] = await Promise.all([
+  const [facts, summary, followerBoard, netFollowerBoard, videoViewRows, topPosts, bgmCompanyIds] = await Promise.all([
     getFactSheet(base),
     getSummary(base),
     getLeaderboard({ ...brandScope, metric: 'audience' }),
     getLeaderboard({ ...brandScope, metric: 'audienceNetChange' }),
-    getLeaderboard({ ...brandScope, metric: 'views' }),
+    // Video plays only; see lib/reports/video-views.ts for why X and Threads are out.
+    getVideoViewRows(landscapeId, start, end),
     getPosts({ ...base, sort: 'engagementTotal', direction: 'desc', page: 1, pageSize: 5 }),
     getLandscapeCompanyIdsBySlug(orgId, 'bgm'),
   ]);
@@ -199,7 +202,7 @@ export async function computeWeeklyReport(
   const postsBoard = facts.leaderboards.posts ?? [];
   const engagementRateBoard = facts.leaderboards.engagementRateByFollower ?? [];
   const netById = new Map(netFollowerBoard.map((r) => [r.company.id, r]));
-  const viewsById = new Map(viewsBoard.map((r) => [r.company.id, r]));
+  const videoViews = videoViewsByCompany(videoViewRows);
   const engagementById = new Map(engagementBoard.map((r) => [r.company.id, r]));
   const postsById = new Map(postsBoard.map((r) => [r.company.id, r]));
   const engagementRateById = new Map(engagementRateBoard.map((r) => [r.company.id, r]));
@@ -209,9 +212,9 @@ export async function computeWeeklyReport(
     const engagement = engagementById.get(row.company.id);
     const posts = postsById.get(row.company.id);
     const engagementRate = engagementRateById.get(row.company.id);
-    const views = viewsById.get(row.company.id);
+    const views = videoViews.get(row.company.id);
     const engagementByPlatform = engagement?.available ? platformSplit(engagement) : {};
-    const viewsByPlatform = views?.available ? platformSplit(views) : {};
+    const viewsByPlatform = views?.byPlatform ?? {};
     const hasReportedViews = Object.keys(viewsByPlatform).length > 0;
     const topEngagementPlatform = Object.entries(engagementByPlatform)
       .sort(([, a], [, b]) => b - a)[0]?.[0] as ReportPlatform | undefined;
@@ -234,7 +237,7 @@ export async function computeWeeklyReport(
         : posts?.changePct ?? null,
       engagementTotal: engagement?.available ? engagement.value : null,
       engagementByPlatform,
-      viewsTotal: hasReportedViews ? views?.value ?? null : null,
+      viewsTotal: hasReportedViews ? views?.total ?? null : null,
       viewsByPlatform,
       engagementChangePct: engagement?.complete === false || engagement?.previousComplete === false
         ? null
