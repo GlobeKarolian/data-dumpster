@@ -55,7 +55,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   const id = parseTweetId(params.get('post') ?? '');
   if (!id) throw new HttpError(400, 'Give an x.com post link or id.');
   const cap = (key: string, fallback: number, max: number) => Math.min(max, Math.max(0, Number(params.get(key)) || fallback));
-  const maxQuotes = cap('maxQuotes', 500, 2000);
+  const maxQuotes = cap('maxQuotes', 500, 5000);
   const maxReposters = cap('maxReposters', 300, 1000);
   const maxReplies = cap('maxReplies', 200, 1000);
 
