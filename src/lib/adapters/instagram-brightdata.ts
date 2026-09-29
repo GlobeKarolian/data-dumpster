@@ -37,6 +37,17 @@ function pick(row: Record<string, unknown>, keys: string[]): unknown {
   return undefined;
 }
 
+/**
+ * Plays for a reel or video. Instagram retired public "views" for plays, and
+ * the vendor now sends video_view_count: 0 beside the real video_play_count.
+ * pick() stops at the first non-empty key and 0 is not empty, so every reel
+ * was stored with 0 views (all 177 BGM and Boston reels, Sept 2026). Take the
+ * largest of the three instead of the first present.
+ */
+export function instagramPlays(row: Record<string, unknown>): number {
+  return Math.max(num(row.video_play_count), num(row.views), num(row.video_view_count));
+}
+
 function num(v: unknown): number {
   if (typeof v === 'number' && Number.isFinite(v)) return Math.max(0, Math.trunc(v));
   if (typeof v === 'string') {
@@ -254,7 +265,7 @@ export function postsFromProfile(
       // Instagram publishes neither to anyone. Zero is the honest value.
       amplification: 0,
       saves: 0,
-      views: num(pick(item, ['views', 'video_play_count', 'video_view_count'])),
+      views: instagramPlays(item),
       raw: item,
     });
   }
@@ -398,7 +409,7 @@ export async function fetchPostsByProfile(
       // Instagram publishes neither share nor save counts to anyone.
       amplification: 0,
       saves: 0,
-      views: num(pick(row, ['video_view_count', 'views', 'video_play_count'])),
+      views: instagramPlays(row),
       raw: row,
     });
   }
