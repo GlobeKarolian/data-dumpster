@@ -66,12 +66,27 @@ export const GET = apiHandler(async (req: NextRequest) => {
 
   const quotes: QuoteDriver[] = [];
   let token: string | undefined;
+  // The quote_tweets endpoint pages newest-first under a tight rate limit, so
+  // the earliest quotes can be out of reach. With a window, recent search's
+  // quotes_of_tweet_id operator reads just that slice (last seven days only).
+  const windowStart = params.get('quotesFrom');
+  const windowEnd = params.get('quotesTo');
+  const viaSearch = Boolean(windowStart || windowEnd);
   while (quotes.length < maxQuotes) {
-    const page: TweetPage = await x<TweetPage>('/tweets/' + id + '/quote_tweets', {
-      max_results: String(Math.min(100, Math.max(10, maxQuotes - quotes.length))),
-      'tweet.fields': TWEET_FIELDS, expansions: 'author_id', 'user.fields': USER_FIELDS,
-      ...(token ? { pagination_token: token } : {}),
-    }, bearer);
+    const page: TweetPage = viaSearch
+      ? await x<TweetPage>('/tweets/search/recent', {
+        query: 'quotes_of_tweet_id:' + id,
+        max_results: String(Math.min(100, Math.max(10, maxQuotes - quotes.length))),
+        ...(windowStart ? { start_time: new Date(windowStart).toISOString() } : {}),
+        ...(windowEnd ? { end_time: new Date(windowEnd).toISOString() } : {}),
+        'tweet.fields': TWEET_FIELDS, expansions: 'author_id', 'user.fields': USER_FIELDS,
+        ...(token ? { next_token: token } : {}),
+      }, bearer)
+      : await x<TweetPage>('/tweets/' + id + '/quote_tweets', {
+        max_results: String(Math.min(100, Math.max(10, maxQuotes - quotes.length))),
+        'tweet.fields': TWEET_FIELDS, expansions: 'author_id', 'user.fields': USER_FIELDS,
+        ...(token ? { pagination_token: token } : {}),
+      }, bearer);
     const users = new Map((page.includes?.users ?? []).map((u) => [u.id, u]));
     for (const t of page.data ?? []) {
       const who = account(users.get(t.author_id), t.author_id);
