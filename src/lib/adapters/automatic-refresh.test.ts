@@ -56,6 +56,9 @@ test('production opens exactly two collection windows and recovery cannot enqueu
     // The nightly backup reads the database and writes to Blob storage. It
     // is not a collection window either: no vendor is ever called.
     { path: '/api/cron/backup', schedule: '0 7 * * *' },
+    // Fills plays on reels already collected (Reels dataset); it never opens a
+    // collection window, so the two-window rule below still holds.
+    { path: '/api/cron/instagram-plays', schedule: '40 1,13 * * *' },
   ]);
   assert.equal(config.crons.filter((entry) => entry.path.includes('mode=scheduled')).length, 1);
   assert.equal(config.crons.some((entry) => entry.path.includes('/api/cron/coverage')), false);

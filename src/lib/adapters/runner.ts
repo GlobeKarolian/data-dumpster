@@ -865,12 +865,17 @@ async function upsertPosts(rows: PostRow[]): Promise<Map<string, string>> {
         conversation: sql`excluded.conversation`,
         amplification: sql`excluded.amplification`,
         saves: sql`excluded.saves`,
-        views: sql`excluded.views`,
+        // Instagram reel plays come from a separate Reels-dataset job (the
+        // posts dataset returns none), so a re-collection must not erase them
+        // with its 0. Plays only rise; other platforms keep the vendor value.
+        views: sql`CASE WHEN excluded.platform = 'instagram' THEN GREATEST(${posts.views}, excluded.views) ELSE excluded.views END`,
         engagementTotal: sql`excluded.engagement_total`,
         sourceRunId: sql`excluded.source_run_id`,
         visibility: sql`excluded.visibility`,
         engagementRateByFollower: sql`excluded.engagement_rate_by_follower`,
-        engagementRateByView: sql`excluded.engagement_rate_by_view`,
+        engagementRateByView: sql`CASE WHEN excluded.platform = 'instagram' AND ${posts.views} > excluded.views
+          THEN excluded.engagement_total::double precision / ${posts.views}
+          ELSE excluded.engagement_rate_by_view END`,
         followersAtPost: sql`excluded.followers_at_post`,
         raw: sql`excluded.raw`,
         lastRefreshedAt: sql`excluded.last_refreshed_at`,

@@ -32,6 +32,10 @@
     {
       "path": "/api/cron/backup",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/instagram-plays",
+      "schedule": "40 1,13 * * *"
     }
   ]
 }
