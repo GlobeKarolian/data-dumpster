@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Field, Input, Textarea } from '@/components/ui/input';
 import { api, fmtWhen } from './api';
+import { usePublish } from './shell';
+
+export function LinkInBioPage() {
+  const { canApprove } = usePublish();
+  return <LinkInBio canApprove={canApprove} />;
+}
 
 interface BioLink {
   id: string; title: string; url: string; image_url: string | null;

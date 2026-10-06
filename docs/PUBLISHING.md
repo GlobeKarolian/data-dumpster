@@ -5,9 +5,25 @@ wish lists from the Globe and Boston.com social teams. The rest of Data
 Dumpster provides the measurement layer (competitor landscape, post
 performance, Adobe referrals).
 
-Routes: `/publish` (compose and queue), `/publish/calendar`, `/publish/links`
-(link in bio), `/publish/settings` (accounts and RSS feeds). Public pages:
-`/links/<slug>`.
+Publishing is its own workspace at `/publish`, outside the analytics shell:
+Queue, Calendar, Autopilot (RSS), Link in Bio and Accounts, with New post (or
+press N) and Pause all always in the top bar. Public pages: `/links/<slug>`.
+
+The layout borrows what social desks already know from SocialFlow and Social
+News Desk:
+
+- Queue: accounts on the left, "Up next" in the middle grouped by day, and
+  "Published" on the right. Anything needing a person (approval, held,
+  failed) sits above the queue. Hover a queued post to edit its text, move
+  it, send it now or remove it. Published posts can be recycled.
+- Send modes: Optimize (window, with Must send or Can send; Can send expires
+  if no good slot), Schedule (exact), Publish now, Hold (saved, released later).
+- Pause all: stops every send, including Autopilot. Autopilot keeps queueing.
+  On resume, overdue posts are re-spaced by each account's minimum gap instead
+  of firing together, and expired Can send posts drop.
+- Autopilot rules can be limited to RSS categories and can block keywords.
+- Labels on posts, filterable in the queue; Calendar filters by brand and by
+  Optimized, Scheduled or Autopilot.
 
 ## Safety switches
 

@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select';
 import { PlatformIcon } from '@/components/ui/platform-icon';
 import { cn } from '@/lib/utils';
 import { dayKey, dayLabel, fmtTime, STATUS_LABEL } from './api';
-import { TestModeBanner, usePublishingData } from './workspace';
+import { usePublishingData } from './workspace';
 
 function startOfWeek(offset: number): Date {
   const d = new Date();
@@ -30,9 +30,10 @@ const TONE: Record<string, string> = {
  * it liked about Hootsuite. Held posts (awaiting approval) show dashed at the
  * start of their window so the plan is visible before anyone approves it.
  */
-export function PublishCalendar({ live }: { live: boolean }) {
+export function PublishCalendar() {
   const [week, setWeek] = React.useState(0);
   const [brand, setBrand] = React.useState('');
+  const [source, setSource] = React.useState('');
   const start = React.useMemo(() => startOfWeek(week), [week]);
   const end = React.useMemo(() => new Date(start.getTime() + 7 * 86400_000), [start]);
   const { targets, posts, error } = usePublishingData({ from: start.toISOString(), to: end.toISOString() });
@@ -40,6 +41,7 @@ export function PublishCalendar({ live }: { live: boolean }) {
   const days = Array.from({ length: 7 }, (_, i) => dayKey(new Date(start.getTime() + i * 86400_000 + 12 * 3600_000).toISOString()));
   const items = posts.flatMap((p) => p.deliveries
     .filter((d) => !brand || d.brand === brand)
+    .filter(() => !source || (source === 'rss' ? p.origin === 'rss' : source === 'optimized' ? p.origin !== 'rss' && p.timing.mode === 'window' : p.origin !== 'rss' && p.timing.mode === 'exact'))
     .filter((d) => d.status !== 'canceled' && d.status !== 'unschedulable')
     .map((d) => {
       const when = d.sent_at ?? d.scheduled_for ?? (p.timing.mode === 'window' ? p.timing.start : p.timing.at);
@@ -51,12 +53,15 @@ export function PublishCalendar({ live }: { live: boolean }) {
 
   return (
     <div className="space-y-4">
-      <TestModeBanner live={live} />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <Card>
         <CardHeader>
           <CardTitle>{dayLabel(days[0])} to {dayLabel(days[6])}</CardTitle>
           <div className="flex items-center gap-1.5">
+            <div className="w-36">
+              <Select size="sm" value={source} onChange={(e) => setSource(e.target.value)}
+                options={[{ value: '', label: 'All posts' }, { value: 'optimized', label: 'Optimized' }, { value: 'scheduled', label: 'Scheduled' }, { value: 'rss', label: 'Autopilot' }]} />
+            </div>
             <div className="w-40">
               <Select size="sm" value={brand} onChange={(e) => setBrand(e.target.value)}
                 options={[{ value: '', label: 'All brands' }, ...brands.map((b) => ({ value: b, label: b }))]} />

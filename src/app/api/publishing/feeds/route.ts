@@ -19,9 +19,9 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const s = await requirePublishingApprover();
   const f = feedSchema.parse(await req.json());
   const [{ id }] = await q<{ id: string }>(sql`INSERT INTO publish_feeds
-      (org_id, label, url, target_ids, templates, window_minutes, require_approval, active)
+      (org_id, label, url, target_ids, templates, include_categories, exclude_keywords, window_minutes, require_approval, active)
     VALUES (${s.orgId}::uuid, ${f.label}, ${f.url}, ${JSON.stringify(f.targetIds)}::jsonb, ${JSON.stringify(f.templates)}::jsonb,
-            ${f.windowMinutes}, ${f.requireApproval}, ${f.active})
+            ${JSON.stringify(f.includeCategories)}::jsonb, ${JSON.stringify(f.excludeKeywords)}::jsonb, ${f.windowMinutes}, ${f.requireApproval}, ${f.active})
     RETURNING id`);
   return Response.json({ id }, { status: 201, ...NO_STORE });
 });

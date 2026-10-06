@@ -45,8 +45,9 @@ export async function dispatchDue(): Promise<{ claimed: number; sent: number; fa
         FROM publish_deliveries d
         JOIN publish_posts p ON p.id = d.post_id AND p.status = 'approved'
         JOIN publish_targets t ON t.id = d.target_id AND t.active
-       WHERE (d.status = 'queued' AND d.scheduled_for <= now())
-          OR (d.status = 'sending' AND d.lease_until < now())
+       WHERE ((d.status = 'queued' AND d.scheduled_for <= now())
+          OR (d.status = 'sending' AND d.lease_until < now()))
+         AND NOT EXISTS (SELECT 1 FROM publish_settings s WHERE s.org_id = d.org_id AND s.paused)
        ORDER BY d.scheduled_for
        LIMIT ${BATCH}
        FOR UPDATE OF d SKIP LOCKED

@@ -150,14 +150,22 @@ export async function takenTimes(targetId: string, from: Date, to: Date, exclude
 export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'canceled';
 export type DeliveryStatus = 'held' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled' | 'unschedulable';
 
+/**
+ * exact: a set time ("Schedule"; "Publish now" is exact at now).
+ * window: "Optimize". priority must = always send inside the window;
+ * can = send only if a good slot exists, otherwise expire (SocialFlow's
+ * Must Send / Can Send).
+ */
 export type Timing =
   | { mode: 'exact'; at: string }
-  | { mode: 'window'; start: string; end: string };
+  | { mode: 'window'; start: string; end: string; priority?: 'must' | 'can' };
 
 export interface PostOptions {
   instagramCollaborators?: string[];
   /** Per-platform copy overrides keyed by target id. */
   copyByTarget?: Record<string, string>;
+  /** Free-form labels for sorting the queue, e.g. "breaking", "sports". */
+  labels?: string[];
 }
 
 export interface DeliveryView {
@@ -278,12 +286,22 @@ export async function publicBioPage(slug: string) {
 
 export interface FeedRow {
   id: string; label: string; url: string; target_ids: string[]; templates: Record<string, string>;
+  include_categories: string[]; exclude_keywords: string[];
   window_minutes: number; require_approval: boolean; active: boolean;
   last_polled_at: string | null; last_error: string | null; org_id?: string;
 }
 
 export function listFeeds(orgId: string) {
-  return q<FeedRow>(sql`SELECT id, label, url, target_ids, templates, window_minutes, require_approval, active,
+  return q<FeedRow>(sql`SELECT id, label, url, target_ids, templates, include_categories, exclude_keywords,
+      window_minutes, require_approval, active,
       ${iso('last_polled_at')} AS last_polled_at, last_error
     FROM publish_feeds WHERE org_id = ${orgId}::uuid ORDER BY label`);
+}
+
+/* ----------------------------------------------------------------- pause */
+
+export async function getPause(orgId: string) {
+  const rows = await q<{ paused: boolean; paused_by: string | null; paused_at: string | null }>(sql`
+    SELECT paused, paused_by, ${iso('paused_at')} AS paused_at FROM publish_settings WHERE org_id = ${orgId}::uuid`);
+  return rows[0] ?? { paused: false, paused_by: null, paused_at: null };
 }

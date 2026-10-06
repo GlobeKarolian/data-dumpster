@@ -14,13 +14,14 @@ import {
 } from '@/lib/publishing/platforms';
 import { DEFAULT_UTM } from '@/lib/publishing/utm';
 import { api, fmtWhen, minuteLabel, WEEKDAYS, type Rule, type Target } from './api';
-import { TestModeBanner } from './workspace';
+import { usePublish } from './shell';
 
 interface Channel { id: string; platform: string; handle: string; company: string }
 interface BioPage { id: string; slug: string; title: string; brand: string }
 interface Feed {
   id: string; label: string; url: string; target_ids: string[]; templates: Record<string, string>;
   window_minutes: number; require_approval: boolean; active: boolean; last_polled_at: string | null; last_error: string | null;
+  include_categories?: string[]; exclude_keywords?: string[];
 }
 
 const PROVIDER_LABEL: Record<PublishProvider, string> = { ayrshare: 'Ayrshare', bluesky: 'Bluesky direct', mock: 'Test only' };
@@ -237,12 +238,16 @@ function FeedEditor({ feed, targets, onSaved, onCancel }: { feed: Feed | null; t
   const [windowMinutes, setWindow] = React.useState(feed?.window_minutes ?? 120);
   const [approval, setApproval] = React.useState(feed?.require_approval ?? false);
   const [active, setActive] = React.useState(feed?.active ?? true);
+  const [include, setInclude] = React.useState((feed?.include_categories ?? []).join(', '));
+  const [exclude, setExclude] = React.useState((feed?.exclude_keywords ?? []).join(', '));
   const [error, setError] = React.useState<string | null>(null);
   const platforms = [...new Set(targets.filter((t) => ids.includes(t.id)).map((t) => t.platform))];
 
   const save = async () => {
     setError(null);
-    const json = { label, url, targetIds: ids, templates, windowMinutes, requireApproval: approval, active };
+    const list = (v: string) => v.split(',').map((x) => x.trim()).filter(Boolean);
+    const json = { label, url, targetIds: ids, templates, windowMinutes, requireApproval: approval, active,
+      includeCategories: list(include), excludeKeywords: list(exclude) };
     try {
       if (feed) await api(`/api/publishing/feeds/${feed.id}`, { method: 'PUT', json });
       else await api('/api/publishing/feeds', { method: 'POST', json });
@@ -280,6 +285,14 @@ function FeedEditor({ feed, targets, onSaved, onCancel }: { feed: Feed | null; t
           </div>
         ))}
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Only these sections" hint="RSS categories, comma separated. Blank posts everything in the feed.">
+          <Input value={include} onChange={(e) => setInclude(e.target.value)} placeholder="Local News, Sports" />
+        </Field>
+        <Field label="Never autopost stories containing" hint="Words or phrases, comma separated. Matching stories wait for a person.">
+          <Input value={exclude} onChange={(e) => setExclude(e.target.value)} placeholder="obituary, sponsored, shooting" />
+        </Field>
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Post within" hint="Minutes after the story appears. Each account picks its best slot inside its posting hours.">
           <Input type="number" min={5} value={windowMinutes} onChange={(e) => setWindow(Number(e.target.value))} />
@@ -299,7 +312,8 @@ function FeedEditor({ feed, targets, onSaved, onCancel }: { feed: Feed | null; t
 
 /* ------------------------------------------------------------------- page */
 
-export function PublishingSettings({ live, canApprove }: { live: boolean; canApprove: boolean }) {
+export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' }) {
+  const { canApprove, refresh: refreshShell } = usePublish();
   const [targets, setTargets] = React.useState<Target[]>([]);
   const [channels, setChannels] = React.useState<Channel[]>([]);
   const [pages, setPages] = React.useState<BioPage[]>([]);
@@ -317,15 +331,16 @@ export function PublishingSettings({ live, canApprove }: { live: boolean; canApp
         api<{ feeds: Feed[] }>('/api/publishing/feeds'),
       ]);
       setTargets(t.targets); setChannels(c.channels); setPages(b.pages); setFeeds(f.feeds); setError(null);
+      refreshShell();
     } catch (e) { setError((e as Error).message); }
-  }, []);
+  }, [refreshShell]);
   // Deferred a tick so the effect itself sets no state (react-hooks rule).
   React.useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   return (
     <div className="space-y-4">
-      <TestModeBanner live={live} />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {section === 'accounts' ? (
       <Card>
         <CardHeader>
           <div>
@@ -366,12 +381,12 @@ export function PublishingSettings({ live, canApprove }: { live: boolean; canApp
           </ul>
         </CardBody>
       </Card>
-
+      ) : (
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>RSS autopublishing</CardTitle>
-            <CardDescription>New stories in a feed are queued to the chosen accounts with copy written for each platform.</CardDescription>
+            <CardTitle>Autopilot</CardTitle>
+            <CardDescription>When a story appears in one of these feeds, it is written up for each platform and queued into each account&apos;s next good slot. Pause all stops Autopilot too.</CardDescription>
           </div>
           {canApprove && !editingFeed ? <Button size="sm" variant="primary" disabled={!targets.length} onClick={() => setEditingFeed('new')}><Plus className="h-3.5 w-3.5" />Add feed</Button> : null}
         </CardHeader>
@@ -390,6 +405,8 @@ export function PublishingSettings({ live, canApprove }: { live: boolean; canApp
                       {f.require_approval ? <Badge tone="warning">Approval</Badge> : null}
                       <Badge tone="neutral">{f.target_ids.length} accounts</Badge>
                       <Badge tone="neutral">within {f.window_minutes}m</Badge>
+                      {f.include_categories?.length ? <Badge tone="neutral">{f.include_categories.length} section{f.include_categories.length === 1 ? '' : 's'}</Badge> : null}
+                      {f.exclude_keywords?.length ? <Badge tone="neutral">{f.exclude_keywords.length} blocked word{f.exclude_keywords.length === 1 ? '' : 's'}</Badge> : null}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-zinc-500">
                       {f.last_error ? <span className="text-red-600">{f.last_error}</span> : f.last_polled_at ? `Checked ${fmtWhen(f.last_polled_at)}` : 'Not checked yet'}
@@ -403,6 +420,7 @@ export function PublishingSettings({ live, canApprove }: { live: boolean; canApp
           </ul>
         </CardBody>
       </Card>
+      )}
     </div>
   );
 }

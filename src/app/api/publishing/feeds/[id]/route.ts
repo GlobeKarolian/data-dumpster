@@ -20,6 +20,7 @@ export const PUT = apiHandler<{ id: string }>(async (req: NextRequest, ctx) => {
       -- records what is there instead of posting it.
       last_polled_at = CASE WHEN url = ${f.url} AND (active OR NOT ${f.active}) THEN last_polled_at ELSE NULL END,
       url = ${f.url}, target_ids = ${JSON.stringify(f.targetIds)}::jsonb, templates = ${JSON.stringify(f.templates)}::jsonb,
+      include_categories = ${JSON.stringify(f.includeCategories)}::jsonb, exclude_keywords = ${JSON.stringify(f.excludeKeywords)}::jsonb,
       window_minutes = ${f.windowMinutes}, require_approval = ${f.requireApproval}, active = ${f.active}
     WHERE org_id = ${s.orgId}::uuid AND id = ${id}::uuid RETURNING id`);
   if (!rows.length) throw new HttpError(404, 'Feed not found.', 'not_found');
