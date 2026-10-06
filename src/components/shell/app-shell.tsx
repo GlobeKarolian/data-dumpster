@@ -26,6 +26,7 @@ export function AppShell({
   manualRefreshAllowed,
   pendingAccessRequests,
   leakageAccess = false,
+  publishingAccess = false,
   children,
 }: {
   landscapes: ShellLandscape[];
@@ -33,6 +34,7 @@ export function AppShell({
   manualRefreshAllowed: boolean;
   pendingAccessRequests: number;
   leakageAccess?: boolean;
+  publishingAccess?: boolean;
   children: React.ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
@@ -58,6 +60,7 @@ export function AppShell({
         onMobileClose={() => setMobileNavOpen(false)}
         pendingAccessRequests={pendingAccessRequests}
         leakageAccess={leakageAccess}
+        publishingAccess={publishingAccess}
       />
       <div className="flex w-0 min-w-0 max-w-full flex-1 flex-col">
         <Topbar
