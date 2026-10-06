@@ -41,8 +41,6 @@ import { getToken } from 'next-auth/jwt';
  *  /api/health     uptime probes have no credentials by design
  *  /share/*        published dashboards, authorized by an unguessable token
  *  /report-share/* published weekly reports, authorized the same way
- *  /links/*       public link-in-bio pages for the brands' Instagram and
- *                  TikTok profiles; they show only links that are live now
  *  /api/report-share/*
  *                  post detail for a published weekly report, constrained by
  *                  the same token and saved report snapshot inside the route
@@ -50,7 +48,7 @@ import { getToken } from 'next-auth/jwt';
 const PUBLIC_PREFIXES = [
   '/login', '/request-access', '/about', '/my-globe', '/invite', '/api/access-requests',
   '/api/auth', '/api/cron', '/share', '/report-share',
-  '/api/report-share', '/links',
+  '/api/report-share',
 ] as const;
 const PUBLIC_EXACT = ['/api/health', '/api/ingest/worker'] as const;
 

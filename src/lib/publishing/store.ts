@@ -40,12 +40,11 @@ export interface TargetRow {
   rules: PostingRule[];
   min_gap_minutes: number;
   max_per_day: number | null;
-  bio_page_id: string | null;
   active: boolean;
 }
 
 const TARGET_COLS = sql`id, brand, platform, label, handle, provider, (secret_enc IS NOT NULL) AS has_secret,
-  channel_id, utm, rules, min_gap_minutes, max_per_day, bio_page_id, active`;
+  channel_id, utm, rules, min_gap_minutes, max_per_day, active`;
 
 export function listTargets(orgId: string): Promise<TargetRow[]> {
   return q<TargetRow>(sql`SELECT ${TARGET_COLS} FROM publish_targets WHERE org_id = ${orgId}::uuid
@@ -76,16 +75,15 @@ export interface TargetInput {
   rules: PostingRule[];
   minGapMinutes: number;
   maxPerDay: number | null;
-  bioPageId: string | null;
   active: boolean;
 }
 
 export async function insertTarget(orgId: string, t: TargetInput): Promise<string> {
   const rows = await q<{ id: string }>(sql`INSERT INTO publish_targets
-    (org_id, brand, platform, label, handle, provider, secret_enc, channel_id, utm, rules, min_gap_minutes, max_per_day, bio_page_id, active)
+    (org_id, brand, platform, label, handle, provider, secret_enc, channel_id, utm, rules, min_gap_minutes, max_per_day, active)
     VALUES (${orgId}::uuid, ${t.brand}, ${t.platform}, ${t.label}, ${t.handle}, ${t.provider}, ${t.secretEnc ?? null},
       ${t.channelId}::uuid, ${JSON.stringify(t.utm)}::jsonb, ${JSON.stringify(t.rules)}::jsonb, ${t.minGapMinutes},
-      ${t.maxPerDay}, ${t.bioPageId}::uuid, ${t.active})
+      ${t.maxPerDay}, ${t.active})
     RETURNING id`);
   return rows[0].id;
 }
@@ -95,7 +93,7 @@ export async function updateTarget(orgId: string, id: string, t: TargetInput): P
       brand = ${t.brand}, platform = ${t.platform}, label = ${t.label}, handle = ${t.handle}, provider = ${t.provider},
       secret_enc = CASE WHEN ${t.secretEnc === undefined} THEN secret_enc ELSE ${t.secretEnc ?? null} END,
       channel_id = ${t.channelId}::uuid, utm = ${JSON.stringify(t.utm)}::jsonb, rules = ${JSON.stringify(t.rules)}::jsonb,
-      min_gap_minutes = ${t.minGapMinutes}, max_per_day = ${t.maxPerDay}, bio_page_id = ${t.bioPageId}::uuid, active = ${t.active}
+      min_gap_minutes = ${t.minGapMinutes}, max_per_day = ${t.maxPerDay}, active = ${t.active}
     WHERE org_id = ${orgId}::uuid AND id = ${id}::uuid RETURNING id`);
   return rows.length > 0;
 }
@@ -250,38 +248,6 @@ export async function getPost(orgId: string, id: string): Promise<PostView | nul
       FROM publish_deliveries d JOIN publish_targets t ON t.id = d.target_id
      WHERE d.org_id = ${orgId}::uuid AND d.post_id = ${id}::uuid`);
   return { ...rows[0], deliveries };
-}
-
-/* ------------------------------------------------------------- link in bio */
-
-export interface BioPageRow { id: string; slug: string; title: string; brand: string; avatar_url: string | null }
-export interface BioLinkRow {
-  id: string; page_id: string; title: string; url: string; image_url: string | null;
-  starts_at: string; ends_at: string | null; pinned: boolean; delivery_id: string | null;
-}
-
-export function listBioPages(orgId: string) {
-  return q<BioPageRow>(sql`SELECT id, slug, title, brand, avatar_url FROM publish_bio_pages
-    WHERE org_id = ${orgId}::uuid ORDER BY brand, title`);
-}
-
-export function listBioLinks(orgId: string, pageId: string) {
-  return q<BioLinkRow>(sql`SELECT id, page_id, title, url, image_url, ${iso('starts_at')} AS starts_at,
-      ${iso('ends_at')} AS ends_at, pinned, delivery_id
-    FROM publish_bio_links WHERE org_id = ${orgId}::uuid AND page_id = ${pageId}::uuid
-    ORDER BY pinned DESC, starts_at DESC LIMIT 300`);
-}
-
-/** Public read: only links that are live right now. No org id: the slug is the address. */
-export async function publicBioPage(slug: string) {
-  const pages = await q<BioPageRow>(sql`SELECT id, slug, title, brand, avatar_url FROM publish_bio_pages WHERE slug = ${slug}`);
-  const page = pages[0];
-  if (!page) return null;
-  const links = await q<{ id: string; title: string; url: string; image_url: string | null; pinned: boolean }>(sql`
-    SELECT id, title, url, image_url, pinned FROM publish_bio_links
-     WHERE page_id = ${page.id}::uuid AND starts_at <= now() AND (ends_at IS NULL OR ends_at > now())
-     ORDER BY pinned DESC, starts_at DESC LIMIT 40`);
-  return { page, links };
 }
 
 /* ------------------------------------------------------------------ feeds */

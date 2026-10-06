@@ -111,10 +111,6 @@ async function finish(
       provider = ${provider}, provider_post_id = ${providerPostId}, post_url = ${postUrl}, last_error = ${error},
       sent_at = CASE WHEN ${ok} THEN now() ELSE sent_at END
     WHERE id = ${c.id}::uuid`);
-  if (ok) {
-    // The bio link goes live with the post, even if the send ran a little late.
-    await q(sql`UPDATE publish_bio_links SET starts_at = least(starts_at, now()) WHERE delivery_id = ${c.id}::uuid`);
-  }
   await logAttempt(c, provider, ok, ok ? { detail } : { error, detail });
 }
 

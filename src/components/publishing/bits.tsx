@@ -73,7 +73,7 @@ export function LinkCard({ card, url, compact }: { card: Card | null | undefined
 /** A small, recognisable mock of how the post will look on its network. */
 export function PostMock({ platform, brand, text, linkUrl, linkMode, card, image }: {
   platform: PublishPlatform; brand: string; text: string; linkUrl: string | null;
-  linkMode: 'card' | 'text' | 'bio'; card: Card | null | undefined; image: string | null;
+  linkMode: 'card' | 'text' | 'none'; card: Card | null | undefined; image: string | null;
 }) {
   const visual = platform === 'instagram' || platform === 'tiktok';
   return (
@@ -92,7 +92,7 @@ export function PostMock({ platform, brand, text, linkUrl, linkMode, card, image
           : <div className="grid aspect-square w-full place-items-center rounded-md bg-zinc-100 text-xs text-zinc-400 dark:bg-zinc-900">Needs an image</div>
       ) : null}
       {text ? <PostBody text={text} className="text-[13px] leading-snug text-zinc-800 dark:text-zinc-200" /> : null}
-      {!visual && linkUrl && linkMode !== 'bio' ? <LinkCard card={card} url={linkUrl} compact /> : null}
+      {!visual && linkUrl && linkMode !== 'none' ? <LinkCard card={card} url={linkUrl} compact /> : null}
     </div>
   );
 }

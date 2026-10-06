@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { QueueBoard } from '@/components/publishing/queue-board';
+import { PostsBoard } from '@/components/publishing/posts-board';
 
-export const metadata: Metadata = { title: 'Queue' };
+export const metadata: Metadata = { title: 'Posts' };
 
-export default function PublishQueuePage() {
-  return <QueueBoard />;
+export default function PublishPostsPage() {
+  return <PostsBoard />;
 }

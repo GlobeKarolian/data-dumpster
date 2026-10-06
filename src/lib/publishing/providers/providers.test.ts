@@ -5,7 +5,7 @@ import { detectFacets } from './bluesky';
 import type { SendRequest } from './types';
 
 const req = (over: Partial<SendRequest> = {}): SendRequest => ({
-  platform: 'instagram', text: 'Hi', link: null, linkMode: 'bio', preview: null,
+  platform: 'instagram', text: 'Hi', link: null, linkMode: 'none', preview: null,
   mediaUrls: ['https://img/a.jpg'], instagramCollaborators: ['bostondotcom', 'a', 'b', 'c'],
   idempotencyKey: 'd1', secret: null, ...over,
 });

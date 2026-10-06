@@ -9,7 +9,7 @@ export interface LinkPreview {
 
 export interface SendRequest {
   platform: PublishPlatform;
-  /** Exactly the text to post; the link is already in it unless linkMode is card or bio. */
+  /** Exactly the text to post; the link is already in it unless linkMode is card or none. */
   text: string;
   link: string | null;
   linkMode: LinkMode;

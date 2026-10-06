@@ -17,7 +17,6 @@ export interface Target {
   rules: Rule[];
   min_gap_minutes: number;
   max_per_day: number | null;
-  bio_page_id: string | null;
   active: boolean;
 }
 
@@ -30,7 +29,7 @@ export interface Delivery {
   label: string;
   final_text: string;
   link_url: string | null;
-  link_mode: 'card' | 'text' | 'bio';
+  link_mode: 'card' | 'text' | 'none';
   status: 'held' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled' | 'unschedulable';
   scheduled_for: string | null;
   slot_reason: string | null;
@@ -64,7 +63,7 @@ export interface Plan {
   label: string;
   brand: string;
   linkUrl: string | null;
-  linkMode: 'card' | 'text' | 'bio';
+  linkMode: 'card' | 'text' | 'none';
   finalText: string;
   length: number;
   limit: number;

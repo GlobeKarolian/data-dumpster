@@ -109,8 +109,7 @@ export async function planDeliveries(orgId: string, input: ComposeInput, postRef
     const link = input.linkUrl
       ? applyUtm(input.linkUrl, t.utm, { platform: t.platform, brand: t.brand, postRef, origin, date: new Date() })
       : null;
-    let text = finalText(copy, link, mode);
-    if (mode === 'bio' && link && !/link in (our )?bio/i.test(text)) text = (text ? text + '\n\n' : '') + 'Link in bio.';
+    const text = finalText(copy, link, mode);
     const length = chargedLength(t.platform, text);
     const limit = TEXT_LIMITS[t.platform];
     const problems: string[] = [];
@@ -120,7 +119,6 @@ export async function planDeliveries(orgId: string, input: ComposeInput, postRef
       problems.push(`${t.platform === 'instagram' ? 'Instagram' : 'TikTok'} needs an image or video.`);
     }
     if (!text && !input.mediaUrls.length && !(link && mode === 'card')) problems.push('Nothing to post.');
-    if (mode === 'bio' && link && !t.bio_page_id) problems.push('No link-in-bio page is set for this account, so the link will not be reachable.');
 
     const slot = await slotFor(orgId, t, input.timing, claimed.get(t.id) ?? []);
     if (slot.ok) claimed.set(t.id, [...(claimed.get(t.id) ?? []), slot.pick.at]);
@@ -161,7 +159,7 @@ export async function createPost(
   const plans = await planDeliveries(ctx.orgId, input, id.slice(0, 8), origin.kind);
   if (status === 'approved') {
     // A Can Send post that finds no good slot simply expires; it is not a problem to fix.
-    const blocking = plans.filter((p) => p.problems.some((x) => !x.startsWith('No link-in-bio')));
+    const blocking = plans.filter((p) => p.problems.length);
     if (blocking.length) {
       await q(sql`DELETE FROM publish_posts WHERE id = ${id}::uuid`);
       throw new HttpError(400, `${blocking[0].label}: ${blocking[0].problems[0]}`, 'invalid_post');
@@ -169,13 +167,11 @@ export async function createPost(
   }
   for (const p of plans) {
     const dStatus = status !== 'approved' ? 'held' : p.slot ? 'queued' : canExpire(input.timing) ? 'canceled' : 'unschedulable';
-    const [{ id: deliveryId }] = await q<{ id: string }>(sql`INSERT INTO publish_deliveries
+    await q(sql`INSERT INTO publish_deliveries
         (org_id, post_id, target_id, copy, link_url, final_text, link_mode, status, scheduled_for, slot_reason, last_error)
       VALUES (${ctx.orgId}::uuid, ${id}::uuid, ${p.targetId}::uuid, ${p.copy}, ${p.linkUrl}, ${p.finalText}, ${p.linkMode},
         ${dStatus}, ${dStatus === 'queued' ? p.slot!.at : null}::timestamptz, ${p.slot?.reason ?? null},
-        ${dStatus === 'unschedulable' ? p.slotError : dStatus === 'canceled' ? 'Expired: ' + p.slotError : null})
-      RETURNING id`);
-    if (dStatus === 'queued') await syncBioLink(ctx.orgId, deliveryId);
+        ${dStatus === 'unschedulable' ? p.slotError : dStatus === 'canceled' ? 'Expired: ' + p.slotError : null})`);
   }
   return { id, status, plans };
 }
@@ -201,7 +197,6 @@ export async function approvePost(orgId: string, postId: string, approverEmail: 
       claimed.set(t.id, [...(claimed.get(t.id) ?? []), slot.pick.at]);
       await q(sql`UPDATE publish_deliveries SET status = 'queued', scheduled_for = ${slot.pick.at.toISOString()}::timestamptz,
         slot_reason = ${slot.pick.reason}, last_error = NULL WHERE id = ${d.id}::uuid AND org_id = ${orgId}::uuid`);
-      await syncBioLink(orgId, d.id);
     } else {
       const expire = canExpire(post.timing);
       await q(sql`UPDATE publish_deliveries SET status = ${expire ? 'canceled' : 'unschedulable'},
@@ -215,8 +210,6 @@ export async function cancelPost(orgId: string, postId: string) {
   await q(sql`UPDATE publish_posts SET status = 'canceled' WHERE org_id = ${orgId}::uuid AND id = ${postId}::uuid`);
   await q(sql`UPDATE publish_deliveries SET status = 'canceled', lease_until = NULL
     WHERE org_id = ${orgId}::uuid AND post_id = ${postId}::uuid AND status IN ('held', 'queued', 'unschedulable', 'failed')`);
-  await q(sql`DELETE FROM publish_bio_links WHERE org_id = ${orgId}::uuid
-    AND delivery_id IN (SELECT id FROM publish_deliveries WHERE post_id = ${postId}::uuid AND status = 'canceled')`);
 }
 
 export async function cancelDelivery(orgId: string, deliveryId: string) {
@@ -224,7 +217,6 @@ export async function cancelDelivery(orgId: string, deliveryId: string) {
     WHERE org_id = ${orgId}::uuid AND id = ${deliveryId}::uuid AND status IN ('held', 'queued', 'unschedulable', 'failed')
     RETURNING id`);
   if (!rows.length) throw new HttpError(409, 'That post is already sending or sent.', 'conflict');
-  await q(sql`DELETE FROM publish_bio_links WHERE org_id = ${orgId}::uuid AND delivery_id = ${deliveryId}::uuid`);
 }
 
 /** Move one delivery to an exact time, or send it at the next dispatcher tick. */
@@ -238,36 +230,6 @@ export async function rescheduleDelivery(orgId: string, deliveryId: string, at: 
       AND d.status IN ('queued', 'unschedulable', 'failed')
     RETURNING d.id`);
   if (!rows.length) throw new HttpError(409, 'Only approved posts that have not been sent can be moved.', 'conflict');
-  await syncBioLink(orgId, deliveryId);
-}
-
-/* ------------------------------------------------------------ link in bio */
-
-/**
- * Instagram and TikTok posts put their story link on the brand's link-in-bio
- * page, timed to go live the moment the post does. This is the "schedule bio
- * links in advance" ask: the link is queued with the post, not added by hand
- * after it goes up.
- */
-export async function syncBioLink(orgId: string, deliveryId: string) {
-  const rows = await q<{
-    link_mode: string; link_url: string | null; scheduled_for: string | null; status: string;
-    bio_page_id: string | null; link_title: string | null; base_copy: string; media: string | null;
-  }>(sql`SELECT d.link_mode, d.link_url, d.scheduled_for, d.status, t.bio_page_id, p.link_title, p.base_copy,
-      p.media_urls->>0 AS media
-    FROM publish_deliveries d JOIN publish_targets t ON t.id = d.target_id JOIN publish_posts p ON p.id = d.post_id
-    WHERE d.org_id = ${orgId}::uuid AND d.id = ${deliveryId}::uuid`);
-  const r = rows[0];
-  if (!r || r.link_mode !== 'bio' || !r.link_url || !r.bio_page_id || !r.scheduled_for) return;
-  const title = r.link_title || r.base_copy.split('\n')[0].slice(0, 120) || r.link_url;
-  const existing = await q<{ id: string }>(sql`SELECT id FROM publish_bio_links WHERE delivery_id = ${deliveryId}::uuid`);
-  if (existing.length) {
-    await q(sql`UPDATE publish_bio_links SET starts_at = ${r.scheduled_for}::timestamptz, url = ${r.link_url}, title = ${title}
-      WHERE delivery_id = ${deliveryId}::uuid`);
-  } else {
-    await q(sql`INSERT INTO publish_bio_links (org_id, page_id, title, url, image_url, starts_at, delivery_id)
-      VALUES (${orgId}::uuid, ${r.bio_page_id}::uuid, ${title}, ${r.link_url}, ${r.media}, ${r.scheduled_for}::timestamptz, ${deliveryId}::uuid)`);
-  }
 }
 
 /* ------------------------------------------------------------ edit copy */
@@ -317,7 +279,6 @@ export async function setPaused(orgId: string, paused: boolean, by: string | nul
   for (const d of overdue) {
     if (d.timing.mode === 'window' && d.timing.priority === 'can' && new Date(d.timing.end).getTime() < Date.now()) {
       await q(sql`UPDATE publish_deliveries SET status = 'canceled', last_error = 'Expired during pause' WHERE id = ${d.id}::uuid`);
-      await q(sql`DELETE FROM publish_bio_links WHERE delivery_id = ${d.id}::uuid`);
       expired++;
       continue;
     }
@@ -325,7 +286,6 @@ export async function setPaused(orgId: string, paused: boolean, by: string | nul
     nextFree.set(d.target_id, at + Math.max(d.min_gap_minutes, 5) * 60_000);
     await q(sql`UPDATE publish_deliveries SET scheduled_for = ${new Date(at).toISOString()}::timestamptz,
         slot_reason = 'Re-spaced after pause' WHERE id = ${d.id}::uuid`);
-    await syncBioLink(orgId, d.id);
     respaced++;
   }
   return { respaced, expired };
