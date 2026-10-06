@@ -40,9 +40,7 @@ describe('request proxy', () => {
     assert.equal(response.headers.get('x-middleware-next'), '1');
   });
 
-  it('serves public link-in-bio pages without a session, and nothing else under publishing', async () => {
-    const page = await proxy(new NextRequest('https://example.test/links/bostondotcom'));
-    assert.equal(page.headers.get('x-middleware-next'), '1');
+  it('keeps publishing behind sign-in', async () => {
     const api = await proxy(new NextRequest('https://example.test/api/publishing/posts'));
     assert.equal(api.status, 401);
   });

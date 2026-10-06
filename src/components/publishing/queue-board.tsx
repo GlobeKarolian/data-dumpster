@@ -312,8 +312,8 @@ function DeliveryLine({ d, canApprove, onAct }: {
       {mode === 'open' ? (
         <div className="bg-zinc-50 px-2.5 py-2 dark:bg-zinc-900/60">
           <PostBody text={d.final_text} className="text-[13px] text-zinc-800 dark:text-zinc-200" />
-          {d.link_url && d.link_mode !== 'text' ? (
-            <p className="mt-1 text-[11px] text-zinc-400">{d.link_mode === 'card' ? 'Link card' : 'Link in bio'}: {shortUrl(d.link_url)}</p>
+          {d.link_url && d.link_mode === 'card' ? (
+            <p className="mt-1 text-[11px] text-zinc-400">Link card: {shortUrl(d.link_url)}</p>
           ) : null}
         </div>
       ) : null}

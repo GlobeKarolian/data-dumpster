@@ -88,7 +88,7 @@ async function queueItem(f: FeedRow & { org_id: string }, targets: Awaited<Retur
     const template = f.templates[t.id] ?? f.templates[t.platform] ?? f.templates.default ?? DEFAULT_TEMPLATE;
     // Leave room for the link when it travels in the text (X charges 23).
     const mode = linkModeFor(t.platform, t.provider);
-    const reserve = mode === 'text' ? (t.platform === 'twitter' ? 25 : item.link.length + 80) : mode === 'bio' ? 14 : 0;
+    const reserve = mode === 'text' ? (t.platform === 'twitter' ? 25 : item.link.length + 80) : 0;
     copyByTarget[t.id] = renderTemplate(template, item, TEXT_LIMITS[t.platform] - reserve);
   }
   const now = new Date();

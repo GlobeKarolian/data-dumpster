@@ -18,7 +18,6 @@ import { usePublish } from './shell';
 import { accountName } from './bits';
 
 interface Channel { id: string; platform: string; handle: string; company: string }
-interface BioPage { id: string; slug: string; title: string; brand: string }
 interface Feed {
   id: string; label: string; url: string; target_ids: string[]; templates: Record<string, string>;
   window_minutes: number; require_approval: boolean; active: boolean; last_polled_at: string | null; last_error: string | null;
@@ -107,22 +106,22 @@ function rulesSummary(rules: Rule[]): string {
 type Draft = {
   id?: string; brand: string; platform: PublishPlatform; label: string; handle: string; provider: PublishProvider;
   secret: Record<string, string> | null | undefined; channelId: string; utm: Target['utm']; rules: Rule[];
-  minGapMinutes: number; maxPerDay: string; bioPageId: string; active: boolean;
+  minGapMinutes: number; maxPerDay: string; active: boolean;
 };
 
 const blank = (): Draft => ({
   brand: '', platform: 'facebook', label: '', handle: '', provider: 'ayrshare', secret: undefined, channelId: '',
-  utm: {}, rules: [], minGapMinutes: 30, maxPerDay: '', bioPageId: '', active: true,
+  utm: {}, rules: [], minGapMinutes: 30, maxPerDay: '', active: true,
 });
 
 const fromTarget = (t: Target): Draft => ({
   id: t.id, brand: t.brand, platform: t.platform, label: t.label, handle: t.handle ?? '', provider: t.provider,
   secret: undefined, channelId: t.channel_id ?? '', utm: t.utm ?? {}, rules: t.rules ?? [], minGapMinutes: t.min_gap_minutes,
-  maxPerDay: t.max_per_day ? String(t.max_per_day) : '', bioPageId: t.bio_page_id ?? '', active: t.active,
+  maxPerDay: t.max_per_day ? String(t.max_per_day) : '', active: t.active,
 });
 
-function TargetEditor({ draft, channels, pages, hasSecret, onSaved, onCancel }: {
-  draft: Draft; channels: Channel[]; pages: BioPage[]; hasSecret: boolean; onSaved: () => void; onCancel: () => void;
+function TargetEditor({ draft, channels, hasSecret, onSaved, onCancel }: {
+  draft: Draft; channels: Channel[]; hasSecret: boolean; onSaved: () => void; onCancel: () => void;
 }) {
   const [d, setD] = React.useState(draft);
   const [error, setError] = React.useState<string | null>(null);
@@ -135,7 +134,7 @@ function TargetEditor({ draft, channels, pages, hasSecret, onSaved, onCancel }: 
         ...(d.secret !== undefined ? { secret: d.secret } : {}),
         channelId: d.channelId || null, utm: Object.fromEntries(Object.entries(d.utm).filter(([, v]) => v)),
         rules: d.rules, minGapMinutes: d.minGapMinutes, maxPerDay: d.maxPerDay ? Number(d.maxPerDay) : null,
-        bioPageId: d.bioPageId || null, active: d.active,
+        active: d.active,
       };
       if (d.id) await api(`/api/publishing/targets/${d.id}`, { method: 'PUT', json });
       else await api('/api/publishing/targets', { method: 'POST', json });
@@ -162,7 +161,7 @@ function TargetEditor({ draft, channels, pages, hasSecret, onSaved, onCancel }: 
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Sent through" hint={mode === 'card' ? 'Story links post as a card; the URL stays out of the text.' : mode === 'bio' ? 'Story links go to the link-in-bio page.' : 'Story links are added to the text.'}>
+        <Field label="Sent through" hint={mode === 'card' ? 'Story links post as a card; the URL stays out of the text.' : mode === 'none' ? 'Captions here cannot carry clickable links, so none is added.' : 'Story links are added to the text.'}>
           <Select value={d.provider} onChange={(e) => setD({ ...d, provider: e.target.value as PublishProvider, secret: undefined })}
             options={(d.platform === 'bluesky' ? ['bluesky', 'ayrshare', 'mock'] as const : ['ayrshare', 'mock'] as const)
               .map((p) => ({ value: p, label: PROVIDER_LABEL[p] }))} />
@@ -213,12 +212,6 @@ function TargetEditor({ draft, channels, pages, hasSecret, onSaved, onCancel }: 
         <p className="mt-1 text-[11px] text-zinc-500">Blank uses the default shown. Placeholders: {'{brand} {platform} {post} {date} {origin}'}. Tags already on a link are never overwritten.</p>
       </div>
 
-      {(d.platform === 'instagram' || d.platform === 'tiktok') ? (
-        <Field label="Link-in-bio page" hint="Story links from this account's posts are scheduled onto this page.">
-          <Select value={d.bioPageId} onChange={(e) => set('bioPageId', e.target.value)}
-            options={[{ value: '', label: 'None' }, ...pages.map((p) => ({ value: p.id, label: `${p.title} (/links/${p.slug})` }))]} />
-        </Field>
-      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <Toggle checked={d.active} onChange={(v) => set('active', v)} label="Active" />
@@ -318,7 +311,6 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
   const { canApprove, refresh: refreshShell } = usePublish();
   const [targets, setTargets] = React.useState<Target[]>([]);
   const [channels, setChannels] = React.useState<Channel[]>([]);
-  const [pages, setPages] = React.useState<BioPage[]>([]);
   const [feeds, setFeeds] = React.useState<Feed[]>([]);
   const [editing, setEditing] = React.useState<Draft | null>(null);
   const [editingFeed, setEditingFeed] = React.useState<Feed | 'new' | null>(null);
@@ -326,13 +318,12 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
 
   const load = React.useCallback(async () => {
     try {
-      const [t, c, b, f] = await Promise.all([
+      const [t, c, f] = await Promise.all([
         api<{ targets: Target[] }>('/api/publishing/targets'),
         api<{ channels: Channel[] }>('/api/publishing/channels'),
-        api<{ pages: BioPage[] }>('/api/publishing/bio'),
         api<{ feeds: Feed[] }>('/api/publishing/feeds'),
       ]);
-      setTargets(t.targets); setChannels(c.channels); setPages(b.pages); setFeeds(f.feeds); setError(null);
+      setTargets(t.targets); setChannels(c.channels); setFeeds(f.feeds); setError(null);
       refreshShell();
     } catch (e) { setError((e as Error).message); }
   }, [refreshShell]);
@@ -353,13 +344,13 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
         </CardHeader>
         <CardBody className="space-y-3">
           {editing && !editing.id ? (
-            <TargetEditor draft={editing} channels={channels} pages={pages} hasSecret={false} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+            <TargetEditor draft={editing} channels={channels} hasSecret={false} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
           ) : null}
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {targets.map((t) => (
               <li key={t.id} className="py-3">
                 {editing?.id === t.id ? (
-                  <TargetEditor draft={editing} channels={channels} pages={pages} hasSecret={t.has_secret} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+                  <TargetEditor draft={editing} channels={channels} hasSecret={t.has_secret} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
                 ) : (
                   <div className="flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:gap-3">
                     <span className="flex w-56 shrink-0 items-center gap-1.5 font-medium">

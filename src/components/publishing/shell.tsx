@@ -21,7 +21,6 @@ const TABS = [
   { href: '/publish', label: 'Queue' },
   { href: '/publish/calendar', label: 'Calendar' },
   { href: '/publish/autopilot', label: 'Autopilot' },
-  { href: '/publish/links', label: 'Link in Bio' },
   { href: '/publish/accounts', label: 'Accounts' },
 ];
 

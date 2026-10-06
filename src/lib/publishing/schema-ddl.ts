@@ -23,7 +23,7 @@ export const PUBLISHING_DDL: string[] = [
     rules jsonb NOT NULL DEFAULT '[]'::jsonb,
     min_gap_minutes integer NOT NULL DEFAULT 30,
     max_per_day integer,
-    bio_page_id uuid,
+    bio_page_id uuid, -- unused since link in bio was removed (Oct 2026)
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
@@ -85,30 +85,6 @@ export const PUBLISHING_DDL: string[] = [
     at timestamptz NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS publish_attempts_delivery_idx ON publish_attempts (delivery_id, at DESC)`,
-
-  `CREATE TABLE IF NOT EXISTS publish_bio_pages (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id uuid NOT NULL,
-    slug text NOT NULL UNIQUE,
-    title text NOT NULL,
-    brand text NOT NULL,
-    avatar_url text,
-    created_at timestamptz NOT NULL DEFAULT now()
-  )`,
-  `CREATE TABLE IF NOT EXISTS publish_bio_links (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id uuid NOT NULL,
-    page_id uuid NOT NULL REFERENCES publish_bio_pages(id) ON DELETE CASCADE,
-    title text NOT NULL,
-    url text NOT NULL,
-    image_url text,
-    starts_at timestamptz NOT NULL DEFAULT now(),
-    ends_at timestamptz,
-    pinned boolean NOT NULL DEFAULT false,
-    delivery_id uuid REFERENCES publish_deliveries(id) ON DELETE CASCADE,
-    created_at timestamptz NOT NULL DEFAULT now()
-  )`,
-  `CREATE INDEX IF NOT EXISTS publish_bio_links_page_idx ON publish_bio_links (page_id, starts_at DESC)`,
 
   `CREATE TABLE IF NOT EXISTS publish_feeds (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

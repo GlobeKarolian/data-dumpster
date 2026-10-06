@@ -23,6 +23,5 @@ export const targetSchema = z.object({
   rules: z.array(ruleSchema).max(70).default([]),
   minGapMinutes: z.number().int().min(0).max(24 * 60).default(30),
   maxPerDay: z.number().int().min(1).max(200).nullable().default(null),
-  bioPageId: z.string().uuid().nullable().default(null),
   active: z.boolean().default(true),
 });

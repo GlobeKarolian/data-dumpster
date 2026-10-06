@@ -180,7 +180,7 @@ export function Composer({ targets, canApprove, prefill, onDone, onClose }: {
 
   const plans = selected.length ? rawPlans : [];
   const hasIg = selected.some((id) => targets.find((t) => t.id === id)?.platform === 'instagram');
-  const blocking = plans.some((p) => p.problems.some((x) => !x.startsWith('No link-in-bio')) || (!p.slot && !(mode === 'optimize' && priority === 'can')));
+  const blocking = plans.some((p) => p.problems.length > 0 || (!p.slot && !(mode === 'optimize' && priority === 'can')));
   const primaryLabel = mode === 'hold' ? 'Hold' : !canApprove ? 'Submit for approval' : mode === 'now' ? 'Publish now' : mode === 'schedule' ? 'Schedule' : 'Add to queue';
   const mediaList = media.split(/\s+/).map((x) => x.trim()).filter(Boolean);
   const [showMore, setShowMore] = React.useState(false);

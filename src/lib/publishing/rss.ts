@@ -75,7 +75,7 @@ export function parseFeed(xml: string): FeedItem[] {
 /**
  * Fill a per-platform copy template. Supported fields: {title}, {description},
  * {category}. The link is never part of the template: how it travels (card,
- * text, link in bio) is decided per platform, so a Bluesky template does not
+ * text, or none on Instagram) is decided per platform, so a Bluesky template does not
  * spend characters on a URL.
  */
 export function renderTemplate(template: string, item: FeedItem, limit: number): string {

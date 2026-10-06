@@ -6,7 +6,7 @@ Dumpster provides the measurement layer (competitor landscape, post
 performance, Adobe referrals).
 
 Publishing is its own workspace at `/publish`, outside the analytics shell:
-Queue, Calendar, Autopilot (RSS), Link in Bio and Accounts, with New post (or
+Queue, Calendar, Autopilot (RSS) and Accounts, with New post (or
 press N) and Pause all always in the top bar. Public pages: `/links/<slug>`.
 
 The layout borrows what social desks already know from SocialFlow and Social
@@ -28,7 +28,7 @@ News Desk:
 ## Safety switches
 
 - **Test mode by default.** Unless `PUBLISHING_LIVE=true`, every send goes to the
-  mock sender. Scheduling, slots, UTMs, approvals, RSS and link in bio all run
+  mock sender. Scheduling, slots, UTMs, approvals, and RSS all run
   for real; only the final network call is replaced.
 - **Named users.** `/publish` and `/api/publishing/*` answer 404 to anyone
   outside `src/lib/publishing/access.ts` plus `PUBLISHING_EMAILS`.
@@ -52,7 +52,7 @@ News Desk:
 | Automatic platform-specific UTMs | `utm.ts`. A template per account, with placeholders. Tags already on a link are never overwritten. |
 | One post across platforms with different UTMs | A post fans out to one delivery per account, each with its own copy, tagged link and slot. |
 | Threads and Bluesky link without the URL in the text | Bluesky: done, via direct AT Protocol with a link card (`providers/bluesky.ts`). Threads: Ayrshare cannot do it. Threads' own API supports `link_attachment`, so it needs a direct Threads sender once our Meta app clears review for `threads_content_publish`. |
-| Link in bio, scheduled in advance | `/publish/links`. Instagram and TikTok posts put their story link on the brand page, timed to go live when the post does. Links can also be scheduled by hand, set to expire, or pinned. Includes a paste-in import for existing Later and Linktree lists. |
+| Link in bio | Removed in October 2026. Instagram and TikTok posts carry no link. The old `publish_bio_*` tables are left in place, unused. |
 | Instagram collab posts | Up to three collaborators, sent as Ayrshare `instagramOptions.collaborators`. |
 | RSS autopublishing with custom copy per platform | `/publish/settings`. Templates per platform, a posting window, optional approval. Turning a feed on records its backlog rather than posting it. This is publishing from our own feeds, not RSS ingestion of competitors. |
 | Approval workflow | Covered above. |

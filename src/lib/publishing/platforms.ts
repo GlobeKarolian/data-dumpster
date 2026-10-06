@@ -44,13 +44,13 @@ export type PublishProvider = (typeof PUBLISH_PROVIDERS)[number];
  *          costs no characters (Bluesky direct; Threads once direct publishing
  *          is approved).
  *  text    appended to the text; the network unfurls it.
- *  bio     Instagram and TikTok captions do not make links clickable, so the
- *          link goes on the brand's scheduled link-in-bio page instead.
+ *  none    Instagram and TikTok captions do not make links clickable, so no
+ *          link is added; the post stands on its image and caption.
  */
-export type LinkMode = 'card' | 'text' | 'bio';
+export type LinkMode = 'card' | 'text' | 'none';
 
 export function linkModeFor(platform: PublishPlatform, provider: PublishProvider): LinkMode {
-  if (platform === 'instagram' || platform === 'tiktok') return 'bio';
+  if (platform === 'instagram' || platform === 'tiktok') return 'none';
   // Test-only accounts behave like the direct path so previews match what will ship.
   if (platform === 'bluesky' && provider !== 'ayrshare') return 'card';
   return 'text';
@@ -80,7 +80,7 @@ export function chargedLength(platform: PublishPlatform, text: string): number {
  */
 export function finalText(copy: string, link: string | null, mode: LinkMode): string {
   const body = copy.trim();
-  if (!link || mode === 'card' || mode === 'bio') return body;
+  if (!link || mode === 'card' || mode === 'none') return body;
   if (body.includes(link)) return body;
   return body ? body + '\n\n' + link : link;
 }
