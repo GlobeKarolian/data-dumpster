@@ -40,6 +40,13 @@ describe('request proxy', () => {
     assert.equal(response.headers.get('x-middleware-next'), '1');
   });
 
+  it('serves public link-in-bio pages without a session, and nothing else under publishing', async () => {
+    const page = await proxy(new NextRequest('https://example.test/links/bostondotcom'));
+    assert.equal(page.headers.get('x-middleware-next'), '1');
+    const api = await proxy(new NextRequest('https://example.test/api/publishing/posts'));
+    assert.equal(api.status, 401);
+  });
+
   it('lets token-scoped report media reach its route authorization check', async () => {
     const response = await proxy(new NextRequest(
       'https://example.test/api/posts/4c6335ea-640d-44f2-884f-7c26b6f88ed1/preview?share=8WEZuCzDYEPNeCOzHygBR',

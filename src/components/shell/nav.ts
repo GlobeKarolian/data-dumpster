@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, CircleDollarSign, Cpu, LayoutDashboard, LayoutGrid,
   MessageSquare, MonitorUp, Radio, SlidersHorizontal, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
-  Vote, UsersRound, ShieldAlert,
+  Vote, UsersRound, ShieldAlert, Send, CalendarDays, Link as LinkIcon, Rss,
 } from 'lucide-react';
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -20,7 +20,7 @@ export interface NavItem {
   /** Match child routes as active, e.g. /settings/models under /settings. */
   matchPrefix?: boolean;
   /** Named-user features; shown only when the shell grants the capability. */
-  restricted?: 'leakage';
+  restricted?: 'leakage' | 'publishing';
 }
 
 export interface NavSection {
@@ -68,6 +68,16 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    id: 'publishing',
+    label: 'Publishing',
+    items: [
+      { href: '/publish', label: 'Compose & Queue', icon: Send, restricted: 'publishing' },
+      { href: '/publish/calendar', label: 'Calendar', icon: CalendarDays, restricted: 'publishing' },
+      { href: '/publish/links', label: 'Link in Bio', icon: LinkIcon, restricted: 'publishing' },
+      { href: '/publish/settings', label: 'Accounts & Feeds', icon: Rss, restricted: 'publishing' },
+    ],
+  },
+  {
     id: 'dashboards',
     label: 'Dashboards',
     items: [
@@ -106,6 +116,10 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/elections': 'Election Center',
   '/groups': 'Group View',
   '/leakage': 'Article Leakage',
+  '/publish': 'Compose & Queue',
+  '/publish/calendar': 'Publishing Calendar',
+  '/publish/links': 'Link in Bio',
+  '/publish/settings': 'Publishing Accounts & Feeds',
   '/elections/2028': 'Election Tracker · 2028 Preview',
   '/settings/users': 'Users and Access',
   '/settings/models': 'Model Connections',

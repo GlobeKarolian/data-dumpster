@@ -36,6 +36,10 @@
     {
       "path": "/api/cron/instagram-plays",
       "schedule": "40 1,13 * * *"
+    },
+    {
+      "path": "/api/cron/publish",
+      "schedule": "* * * * *"
     }
   ]
 }

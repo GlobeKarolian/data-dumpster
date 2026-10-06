@@ -22,6 +22,8 @@ export interface SidebarProps {
   pendingAccessRequests: number;
   /** Named-user capability for Article Leakage; hides the item for everyone else. */
   leakageAccess?: boolean;
+  /** Named-user capability for the publishing prototype. */
+  publishingAccess?: boolean;
 }
 
 export function Sidebar({
@@ -31,7 +33,9 @@ export function Sidebar({
   onMobileClose,
   pendingAccessRequests,
   leakageAccess = false,
+  publishingAccess = false,
 }: SidebarProps) {
+  const granted = { leakage: leakageAccess, publishing: publishingAccess };
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = usePersistentFlag(STORAGE_KEY);
@@ -91,7 +95,7 @@ export function Sidebar({
       )}
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3" aria-label="Primary">
-        {NAV_SECTIONS.map((section) => (
+        {NAV_SECTIONS.filter((section) => section.items.some((item) => !item.restricted || granted[item.restricted])).map((section) => (
           <div key={section.id} className="mb-4 last:mb-0">
             {section.label && !compact ? (
               <h2 className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-600">
@@ -99,7 +103,7 @@ export function Sidebar({
               </h2>
             ) : null}
             <ul className="space-y-0.5">
-              {section.items.filter((item) => item.restricted !== 'leakage' || leakageAccess).map((item) => {
+              {section.items.filter((item) => !item.restricted || granted[item.restricted]).map((item) => {
                 const active = item.matchPrefix
                   ? pathname === item.href || pathname.startsWith(item.href + '/')
                   : pathname === item.href;
