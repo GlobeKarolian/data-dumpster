@@ -292,7 +292,7 @@ function FeedEditor({ feed, targets, onSaved, onCancel }: { feed: Feed | null; t
         <Field label="Post within" hint="Minutes after the story appears. Each account picks its best slot inside its posting hours.">
           <Input type="number" min={5} value={windowMinutes} onChange={(e) => setWindow(Number(e.target.value))} />
         </Field>
-        <div className="flex items-end"><Toggle checked={approval} onChange={setApproval} label="Hold for approval" /></div>
+        <div className="flex items-end"><Toggle checked={approval} onChange={setApproval} label="Needs review before posting" /></div>
         <div className="flex items-end"><Toggle checked={active} onChange={setActive} label="Active" /></div>
       </div>
       <p className="text-[11px] text-zinc-500">When a feed is switched on, stories already in it are recorded, not posted. Only new stories go out.</p>
@@ -338,7 +338,7 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
         <CardHeader>
           <div>
             <CardTitle>Accounts</CardTitle>
-            <CardDescription>Each account has its own posting hours, spacing, UTM tags and sender.</CardDescription>
+            <CardDescription>The social accounts you can post to, and the rules each one follows: when it may post, how far apart, and how links are tagged.</CardDescription>
           </div>
           {canApprove && !editing ? <Button size="sm" variant="primary" onClick={() => setEditing(blank())}><Plus className="h-3.5 w-3.5" />Add account</Button> : null}
         </CardHeader>
@@ -360,10 +360,10 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
                       <Badge tone={t.provider === 'mock' ? 'outline' : 'neutral'}>{PROVIDER_LABEL[t.provider]}</Badge>
                       {t.provider !== 'mock' && !t.has_secret ? <Badge tone="warning">No credentials</Badge> : null}
                       {!t.active ? <Badge tone="outline">Paused</Badge> : null}
-                      {t.channel_id ? <Badge tone="accent">Learns from history</Badge> : null}
+                      {t.channel_id ? <Badge tone="accent">Uses past performance</Badge> : null}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-zinc-500" title={rulesSummary(t.rules)}>
-                      {rulesSummary(t.rules)} · gap {t.min_gap_minutes}m{t.max_per_day ? ` · max ${t.max_per_day}/day` : ''}
+                      {t.rules.length ? `Posts ${rulesSummary(t.rules)}` : 'Posts any time'} · at least {t.min_gap_minutes} min apart{t.max_per_day ? ` · up to ${t.max_per_day} a day` : ''}
                     </span>
                     {canApprove ? <Button size="sm" variant="ghost" onClick={() => setEditing(fromTarget(t))}>Edit</Button> : null}
                   </div>
@@ -378,8 +378,8 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Autopilot</CardTitle>
-            <CardDescription>When a story appears in one of these feeds, it is written up for each platform and queued into each account&apos;s next good slot. Pause all stops Autopilot too.</CardDescription>
+            <CardTitle>RSS auto-post</CardTitle>
+            <CardDescription>When a new story appears in one of these feeds, it is posted to the accounts you choose at each one&apos;s next good time. Pause posting stops these too.</CardDescription>
           </div>
           {canApprove && !editingFeed ? <Button size="sm" variant="primary" disabled={!targets.length} onClick={() => setEditingFeed('new')}><Plus className="h-3.5 w-3.5" />Add feed</Button> : null}
         </CardHeader>

@@ -60,7 +60,7 @@ async function pollOne(f: FeedRow & { org_id: string }): Promise<number> {
   const firstPoll = f.last_polled_at == null;
 
   if (firstPoll || !fresh.length) {
-    await markSeen(f.id, fresh, null, 'Already in the feed when Autopilot started');
+    await markSeen(f.id, fresh, null, 'Already in the feed when auto-post was turned on');
     return 0;
   }
 

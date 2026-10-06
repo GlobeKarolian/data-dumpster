@@ -9,6 +9,7 @@ import { PlatformIcon } from '@/components/ui/platform-icon';
 import { cn } from '@/lib/utils';
 import { dayKey, dayLabel, fmtTime, STATUS_LABEL } from './api';
 import { usePublishingData } from './workspace';
+import { StoryDrawer, headlineOf } from './story-drawer';
 
 function startOfWeek(offset: number): Date {
   const d = new Date();
@@ -34,6 +35,7 @@ export function PublishCalendar() {
   const [week, setWeek] = React.useState(0);
   const [brand, setBrand] = React.useState('');
   const [source, setSource] = React.useState('');
+  const [openId, setOpenId] = React.useState<string | null>(null);
   const start = React.useMemo(() => startOfWeek(week), [week]);
   const end = React.useMemo(() => new Date(start.getTime() + 7 * 86400_000), [start]);
   const { targets, posts, error } = usePublishingData({ from: start.toISOString(), to: end.toISOString() });
@@ -60,7 +62,7 @@ export function PublishCalendar() {
           <div className="flex items-center gap-1.5">
             <div className="w-36">
               <Select size="sm" value={source} onChange={(e) => setSource(e.target.value)}
-                options={[{ value: '', label: 'All posts' }, { value: 'optimized', label: 'Optimized' }, { value: 'scheduled', label: 'Scheduled' }, { value: 'rss', label: 'Autopilot' }]} />
+                options={[{ value: '', label: 'All posts' }, { value: 'optimized', label: 'Best time' }, { value: 'scheduled', label: 'Set time' }, { value: 'rss', label: 'RSS auto-post' }]} />
             </div>
             <div className="w-40">
               <Select size="sm" value={brand} onChange={(e) => setBrand(e.target.value)}
@@ -83,21 +85,20 @@ export function PublishCalendar() {
                   </p>
                   <div className="space-y-1">
                     {list.map(({ p, d, when }) => (
-                      <a
+                      <button
+                        type="button"
                         key={d.id}
-                        href={d.post_url ?? undefined}
-                        target={d.post_url ? '_blank' : undefined}
-                        rel="noreferrer"
-                        title={`${d.brand} · ${d.label}\n${STATUS_LABEL[d.status]}\n${d.final_text}`}
-                        className={cn('block rounded border px-1.5 py-1 text-[11px] leading-tight', TONE[d.status] ?? 'border-zinc-200')}
+                        onClick={() => setOpenId(p.id)}
+                        title={`${d.brand} · ${STATUS_LABEL[d.status]}`}
+                        className={cn('block w-full rounded border px-1.5 py-1 text-left text-[11px] leading-tight hover:shadow-sm', TONE[d.status] ?? 'border-zinc-200')}
                       >
                         <span className="flex items-center gap-1 text-zinc-500">
                           <PlatformIcon platform={d.platform} className="h-3 w-3" />
                           <span className="pb-num">{fmtTime(when)}</span>
                           <span className="truncate">{d.brand}</span>
                         </span>
-                        <span className="line-clamp-2 text-zinc-800 dark:text-zinc-200">{p.link_title || p.base_copy || d.final_text}</span>
-                      </a>
+                        <span className="line-clamp-2 text-zinc-800 dark:text-zinc-200">{headlineOf(p)}</span>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -106,6 +107,7 @@ export function PublishCalendar() {
           </div>
         </CardBody>
       </Card>
+      {openId && posts.find((x) => x.id === openId) ? <StoryDrawer post={posts.find((x) => x.id === openId)!} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
 }

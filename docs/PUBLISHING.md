@@ -5,25 +5,26 @@ wish lists from the Globe and Boston.com social teams. The rest of Data
 Dumpster provides the measurement layer (competitor landscape, post
 performance, Adobe referrals).
 
-Publishing is its own workspace at `/publish`, outside the analytics shell:
-Queue, Calendar, Autopilot (RSS) and Accounts, with New post (or
-press N) and Pause all always in the top bar. Public pages: `/links/<slug>`.
+Publishing is its own workspace at `/publish`, outside the analytics shell,
+with four tabs: Posts, Calendar, RSS auto-post and Settings. Pause posting and
+New post (or press N) are always in the top bar.
 
-The layout borrows what social desks already know from SocialFlow and Social
-News Desk:
+The Posts screen is built for a desk under deadline, in plain language:
 
-- Queue: accounts on the left, "Up next" in the middle grouped by day, and
-  "Published" on the right. Anything needing a person (approval, held,
-  failed) sits above the queue. Hover a queued post to edit its text, move
-  it, send it now or remove it. Published posts can be recycled.
-- Send modes: Optimize (window, with Must send or Can send; Can send expires
-  if no good slot), Schedule (exact), Publish now, Hold (saved, released later).
-- Pause all: stops every send, including Autopilot. Autopilot keeps queueing.
-  On resume, overdue posts are re-spaced by each account's minimum gap instead
-  of firing together, and expired Can send posts drop.
-- Autopilot rules can be limited to RSS categories and can block keywords.
-- Labels on posts, filterable in the queue; Calendar filters by brand and by
-  Optimized, Scheduled or Autopilot.
+- One box at the top: "Paste a story link". Pasting fills the headline, image
+  and the accounts used last time. When to post is one choice: Post now, Best
+  time (next 2 hours, today, tonight, tomorrow) or Pick a time, and the box
+  shows the actual time each account will post before anything is scheduled.
+- Below it, one list of stories by day, with tabs for Scheduled, Posted,
+  Drafts & review and Problems. Each story is one row with an icon and time
+  per network.
+- Clicking a story (here or on the Calendar) opens a side panel: per network,
+  edit the text, change the time, post now or don't post there; cancel the
+  whole post or share it again.
+- Pause posting stops every send, RSS included. On resume, overdue posts are
+  re-spaced by each account's minimum gap instead of firing together.
+- RSS auto-post rules can be limited to RSS categories, can block keywords,
+  and list what they did with each recent story.
 
 ## Safety switches
 
