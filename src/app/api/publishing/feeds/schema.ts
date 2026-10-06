@@ -6,6 +6,10 @@ export const feedSchema = z.object({
   targetIds: z.array(z.string().uuid()).min(1).max(40),
   /** Copy template keyed by target id, platform, or "default". Fields: {title} {description} {category}. */
   templates: z.record(z.string(), z.string().max(2000)).default({}),
+  /** Only stories in these RSS categories (blank = all). */
+  includeCategories: z.array(z.string().trim().min(1).max(80)).max(50).default([]),
+  /** Never autopublish a story whose title or summary contains one of these. */
+  excludeKeywords: z.array(z.string().trim().min(1).max(80)).max(100).default([]),
   windowMinutes: z.number().int().min(5).max(24 * 60).default(120),
   requireApproval: z.boolean().default(false),
   active: z.boolean().default(true),

@@ -49,7 +49,8 @@ export interface Post {
   link_url: string | null;
   link_title: string | null;
   media_urls: string[];
-  timing: { mode: 'exact'; at: string } | { mode: 'window'; start: string; end: string };
+  timing: { mode: 'exact'; at: string } | { mode: 'window'; start: string; end: string; priority?: 'must' | 'can' };
+  options?: { labels?: string[]; instagramCollaborators?: string[] };
   notes: string | null;
   created_by_email: string | null;
   approved_by_email: string | null;

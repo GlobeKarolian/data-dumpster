@@ -131,4 +131,14 @@ export const PUBLISHING_DDL: string[] = [
     seen_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (feed_id, guid)
   )`,
+
+  // 0040: emergency pause, and newsroom feed filters.
+  `CREATE TABLE IF NOT EXISTS publish_settings (
+    org_id uuid PRIMARY KEY,
+    paused boolean NOT NULL DEFAULT false,
+    paused_by text,
+    paused_at timestamptz
+  )`,
+  `ALTER TABLE publish_feeds ADD COLUMN IF NOT EXISTS include_categories jsonb NOT NULL DEFAULT '[]'::jsonb`,
+  `ALTER TABLE publish_feeds ADD COLUMN IF NOT EXISTS exclude_keywords jsonb NOT NULL DEFAULT '[]'::jsonb`,
 ];

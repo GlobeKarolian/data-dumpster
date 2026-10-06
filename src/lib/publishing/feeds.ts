@@ -21,7 +21,8 @@ const DEFAULT_TEMPLATE = '{title}';
 
 export async function pollFeeds(): Promise<{ feeds: number; queued: number; errors: number }> {
   const feeds = await q<FeedRow & { org_id: string; created_by_email: string | null }>(sql`
-    SELECT id, org_id, label, url, target_ids, templates, window_minutes, require_approval, active,
+    SELECT id, org_id, label, url, target_ids, templates, include_categories, exclude_keywords,
+           window_minutes, require_approval, active,
            last_polled_at::text AS last_polled_at, last_error, NULL::text AS created_by_email
       FROM publish_feeds
      WHERE active AND (last_polled_at IS NULL OR last_polled_at < now() - make_interval(mins => ${POLL_EVERY_MINUTES}))
@@ -55,7 +56,7 @@ async function pollOne(f: FeedRow & { org_id: string }): Promise<number> {
   const known = await q<{ guid: string }>(sql`SELECT guid FROM publish_feed_items WHERE feed_id = ${f.id}::uuid
     AND guid IN (SELECT jsonb_array_elements_text(${JSON.stringify(items.map((i) => i.guid))}::jsonb))`);
   const seen = new Set(known.map((k) => k.guid));
-  const fresh = items.filter((i) => !seen.has(i.guid));
+  let fresh = items.filter((i) => !seen.has(i.guid));
   const firstPoll = f.last_polled_at == null;
 
   if (firstPoll || !fresh.length) {
@@ -64,6 +65,10 @@ async function pollOne(f: FeedRow & { org_id: string }): Promise<number> {
   }
 
   const targets = await getTargets(f.org_id, f.target_ids);
+  // Newsroom rules: only these sections, and never stories matching these words.
+  const skipped = fresh.filter((i) => !passesFilters(f, i));
+  await markSeen(f.id, skipped.map((i) => i.guid), null);
+  fresh = fresh.filter((i) => passesFilters(f, i));
   let queued = 0;
   // Oldest first, so the queue keeps publication order.
   const batch = fresh.sort((a, b) => (a.published?.getTime() ?? 0) - (b.published?.getTime() ?? 0));
@@ -97,7 +102,8 @@ async function queueItem(f: FeedRow & { org_id: string }, targets: Awaited<Retur
       linkTitle: item.title,
       mediaUrls: item.image?.startsWith('https://') ? [item.image] : [],
       instagramCollaborators: [],
-      timing: { mode: 'window', start: now.toISOString(), end: new Date(now.getTime() + f.window_minutes * 60_000).toISOString() },
+      timing: { mode: 'window', start: now.toISOString(), end: new Date(now.getTime() + f.window_minutes * 60_000).toISOString(), priority: 'must' },
+      labels: ['autopilot'],
       notes: `From feed: ${f.label}`,
       submit: f.require_approval ? 'approval' : 'schedule',
     },
@@ -109,7 +115,8 @@ async function queueItem(f: FeedRow & { org_id: string }, targets: Awaited<Retur
       {
         targetIds: targets.filter((t) => t.active).map((t) => t.id), baseCopy: item.title, copyByTarget,
         linkUrl: item.link, linkTitle: item.title, mediaUrls: [], instagramCollaborators: [],
-        timing: { mode: 'window', start: now.toISOString(), end: new Date(now.getTime() + f.window_minutes * 60_000).toISOString() },
+        timing: { mode: 'window', start: now.toISOString(), end: new Date(now.getTime() + f.window_minutes * 60_000).toISOString(), priority: 'must' },
+      labels: ['autopilot'],
         notes: `From feed: ${f.label}. Held for review: ${(err as Error).message}`, submit: 'approval',
       },
       { kind: 'rss', feedId: f.id },
@@ -124,4 +131,11 @@ async function markSeen(feedId: string, guids: string[], postId: string | null) 
   await q(sql`INSERT INTO publish_feed_items (feed_id, guid, post_id)
     SELECT ${feedId}::uuid, g, ${postId}::uuid FROM jsonb_array_elements_text(${JSON.stringify(guids)}::jsonb) g
     ON CONFLICT (feed_id, guid) DO NOTHING`);
+}
+
+export function passesFilters(f: Pick<FeedRow, 'include_categories' | 'exclude_keywords'>, item: FeedItem): boolean {
+  const include = (f.include_categories ?? []).map((c) => c.toLowerCase().trim()).filter(Boolean);
+  if (include.length && !item.categories.some((c) => include.includes(c.toLowerCase().trim()))) return false;
+  const hay = (item.title + ' ' + item.description).toLowerCase();
+  return !(f.exclude_keywords ?? []).some((k) => k.trim() && hay.includes(k.toLowerCase().trim()));
 }

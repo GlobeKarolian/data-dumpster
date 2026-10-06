@@ -17,7 +17,7 @@ const iso = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'Not a valid 
 
 export const timingSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('exact'), at: iso }),
-  z.object({ mode: z.literal('window'), start: iso, end: iso }),
+  z.object({ mode: z.literal('window'), start: iso, end: iso, priority: z.enum(['must', 'can']).default('must') }),
 ]);
 
 export const composeSchema = z.object({
@@ -28,6 +28,7 @@ export const composeSchema = z.object({
   linkTitle: z.string().max(300).nullable().default(null),
   mediaUrls: z.array(z.string().url().startsWith('https://')).max(10).default([]),
   instagramCollaborators: z.array(z.string().regex(/^@?[A-Za-z0-9._]{1,30}$/)).max(3).default([]),
+  labels: z.array(z.string().trim().min(1).max(30)).max(5).default([]),
   timing: timingSchema,
   notes: z.string().max(1000).nullable().default(null),
   /** Editors always submit for approval; admins can choose. */
@@ -66,6 +67,10 @@ export async function slotFor(
     policy: { rules: t.rules ?? [], minGapMinutes: t.min_gap_minutes, maxPerDay: t.max_per_day },
     taken, weights: await weightsFor(orgId, t),
   });
+}
+
+function canExpire(t: Timing): boolean {
+  return t.mode === 'window' && t.priority === 'can';
 }
 
 /* ---------------------------------------------------------------- compose */
@@ -143,12 +148,13 @@ export async function createPost(
     VALUES (${ctx.orgId}::uuid, ${ctx.userId}::uuid, ${ctx.email}, ${status}, ${origin.kind},
       ${origin.kind === 'rss' ? origin.feedId : null}::uuid, ${input.baseCopy}, ${input.linkUrl}, ${input.linkTitle},
       ${JSON.stringify(input.mediaUrls)}::jsonb, ${JSON.stringify(input.timing)}::jsonb,
-      ${JSON.stringify({ instagramCollaborators: input.instagramCollaborators.map((c) => c.replace(/^@/, '')), copyByTarget: input.copyByTarget } satisfies PostOptions)}::jsonb,
+      ${JSON.stringify({ instagramCollaborators: input.instagramCollaborators.map((c) => c.replace(/^@/, '')), copyByTarget: input.copyByTarget, labels: input.labels } satisfies PostOptions)}::jsonb,
       ${input.notes}, ${status === 'approved' ? ctx.email : null}, ${status === 'approved' ? new Date().toISOString() : null}::timestamptz)
     RETURNING id`);
 
   const plans = await planDeliveries(ctx.orgId, input, id.slice(0, 8), origin.kind);
   if (status === 'approved') {
+    // A Can Send post that finds no good slot simply expires; it is not a problem to fix.
     const blocking = plans.filter((p) => p.problems.some((x) => !x.startsWith('No link-in-bio')));
     if (blocking.length) {
       await q(sql`DELETE FROM publish_posts WHERE id = ${id}::uuid`);
@@ -156,12 +162,12 @@ export async function createPost(
     }
   }
   for (const p of plans) {
-    const dStatus = status !== 'approved' ? 'held' : p.slot ? 'queued' : 'unschedulable';
+    const dStatus = status !== 'approved' ? 'held' : p.slot ? 'queued' : canExpire(input.timing) ? 'canceled' : 'unschedulable';
     const [{ id: deliveryId }] = await q<{ id: string }>(sql`INSERT INTO publish_deliveries
         (org_id, post_id, target_id, copy, link_url, final_text, link_mode, status, scheduled_for, slot_reason, last_error)
       VALUES (${ctx.orgId}::uuid, ${id}::uuid, ${p.targetId}::uuid, ${p.copy}, ${p.linkUrl}, ${p.finalText}, ${p.linkMode},
         ${dStatus}, ${dStatus === 'queued' ? p.slot!.at : null}::timestamptz, ${p.slot?.reason ?? null},
-        ${dStatus === 'unschedulable' ? p.slotError : null})
+        ${dStatus === 'unschedulable' ? p.slotError : dStatus === 'canceled' ? 'Expired: ' + p.slotError : null})
       RETURNING id`);
     if (dStatus === 'queued') await syncBioLink(ctx.orgId, deliveryId);
   }
@@ -191,7 +197,9 @@ export async function approvePost(orgId: string, postId: string, approverEmail: 
         slot_reason = ${slot.pick.reason}, last_error = NULL WHERE id = ${d.id}::uuid AND org_id = ${orgId}::uuid`);
       await syncBioLink(orgId, d.id);
     } else {
-      await q(sql`UPDATE publish_deliveries SET status = 'unschedulable', last_error = ${slot.reason}
+      const expire = canExpire(post.timing);
+      await q(sql`UPDATE publish_deliveries SET status = ${expire ? 'canceled' : 'unschedulable'},
+          last_error = ${expire ? 'Expired: ' + slot.reason : slot.reason}
         WHERE id = ${d.id}::uuid AND org_id = ${orgId}::uuid`);
     }
   }
@@ -254,4 +262,65 @@ export async function syncBioLink(orgId: string, deliveryId: string) {
     await q(sql`INSERT INTO publish_bio_links (org_id, page_id, title, url, image_url, starts_at, delivery_id)
       VALUES (${orgId}::uuid, ${r.bio_page_id}::uuid, ${title}, ${r.link_url}, ${r.media}, ${r.scheduled_for}::timestamptz, ${deliveryId}::uuid)`);
   }
+}
+
+/* ------------------------------------------------------------ edit copy */
+
+/** Change the exact text one account will send. Only before it sends. */
+export async function editDeliveryText(orgId: string, deliveryId: string, text: string) {
+  const rows = await q<{ platform: PublishPlatform; status: string }>(sql`SELECT t.platform, d.status
+    FROM publish_deliveries d JOIN publish_targets t ON t.id = d.target_id
+    WHERE d.org_id = ${orgId}::uuid AND d.id = ${deliveryId}::uuid`);
+  const r = rows[0];
+  if (!r) throw new HttpError(404, 'Post not found.', 'not_found');
+  if (!['held', 'queued', 'unschedulable', 'failed'].includes(r.status)) {
+    throw new HttpError(409, 'That post is already sending or sent.', 'conflict');
+  }
+  const length = chargedLength(r.platform, text);
+  if (length > TEXT_LIMITS[r.platform]) {
+    throw new HttpError(400, `${length - TEXT_LIMITS[r.platform]} characters over the ${TEXT_LIMITS[r.platform]} limit.`);
+  }
+  await q(sql`UPDATE publish_deliveries SET final_text = ${text}, copy = ${text}
+    WHERE org_id = ${orgId}::uuid AND id = ${deliveryId}::uuid`);
+}
+
+/* ---------------------------------------------------------------- pause */
+
+/**
+ * The breaking-news brake. While paused, nothing sends for this org; RSS keeps
+ * queueing so nothing is lost. On resume, posts that came due during the pause
+ * are not all fired at once: each account's overdue posts are re-spaced from
+ * now by that account's minimum gap, and Can Send posts whose window closed
+ * expire.
+ */
+export async function setPaused(orgId: string, paused: boolean, by: string | null) {
+  await q(sql`INSERT INTO publish_settings (org_id, paused, paused_by, paused_at)
+    VALUES (${orgId}::uuid, ${paused}, ${by}, now())
+    ON CONFLICT (org_id) DO UPDATE SET paused = EXCLUDED.paused, paused_by = EXCLUDED.paused_by, paused_at = EXCLUDED.paused_at`);
+  if (paused) return { respaced: 0, expired: 0 };
+
+  const overdue = await q<{ id: string; target_id: string; min_gap_minutes: number; timing: Timing }>(sql`
+    SELECT d.id, d.target_id, t.min_gap_minutes, p.timing
+      FROM publish_deliveries d
+      JOIN publish_targets t ON t.id = d.target_id
+      JOIN publish_posts p ON p.id = d.post_id
+     WHERE d.org_id = ${orgId}::uuid AND d.status = 'queued' AND d.scheduled_for < now()
+     ORDER BY d.scheduled_for`);
+  let respaced = 0, expired = 0;
+  const nextFree = new Map<string, number>();
+  for (const d of overdue) {
+    if (d.timing.mode === 'window' && d.timing.priority === 'can' && new Date(d.timing.end).getTime() < Date.now()) {
+      await q(sql`UPDATE publish_deliveries SET status = 'canceled', last_error = 'Expired during pause' WHERE id = ${d.id}::uuid`);
+      await q(sql`DELETE FROM publish_bio_links WHERE delivery_id = ${d.id}::uuid`);
+      expired++;
+      continue;
+    }
+    const at = nextFree.get(d.target_id) ?? Date.now() + 2 * 60_000;
+    nextFree.set(d.target_id, at + Math.max(d.min_gap_minutes, 5) * 60_000);
+    await q(sql`UPDATE publish_deliveries SET scheduled_for = ${new Date(at).toISOString()}::timestamptz,
+        slot_reason = 'Re-spaced after pause' WHERE id = ${d.id}::uuid`);
+    await syncBioLink(orgId, d.id);
+    respaced++;
+  }
+  return { respaced, expired };
 }

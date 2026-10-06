@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, CircleDollarSign, Cpu, LayoutDashboard, LayoutGrid,
   MessageSquare, MonitorUp, Radio, SlidersHorizontal, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
-  Vote, UsersRound, ShieldAlert, Send, CalendarDays, Link as LinkIcon, Rss,
+  Vote, UsersRound, ShieldAlert, Send,
 } from 'lucide-react';
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -71,10 +71,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'publishing',
     label: 'Publishing',
     items: [
-      { href: '/publish', label: 'Compose & Queue', icon: Send, restricted: 'publishing' },
-      { href: '/publish/calendar', label: 'Calendar', icon: CalendarDays, restricted: 'publishing' },
-      { href: '/publish/links', label: 'Link in Bio', icon: LinkIcon, restricted: 'publishing' },
-      { href: '/publish/settings', label: 'Accounts & Feeds', icon: Rss, restricted: 'publishing' },
+      { href: '/publish', label: 'Open Publish', icon: Send, restricted: 'publishing' },
     ],
   },
   {
@@ -116,10 +113,6 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/elections': 'Election Center',
   '/groups': 'Group View',
   '/leakage': 'Article Leakage',
-  '/publish': 'Compose & Queue',
-  '/publish/calendar': 'Publishing Calendar',
-  '/publish/links': 'Link in Bio',
-  '/publish/settings': 'Publishing Accounts & Feeds',
   '/elections/2028': 'Election Tracker · 2028 Preview',
   '/settings/users': 'Users and Access',
   '/settings/models': 'Model Connections',

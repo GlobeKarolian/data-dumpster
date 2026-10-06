@@ -274,6 +274,13 @@
       "when": 1791310036749,
       "tag": "0039_publishing",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791321268528,
+      "tag": "0040_publishing_pause_filters",
+      "breakpoints": true
     }
   ]
 }
