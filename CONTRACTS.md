@@ -26,6 +26,14 @@ their current landscapes when the table is introduced. A restricted user who
 creates a landscape receives its first grant automatically. New restricted
 accounts otherwise begin with no landscape access until an admin assigns it.
 
+The named platform administrator `matt@boston.com` is owner-equivalent inside
+the organization carried by the signed session, regardless of the stored role.
+This does not bypass organization predicates or grant cross-organization
+access to tenant-private resources. Existing owner-only deployment operations
+remain global and are available to this identity. Its Weekly Reports index is
+organization-wide rather than limited to the landscape currently selected in
+the shell, and report authorship never restricts visibility or editing.
+
 ## Release gate
 
 The current schema is designed to pool public observations but does not yet
