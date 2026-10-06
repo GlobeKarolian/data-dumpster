@@ -6,6 +6,7 @@ import { PUBLISH_PLATFORMS, TEXT_LIMITS, chargedLength, finalText, linkModeFor, 
 import { applyUtm } from './utm';
 import { pickSlot, type HourWeights, type SlotPick } from './slots';
 import { buildHourWeights } from './performance';
+import { fetchLinkPreview } from './preview';
 import {
   getPost, getTargets, q, rateSamples, takenTimes,
   type PostOptions, type PostStatus, type TargetRow, type Timing,
@@ -142,13 +143,18 @@ export async function createPost(
     input.submit === 'draft' ? 'draft'
       : input.submit === 'approval' || !ctx.canApprove ? 'pending_approval'
         : 'approved';
+  // Best effort: the queue shows each story as a card. A slow or blocked page never blocks the post.
+  const card = input.linkUrl
+    ? await Promise.race([fetchLinkPreview(input.linkUrl), new Promise<null>((r) => setTimeout(() => r(null), 6000))]).catch(() => null)
+    : null;
   const [{ id }] = await q<{ id: string }>(sql`INSERT INTO publish_posts
       (org_id, created_by, created_by_email, status, origin, feed_id, base_copy, link_url, link_title, media_urls, timing, options, notes,
        approved_by_email, approved_at)
     VALUES (${ctx.orgId}::uuid, ${ctx.userId}::uuid, ${ctx.email}, ${status}, ${origin.kind},
       ${origin.kind === 'rss' ? origin.feedId : null}::uuid, ${input.baseCopy}, ${input.linkUrl}, ${input.linkTitle},
       ${JSON.stringify(input.mediaUrls)}::jsonb, ${JSON.stringify(input.timing)}::jsonb,
-      ${JSON.stringify({ instagramCollaborators: input.instagramCollaborators.map((c) => c.replace(/^@/, '')), copyByTarget: input.copyByTarget, labels: input.labels } satisfies PostOptions)}::jsonb,
+      ${JSON.stringify({ instagramCollaborators: input.instagramCollaborators.map((c) => c.replace(/^@/, '')), copyByTarget: input.copyByTarget, labels: input.labels,
+        card: card ? { title: card.title, description: card.description, image: card.image } : null } satisfies PostOptions)}::jsonb,
       ${input.notes}, ${status === 'approved' ? ctx.email : null}, ${status === 'approved' ? new Date().toISOString() : null}::timestamptz)
     RETURNING id`);
 

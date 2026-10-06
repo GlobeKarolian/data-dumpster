@@ -166,6 +166,8 @@ export interface PostOptions {
   copyByTarget?: Record<string, string>;
   /** Free-form labels for sorting the queue, e.g. "breaking", "sports". */
   labels?: string[];
+  /** The story's link preview, captured when the post is created, for the queue's cards. */
+  card?: { title: string; description: string; image: string | null } | null;
 }
 
 export interface DeliveryView {
@@ -304,4 +306,15 @@ export async function getPause(orgId: string) {
   const rows = await q<{ paused: boolean; paused_by: string | null; paused_at: string | null }>(sql`
     SELECT paused, paused_by, ${iso('paused_at')} AS paused_at FROM publish_settings WHERE org_id = ${orgId}::uuid`);
   return rows[0] ?? { paused: false, paused_by: null, paused_at: null };
+}
+
+/** The last stories each feed saw and what Autopilot did with them. */
+export function recentFeedItems(orgId: string) {
+  return q<{ feed_id: string; title: string | null; link: string | null; outcome: string | null; seen_at: string; post_id: string | null }>(sql`
+    SELECT * FROM (
+      SELECT i.feed_id, i.title, i.link, i.outcome, ${iso('i.seen_at')} AS seen_at, i.post_id,
+             row_number() OVER (PARTITION BY i.feed_id ORDER BY i.seen_at DESC) AS n
+        FROM publish_feed_items i JOIN publish_feeds f ON f.id = i.feed_id
+       WHERE f.org_id = ${orgId}::uuid AND i.title IS NOT NULL
+    ) x WHERE n <= 8 ORDER BY seen_at DESC`);
 }

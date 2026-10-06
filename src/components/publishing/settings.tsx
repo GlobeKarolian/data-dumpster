@@ -13,8 +13,9 @@ import {
   PUBLISH_PLATFORMS, PUBLISH_PLATFORM_LABELS, linkModeFor, type PublishPlatform, type PublishProvider,
 } from '@/lib/publishing/platforms';
 import { DEFAULT_UTM } from '@/lib/publishing/utm';
-import { api, fmtWhen, minuteLabel, WEEKDAYS, type Rule, type Target } from './api';
+import { api, fmtTime, fmtWhen, minuteLabel, WEEKDAYS, type Rule, type Target } from './api';
 import { usePublish } from './shell';
+import { accountName } from './bits';
 
 interface Channel { id: string; platform: string; handle: string; company: string }
 interface BioPage { id: string; slug: string; title: string; brand: string }
@@ -22,6 +23,7 @@ interface Feed {
   id: string; label: string; url: string; target_ids: string[]; templates: Record<string, string>;
   window_minutes: number; require_approval: boolean; active: boolean; last_polled_at: string | null; last_error: string | null;
   include_categories?: string[]; exclude_keywords?: string[];
+  recent?: { title: string | null; link: string | null; outcome: string | null; seen_at: string }[];
 }
 
 const PROVIDER_LABEL: Record<PublishProvider, string> = { ayrshare: 'Ayrshare', bluesky: 'Bluesky direct', mock: 'Test only' };
@@ -361,7 +363,7 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
                 ) : (
                   <div className="flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:gap-3">
                     <span className="flex w-56 shrink-0 items-center gap-1.5 font-medium">
-                      <PlatformIcon platform={t.platform} />{t.brand} · {t.label}
+                      <PlatformIcon platform={t.platform} />{t.brand} · {accountName(t)}
                     </span>
                     <span className="flex flex-wrap gap-1.5">
                       <Badge tone={t.provider === 'mock' ? 'outline' : 'neutral'}>{PROVIDER_LABEL[t.provider]}</Badge>
@@ -414,6 +416,17 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
                     {canApprove ? <Button size="sm" variant="ghost" onClick={() => setEditingFeed(f)}>Edit</Button> : null}
                   </div>
                 )}
+                {f.recent?.length && !(editingFeed !== 'new' && editingFeed?.id === f.id) ? (
+                  <ul className="mt-2 space-y-1 rounded-md bg-zinc-50 p-2 text-xs dark:bg-zinc-900/60">
+                    {f.recent.map((r, i) => (
+                      <li key={i} className="flex items-baseline gap-2">
+                        <span className="pb-num w-16 shrink-0 text-zinc-400">{fmtTime(r.seen_at)}</span>
+                        <a href={r.link ?? undefined} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline">{r.title}</a>
+                        <span className={r.outcome === 'Queued' ? 'shrink-0 font-medium text-emerald-700 dark:text-emerald-400' : 'shrink-0 text-zinc-500'}>{r.outcome}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             ))}
             {!feeds.length && editingFeed !== 'new' ? <li className="py-6 text-center text-sm text-zinc-500">No feeds yet.</li> : null}

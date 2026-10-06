@@ -60,25 +60,25 @@ async function pollOne(f: FeedRow & { org_id: string }): Promise<number> {
   const firstPoll = f.last_polled_at == null;
 
   if (firstPoll || !fresh.length) {
-    await markSeen(f.id, fresh.map((i) => i.guid), null);
+    await markSeen(f.id, fresh, null, 'Already in the feed when Autopilot started');
     return 0;
   }
 
   const targets = await getTargets(f.org_id, f.target_ids);
   // Newsroom rules: only these sections, and never stories matching these words.
   const skipped = fresh.filter((i) => !passesFilters(f, i));
-  await markSeen(f.id, skipped.map((i) => i.guid), null);
+  await markSeen(f.id, skipped, null, 'Skipped by section or keyword rule');
   fresh = fresh.filter((i) => passesFilters(f, i));
   let queued = 0;
   // Oldest first, so the queue keeps publication order.
   const batch = fresh.sort((a, b) => (a.published?.getTime() ?? 0) - (b.published?.getTime() ?? 0));
   for (const item of batch.slice(-MAX_NEW_PER_POLL)) {
-    const postId = await queueItem(f, targets, item);
-    await markSeen(f.id, [item.guid], postId);
+    const { id: postId, status } = await queueItem(f, targets, item);
+    await markSeen(f.id, [item], postId, status === 'approved' ? 'Queued' : 'Waiting for approval');
     queued++;
   }
   // Anything beyond the per-poll cap is recorded as seen, not posted.
-  await markSeen(f.id, batch.slice(0, -MAX_NEW_PER_POLL).map((i) => i.guid), null);
+  await markSeen(f.id, batch.slice(0, -MAX_NEW_PER_POLL), null, 'Skipped: too many new stories at once');
   return queued;
 }
 
@@ -92,7 +92,7 @@ async function queueItem(f: FeedRow & { org_id: string }, targets: Awaited<Retur
     copyByTarget[t.id] = renderTemplate(template, item, TEXT_LIMITS[t.platform] - reserve);
   }
   const now = new Date();
-  const { id } = await createPost(
+  const { id, status } = await createPost(
     { orgId: f.org_id, userId: null, email: 'rss:' + f.label, canApprove: !f.require_approval },
     {
       targetIds: targets.filter((t) => t.active).map((t) => t.id),
@@ -123,13 +123,15 @@ async function queueItem(f: FeedRow & { org_id: string }, targets: Awaited<Retur
     );
     return fallback;
   });
-  return id;
+  return { id, status };
 }
 
-async function markSeen(feedId: string, guids: string[], postId: string | null) {
-  if (!guids.length) return;
-  await q(sql`INSERT INTO publish_feed_items (feed_id, guid, post_id)
-    SELECT ${feedId}::uuid, g, ${postId}::uuid FROM jsonb_array_elements_text(${JSON.stringify(guids)}::jsonb) g
+async function markSeen(feedId: string, items: FeedItem[], postId: string | null, outcome: string) {
+  if (!items.length) return;
+  const rows = items.map((i) => ({ guid: i.guid, title: i.title.slice(0, 300), link: i.link }));
+  await q(sql`INSERT INTO publish_feed_items (feed_id, guid, post_id, title, link, outcome)
+    SELECT ${feedId}::uuid, r->>'guid', ${postId}::uuid, r->>'title', r->>'link', ${outcome}
+      FROM jsonb_array_elements(${JSON.stringify(rows)}::jsonb) r
     ON CONFLICT (feed_id, guid) DO NOTHING`);
 }
 
