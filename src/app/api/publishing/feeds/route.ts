@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { apiHandler } from '@/lib/session';
 import { requirePublishingApprover, requirePublishingUser } from '@/lib/publishing/guard';
-import { listFeeds, q } from '@/lib/publishing/store';
+import { listFeeds, q, recentFeedItems } from '@/lib/publishing/store';
 import { NO_STORE } from '../_shared';
 import { feedSchema } from './schema';
 
@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 
 export const GET = apiHandler(async () => {
   const s = await requirePublishingUser();
-  return Response.json({ feeds: await listFeeds(s.orgId) }, NO_STORE);
+  const [feeds, recent] = await Promise.all([listFeeds(s.orgId), recentFeedItems(s.orgId)]);
+  return Response.json({ feeds: feeds.map((f) => ({ ...f, recent: recent.filter((r) => r.feed_id === f.id) })) }, NO_STORE);
 });
 
 export const POST = apiHandler(async (req: NextRequest) => {

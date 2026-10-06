@@ -141,4 +141,9 @@ export const PUBLISHING_DDL: string[] = [
   )`,
   `ALTER TABLE publish_feeds ADD COLUMN IF NOT EXISTS include_categories jsonb NOT NULL DEFAULT '[]'::jsonb`,
   `ALTER TABLE publish_feeds ADD COLUMN IF NOT EXISTS exclude_keywords jsonb NOT NULL DEFAULT '[]'::jsonb`,
+
+  // 0041: what Autopilot did with each story, so the desk can see why something did or did not post.
+  `ALTER TABLE publish_feed_items ADD COLUMN IF NOT EXISTS title text`,
+  `ALTER TABLE publish_feed_items ADD COLUMN IF NOT EXISTS link text`,
+  `ALTER TABLE publish_feed_items ADD COLUMN IF NOT EXISTS outcome text`,
 ];

@@ -50,7 +50,7 @@ export interface Post {
   link_title: string | null;
   media_urls: string[];
   timing: { mode: 'exact'; at: string } | { mode: 'window'; start: string; end: string; priority?: 'must' | 'can' };
-  options?: { labels?: string[]; instagramCollaborators?: string[] };
+  options?: { labels?: string[]; instagramCollaborators?: string[]; card?: { title: string; description?: string; image: string | null } | null };
   notes: string | null;
   created_by_email: string | null;
   approved_by_email: string | null;
