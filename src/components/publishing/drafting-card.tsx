@@ -12,6 +12,7 @@ import { PUBLISH_PLATFORMS, PUBLISH_PLATFORM_LABELS, type PublishPlatform } from
 import { DEFAULT_DRAFT_MODEL, DEFAULT_DRAFT_PROMPTS, DRAFT_MODELS, type DraftPrompts } from '@/lib/publishing/drafting-core';
 import { api, fmtWhen } from './api';
 import { usePublish } from './shell';
+import { PromptLabPanel } from './prompt-lab-panel';
 
 /**
  * Settings for "Draft posts" in the composer: which model writes, and the
@@ -101,6 +102,8 @@ export function DraftingCard() {
             <Field label="House style (every network)" htmlFor="draft-house" aside={reset(() => setHouse(DEFAULT_DRAFT_PROMPTS.house), house.trim() !== DEFAULT_DRAFT_PROMPTS.house)}>
               <Textarea id="draft-house" rows={8} value={house} disabled={!canApprove} onChange={(e) => setHouse(e.target.value)} className="text-[13px] leading-relaxed" />
             </Field>
+
+            {canApprove ? <PromptLabPanel current={platforms} onUse={(p, prompt) => setPlatforms((prev) => ({ ...prev, [p]: prompt }))} /> : null}
 
             <div className="space-y-2">
               <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Each network</p>
