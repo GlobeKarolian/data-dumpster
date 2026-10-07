@@ -134,4 +134,12 @@ export const PUBLISHING_DDL: string[] = [
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (org_id, brand)
   )`,
+
+  // 0043: a fresh Ayrshare idempotency key when a person resends a failed post (Ayrshare rejects a
+  // reused key forever), and the AI drafting model and prompts each org can edit.
+  `ALTER TABLE publish_deliveries ADD COLUMN IF NOT EXISTS send_key_gen integer NOT NULL DEFAULT 0`,
+  `ALTER TABLE publish_settings ADD COLUMN IF NOT EXISTS draft_model text`,
+  `ALTER TABLE publish_settings ADD COLUMN IF NOT EXISTS draft_prompts jsonb NOT NULL DEFAULT '{}'::jsonb`,
+  `ALTER TABLE publish_settings ADD COLUMN IF NOT EXISTS draft_updated_by text`,
+  `ALTER TABLE publish_settings ADD COLUMN IF NOT EXISTS draft_updated_at timestamptz`,
 ];

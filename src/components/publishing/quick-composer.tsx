@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ImageOff, Link2, X } from 'lucide-react';
+import { AlertTriangle, ImageOff, Link2, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { PlatformIcon } from '@/components/ui/platform-icon';
@@ -65,6 +65,13 @@ function timingFor(when: When, custom: string) {
 
 const LAST_ACCOUNTS = 'publish.lastAccounts';
 
+interface DraftResponse {
+  article: { title: string; words: number; source: 'jsonld' | 'arc' | 'paragraphs' | 'summary' };
+  drafts: { targetId: string; text: string; warnings: string[] }[];
+  model: string;
+  costUsd: number;
+}
+
 function dayWord(iso: string): string {
   const k = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const t = new Date(iso);
@@ -97,6 +104,10 @@ export function QuickComposer({ targets, canApprove, prefill, onPosted, focusSig
   const [plans, setPlans] = React.useState<Plan[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [drafting, setDrafting] = React.useState(false);
+  const [drafted, setDrafted] = React.useState<{ model: string; words: number; thin: boolean } | null>(null);
+  const [flags, setFlags] = React.useState<Record<string, string[]>>({});
+  const draftedFor = React.useRef('');
   const linkRef = React.useRef<HTMLInputElement>(null);
 
   // Start from the accounts used last time.
@@ -131,6 +142,11 @@ export function QuickComposer({ targets, canApprove, prefill, onPosted, focusSig
     if (!/^https?:\/\/\S+\.\S+/.test(url) || url === cardFor.current) return;
     const handle = setTimeout(async () => {
       cardFor.current = url;
+      // Drafts belong to one story; a new link starts clean.
+      if (draftedFor.current && draftedFor.current !== url) {
+        draftedFor.current = '';
+        setOverrides({}); setFlags({}); setDrafted(null); setCustomize(false);
+      }
       setOpen(true);
       setLoadingCard(true);
       try {
@@ -181,6 +197,26 @@ export function QuickComposer({ targets, canApprove, prefill, onPosted, focusSig
   const reset = () => {
     setOpen(false); setLink(''); setCard(null); setCopy(''); setImage(null); setOverrides({});
     setCustomize(false); setShowPreview(false); setPlans([]); setError(null); cardFor.current = '';
+    setDrafted(null); setFlags({}); draftedFor.current = '';
+  };
+
+  // Read the story and write a post for each chosen account. Editors review before anything is scheduled.
+  const draftPosts = async () => {
+    const url = link.trim();
+    setDrafting(true);
+    setError(null);
+    try {
+      const r = await api<DraftResponse>('/api/publishing/draft', { method: 'POST', json: { url, targetIds: selected } });
+      setOverrides((o) => ({ ...o, ...Object.fromEntries(r.drafts.map((d) => [d.targetId, d.text])) }));
+      setFlags(Object.fromEntries(r.drafts.map((d) => [d.targetId, d.warnings])));
+      setDrafted({ model: r.model, words: r.article.words, thin: r.article.source === 'summary' });
+      setCustomize(true);
+      draftedFor.current = url;
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDrafting(false);
+    }
   };
 
   const toggle = (ids: string[], on: boolean) => {
@@ -272,8 +308,25 @@ export function QuickComposer({ targets, canApprove, prefill, onPosted, focusSig
             </div>
             <div className="min-w-0 flex-1 space-y-2">
               {link.trim() ? <p className="truncate text-xs text-zinc-400">{loadingCard ? 'Reading the story…' : card ? `From ${shortUrl(link.trim()).split('/')[0]}` : 'Could not read this page; write the post yourself.'}</p> : null}
-              <Textarea rows={3} value={copy} onChange={(e) => setCopy(e.target.value)}
+              {customize ? <p className="text-[11px] font-medium text-zinc-500">Default text, used by any account left blank below</p> : null}
+              <Textarea rows={customize ? 2 : 3} value={copy} onChange={(e) => setCopy(e.target.value)}
                 placeholder="What should the post say?" className="text-[15px] leading-snug" />
+              {/^https?:\/\/\S+\.\S+/.test(link.trim()) ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="secondary" disabled={drafting || loadingCard || !selected.length} onClick={draftPosts}
+                    title={selected.length ? undefined : 'Choose accounts below first'}>
+                    <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+                    {drafting ? 'Reading the story and drafting…' : drafted ? 'Draft again' : 'Draft posts with AI'}
+                  </Button>
+                  {drafted ? (
+                    <span className={cn('text-[11px]', drafted.thin ? 'text-amber-700 dark:text-amber-300' : 'text-zinc-500')}>
+                      {drafted.thin
+                        ? 'Only the story summary could be read, so these drafts are thin. Check them closely.'
+                        : `Drafted from the full story (${drafted.words.toLocaleString()} words) by ${drafted.model}. Read each one before scheduling.`}
+                    </span>
+                  ) : !selected.length ? <span className="text-[11px] text-zinc-400">Choose accounts below, then draft a post for each.</span> : null}
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
                 {shown.filter((p) => p.limit <= 500 || p.length > p.limit).map((p) => (
                   <span key={p.targetId} className={cn('pb-num inline-flex items-center gap-1', p.length > p.limit ? 'font-semibold text-red-600' : 'text-zinc-400')}>
@@ -299,8 +352,13 @@ export function QuickComposer({ targets, canApprove, prefill, onPosted, focusSig
               {shown.map((p) => (
                 <label key={p.targetId} className="block space-y-1">
                   <span className="flex items-center gap-1.5 text-xs font-medium"><PlatformIcon platform={p.platform} />{p.brand} {PUBLISH_PLATFORM_LABELS[p.platform]}</span>
-                  <Textarea rows={3} className="text-[13px]" placeholder={copy}
+                  <Textarea rows={drafted ? 5 : 3} className="text-[13px]" placeholder={copy}
                     value={overrides[p.targetId] ?? ''} onChange={(e) => setOverrides({ ...overrides, [p.targetId]: e.target.value })} />
+                  {flags[p.targetId]?.length ? (
+                    <ul className="space-y-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                      {flags[p.targetId].map((w) => <li key={w} className="flex gap-1"><AlertTriangle className="mt-px h-3 w-3 shrink-0" />{w}</li>)}
+                    </ul>
+                  ) : null}
                 </label>
               ))}
             </div>

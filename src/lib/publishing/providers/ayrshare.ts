@@ -8,7 +8,8 @@
  * X bills us directly per post.
  *
  * Request and response shapes are from Ayrshare's /api/post reference (read
- * 6 Oct 2026). Per AGENTS.md, confirm against a real response with the first
+ * 7 Oct 2026). With a Profile-Key the reply is wrapped: { status, posts: [ { status,
+ * postIds, errors, id, refId, profileTitle } ] }. Per AGENTS.md, confirm against a real response with the first
  * test key before trusting the mapper; `detail` keeps the raw body for that.
  */
 import type { Publisher, SendRequest, SendResult } from './types';
@@ -17,7 +18,9 @@ const ENDPOINT = 'https://api.ayrshare.com/api/post';
 
 interface AyrsharePostId { status?: string; id?: string; postUrl?: string; platform?: string }
 interface AyrshareError { code?: number; message?: string; platform?: string }
-interface AyrshareResponse { status?: string; id?: string; postIds?: AyrsharePostId[]; errors?: AyrshareError[] }
+interface AyrshareResult { status?: string; id?: string; postIds?: AyrsharePostId[]; errors?: AyrshareError[] }
+/** With a Profile-Key header (every brand post) Ayrshare wraps the result in `posts`. */
+interface AyrshareResponse extends AyrshareResult { posts?: AyrshareResult[] }
 
 export function buildAyrshareBody(req: SendRequest): Record<string, unknown> {
   const body: Record<string, unknown> = {
@@ -68,11 +71,18 @@ export const ayrsharePublisher: Publisher = {
 };
 
 export function mapAyrshareResponse(status: number, json: AyrshareResponse): SendResult {
-  const hit = json.postIds?.find((p) => p.status === 'success') ?? json.postIds?.[0];
-  if (status < 300 && json.status === 'success' && hit) {
-    return { ok: true, providerPostId: hit.id ?? json.id ?? null, postUrl: hit.postUrl ?? null, detail: json };
+  const r: AyrshareResult = json.posts?.[0] ?? json;
+  const hit = r.postIds?.find((p) => p.status === 'success') ?? r.postIds?.[0];
+  if (status < 300 && r.status === 'success' && hit) {
+    return { ok: true, providerPostId: hit.id ?? r.id ?? null, postUrl: hit.postUrl ?? null, detail: json };
   }
-  const message = json.errors?.map((e) => e.message).filter(Boolean).join('; ') || `Ayrshare returned HTTP ${status}.`;
+  const errors = [...(r.errors ?? []), ...(r === json ? [] : json.errors ?? [])];
+  const message = errors.map((e) => e.message).filter(Boolean).join('; ') || `Ayrshare returned HTTP ${status}.`;
+  // Ayrshare remembers every idempotency key forever, whatever happened to the post. Seeing one again
+  // means an earlier try reached them, so it may already be live. A person must look before resending.
+  if (/idempoten/i.test(message)) {
+    return { ok: false, error: 'An earlier try of this post already reached Ayrshare, so it may be live. Check the account; if it is not there, use Find next good time to send it again.', retryable: false, detail: json };
+  }
   // 429 and 5xx are worth another try; a 4xx is a content or account problem a person must fix.
   return { ok: false, error: message, retryable: status === 429 || status >= 500, detail: json };
 }

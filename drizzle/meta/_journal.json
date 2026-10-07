@@ -295,6 +295,13 @@
       "when": 1791343746783,
       "tag": "0042_publishing_brand_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791382800000,
+      "tag": "0043_publishing_send_keys_and_drafting",
+      "breakpoints": true
     }
   ]
 }
