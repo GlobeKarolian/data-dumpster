@@ -288,6 +288,13 @@
       "when": 1791323088432,
       "tag": "0041_publishing_feed_outcomes",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791343746783,
+      "tag": "0042_publishing_brand_profiles",
+      "breakpoints": true
     }
   ]
 }

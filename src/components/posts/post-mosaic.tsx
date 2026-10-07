@@ -6,6 +6,7 @@ import { PLATFORM_LABELS } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { PlatformBadge } from '@/components/ui/badge';
 import { formatDateTime, formatMetric, truncate } from '@/components/ui/format';
+import { CollabName } from '@/components/posts/collab-name';
 
 function MosaicMedia({ post }: { post: PostDto }) {
   const [failed, setFailed] = React.useState(false);
@@ -82,7 +83,7 @@ export function PostMosaic({
           />
           <span className="absolute inset-x-0 bottom-0 block p-2.5 text-white">
             <span className="flex items-center justify-between gap-2">
-              <span className="truncate text-[11px] font-semibold">{post.company.name}</span>
+              <CollabName className="truncate text-[11px] font-semibold" name={post.company.name} collaborators={post.collaborators} />
               <PlatformBadge
                 platform={post.platform}
                 showLabel={false}

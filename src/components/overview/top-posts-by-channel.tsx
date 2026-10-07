@@ -14,6 +14,7 @@ import { PostDetailDialog } from '@/components/posts/post-detail-dialog';
 import { PlatformBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatMetric, truncate } from '@/components/ui/format';
+import { CollabName } from '@/components/posts/collab-name';
 
 export interface TopPostsByChannelProps {
   /** Best focus-company post for each platform in the current analytics window. */
@@ -100,7 +101,7 @@ function PostMedia({
       />
       <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4 text-white">
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{post.company.name}</span>
+          <CollabName className="block truncate text-sm font-semibold" name={post.company.name} collaborators={post.collaborators} />
           <span className="pb-num mt-0.5 block text-xs font-medium text-white/90">
             {formatMetric(post.engagementTotal, 'engagementTotal') + ' total engagement'}
           </span>

@@ -1,6 +1,6 @@
 /**
- * Scheduled, every minute: poll RSS autopublish feeds (each at most every five
- * minutes), then send every delivery that is due. See lib/publishing/.
+ * Scheduled, every minute: send every delivery that is due. RSS polling runs
+ * here too, but only when PUBLISHING_RSS=true. See lib/publishing/.
  */
 import type { NextRequest } from 'next/server';
 import { apiHandler } from '@/lib/session';
@@ -15,7 +15,10 @@ export const maxDuration = 120;
 
 async function handle(req: NextRequest): Promise<Response> {
   assertCronAuthorized(req);
-  const feeds = await pollFeeds().catch((err) => ({ error: (err as Error).message }));
+  // RSS auto-post is switched off (Oct 2026). The code stays; set PUBLISHING_RSS=true to bring it back.
+  const feeds = process.env.PUBLISHING_RSS === 'true'
+    ? await pollFeeds().catch((err) => ({ error: (err as Error).message }))
+    : { off: true };
   const sends = await dispatchDue();
   const result = { live: publishingLive(), feeds, sends };
   if (sends.claimed || ('queued' in feeds && feeds.queued)) console.info('[data-dumpster:cron/publish]', result);

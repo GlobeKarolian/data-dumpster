@@ -31,6 +31,7 @@ import {
   newsroomLeaderboardRows,
   newsroomPlatformWinners,
 } from '@/lib/newsroom-display';
+import { CollabName } from '@/components/posts/collab-name';
 
 const SLIDES = [
   { id: 'leaders', label: '24-hour leaders' },
@@ -274,7 +275,7 @@ function PlatformWinnerCard({
         {post ? (
           <>
             <div className="flex items-center gap-2">
-              <p className="min-w-0 flex-1 truncate text-[clamp(0.72rem,0.9vw,1.12rem)] font-bold text-white">{post.company.name}</p>
+              <p className="min-w-0 flex-1 truncate text-[clamp(0.72rem,0.9vw,1.12rem)] font-bold text-white"><CollabName name={post.company.name} collaborators={post.collaborators} /></p>
               {post.permalink ? (
                 <a href={post.permalink} target="_blank" rel="noopener noreferrer" aria-label={`Open ${post.company.name} ${PLATFORM_LABELS[platform]} post`} className="shrink-0 text-zinc-600 hover:text-white">
                   <ExternalLink className="h-[1em] w-[1em]" aria-hidden />

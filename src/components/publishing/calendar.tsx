@@ -62,7 +62,7 @@ export function PublishCalendar() {
           <div className="flex items-center gap-1.5">
             <div className="w-36">
               <Select size="sm" value={source} onChange={(e) => setSource(e.target.value)}
-                options={[{ value: '', label: 'All posts' }, { value: 'optimized', label: 'Best time' }, { value: 'scheduled', label: 'Set time' }, { value: 'rss', label: 'RSS auto-post' }]} />
+                options={[{ value: '', label: 'All posts' }, { value: 'optimized', label: 'Best time' }, { value: 'scheduled', label: 'Set time' }]} />
             </div>
             <div className="w-40">
               <Select size="sm" value={brand} onChange={(e) => setBrand(e.target.value)}

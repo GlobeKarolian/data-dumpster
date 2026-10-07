@@ -80,6 +80,11 @@ export interface PostDto {
   medianEngagement: number | null;
   /** engagementTotal ÷ this source channel's in-window median. 1.0 = typical. */
   outlierScore: number | null;
+  /**
+   * Other tracked accounts this exact post also appeared on (an Instagram
+   * collab, say). Lists show a collab once, under `company`, and name these.
+   */
+  collaborators?: { id: string; name: string }[];
 }
 
 export interface PostDetailDto extends Omit<PostDto, 'tags' | 'urls'> {

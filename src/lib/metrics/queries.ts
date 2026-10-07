@@ -1656,6 +1656,7 @@ type PostRow = {
   total_count: string | number | null;
   tags: unknown;
   urls: unknown;
+  collab_companies?: unknown;
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -1729,6 +1730,16 @@ interface LoadedPosts { items: PostDto[]; total: number }
  *    Window functions are evaluated after WHERE and before LIMIT, so the number is
  *    the true filtered size rather than the size of the page.
  */
+/** The other tracked accounts a collab post also appeared on, primary account excluded. */
+export function collaboratorsOf(raw: unknown, primaryId: string): { id: string; name: string }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const others = raw
+    .filter((c): c is { id: string; name: string } => !!c && typeof c === 'object' && typeof (c as { id?: unknown }).id === 'string')
+    .filter((c) => c.id !== primaryId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return others.length ? others : undefined;
+}
+
 async function loadPosts(
   scope: Scope,
   range: DateRange,
@@ -1765,21 +1776,38 @@ async function loadPosts(
         : sql``;
 
   const { rows } = await db.execute<PostRow>(sql`
-    WITH filtered AS (
+    WITH filtered_all AS (
       SELECT p.id, p.company_id, p.channel_id, p.platform, p.type, p.posted_at, p.text,
              p.permalink, p.thumbnail_url, p.applause, p.conversation,
              p.amplification, p.saves, p.views, p.engagement_total,
-             p.engagement_rate_by_follower, p.followers_at_post,
+             p.engagement_rate_by_follower, p.followers_at_post, p.external_id,
              (p.archived_thumbnail_url IS NOT NULL) AS has_archived_thumbnail
         FROM posts p
        WHERE ${postWhere(scope, range, f)}
+    ),
+    -- Collab posts. One post published jointly by two tracked accounts (an
+    -- Instagram collab, say) is collected once per profile, under the same
+    -- platform media id. Lists show it once, as the copy with the most
+    -- engagement, and name every account it appeared on.
+    collab AS (
+      SELECT fa.platform, fa.external_id,
+             json_agg(DISTINCT jsonb_build_object('id', c.id, 'name', c.name)) AS companies
+        FROM filtered_all fa
+        JOIN companies c ON c.id = fa.company_id
+       GROUP BY fa.platform, fa.external_id
+      HAVING count(DISTINCT fa.company_id) > 1
+    ),
+    filtered AS (
+      SELECT DISTINCT ON (fa.platform, fa.external_id) fa.*
+        FROM filtered_all fa
+       ORDER BY fa.platform, fa.external_id, fa.engagement_total DESC, fa.id ASC
     ),
     med AS (
       SELECT channel_id,
              percentile_cont(0.5) WITHIN GROUP (
                ORDER BY engagement_total::double precision
              ) AS median_engagement
-        FROM filtered
+        FROM filtered_all
        GROUP BY channel_id
     )
     SELECT f.id,
@@ -1807,12 +1835,14 @@ async function loadPosts(
            m.median_engagement,
            count(*) OVER () AS total_count,
            tg.tags,
-           ur.urls
+           ur.urls,
+           cb.companies AS collab_companies
       FROM filtered f
       -- The filtered CTE already contains only verified landscape members. Company
       -- attribution is intentionally not another ownership check here.
       JOIN companies c ON c.id = f.company_id
       LEFT JOIN med m ON m.channel_id = f.channel_id
+      LEFT JOIN collab cb ON cb.platform = f.platform AND cb.external_id = f.external_id
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object('id', t.id, 'name', t.name, 'color', t.color)
@@ -1866,6 +1896,7 @@ async function loadPosts(
       // A median of zero means at least half this company's posts on this platform
       // earned nothing, so a ratio would be meaningless rather than infinite.
       outlierScore: median && median > 0 ? engagementTotal / median : null,
+      collaborators: collaboratorsOf(r.collab_companies, r.company_id),
     };
   });
 

@@ -35,6 +35,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { MetricLabel } from '@/components/ui/metric-label';
 import { formatDateTime, formatInteger, formatMetric } from '@/components/ui/format';
 import { isPostMetricReported } from './post-metric-availability';
+import { CollabName } from '@/components/posts/collab-name';
 
 export interface PostDetailDialogProps {
   post: PostDto | null;
@@ -393,7 +394,7 @@ export function PostDetailDialog({
           </span>
           <div className="min-w-0">
             <h2 id={titleId} className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-              {post.company.name}
+              <CollabName name={post.company.name} collaborators={post.collaborators} />
             </h2>
             <div id={descriptionId} className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <PlatformBadge platform={post.platform} />

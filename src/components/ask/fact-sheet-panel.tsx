@@ -8,6 +8,7 @@ import type { MetricKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { formatMetric, formatFullDate } from '@/components/ui/format';
 import { Badge } from '@/components/ui/badge';
+import { CollabName } from '@/components/posts/collab-name';
 
 function Section({
   title,
@@ -161,7 +162,7 @@ export function FactSheetPanel({ facts }: { facts: FactSheet | null }) {
         <ul className="space-y-2">
           {facts.topPostsOverall.slice(0, 6).map((p) => (
             <li key={p.id} className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-              <span className="font-medium text-zinc-800 dark:text-zinc-300">{p.company.name}</span>
+              <CollabName className="font-medium text-zinc-800 dark:text-zinc-300" name={p.company.name} collaborators={p.collaborators} />
               {' · '}
               <span className="pb-num">{formatMetric(p.engagementTotal, 'engagementTotal')}</span>
             </li>

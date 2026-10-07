@@ -19,6 +19,7 @@ export function friendlyReason(reason: string | null | undefined): string | null
   const m = r.match(/\(([\d.]+)x its typical engagement\)/);
   if (m) return Number(m[1]) >= 1 ? `Best hour · ${m[1]}× usual engagement` : `Quietest acceptable hour · ${m[1]}× usual`;
   if (/earliest allowed time/.test(r)) return 'First open slot';
+  if (/next open time/.test(r)) return 'Next open time';
   if (/best spacing/.test(r)) return 'Spaced from other posts';
   if (/Exact time set/.test(r)) return 'Scheduled';
   if (/Sent now by editor/.test(r)) return 'Sent now';

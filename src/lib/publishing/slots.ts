@@ -44,6 +44,8 @@ export interface SlotRequest {
   weights: HourWeights;
   /** Candidate spacing in minutes. */
   stepMinutes?: number;
+  /** Take the first slot that fits instead of the best one (used to catch up after a missed window). */
+  earliest?: boolean;
 }
 
 export interface SlotPick {
@@ -107,6 +109,7 @@ export function pickSlot(req: SlotRequest): SlotResult {
     if (!best || score > best.score + 1e-9) {
       best = { t, score, weight, weekday: p.weekday, minute: p.minute };
     }
+    if (req.earliest) break;
   }
 
   if (!best) {
@@ -117,7 +120,9 @@ export function pickSlot(req: SlotRequest): SlotResult {
 
   const when = `${DAY[best.weekday]} ${clockLabel(best.minute)}`;
   let reason: string;
-  if (req.weights && Math.abs(best.weight - 1) > 0.05) {
+  if (req.earliest) {
+    reason = `${when}: next open time`;
+  } else if (req.weights && Math.abs(best.weight - 1) > 0.05) {
     reason = `${when}: strongest hour in the window for this account (${best.weight.toFixed(1)}x its typical engagement)`;
   } else if (taken.length) {
     reason = `${when}: best spacing from other queued posts`;

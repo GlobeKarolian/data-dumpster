@@ -17,6 +17,7 @@ import {
   DEFAULT_POST_COLUMNS,
   type PostColumnId,
 } from './post-columns';
+import { CollabName } from '@/components/posts/collab-name';
 
 export {
   DEFAULT_POST_COLUMNS,
@@ -128,7 +129,7 @@ export function PostsTable({
         header: 'Company',
         width: 'w-40',
         cell: (p) => (
-          <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{p.company.name}</span>
+          <CollabName className="block truncate font-medium text-zinc-900 dark:text-zinc-100" name={p.company.name} collaborators={p.collaborators} />
         ),
       },
       {
@@ -148,9 +149,7 @@ export function PostsTable({
 
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
-                  {p.company.name}
-                </span>
+                <CollabName className="truncate font-semibold text-zinc-900 dark:text-zinc-100" name={p.company.name} collaborators={p.collaborators} />
                 <PlatformBadge platform={p.platform} />
                 {p.permalink ? (
                   <a
