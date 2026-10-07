@@ -169,7 +169,9 @@ export function checkDraft(text: string, source: string, budget: number, platfor
   for (const [, q] of text.matchAll(/[“"]([^”"]{12,})[”"]/g)) {
     const words = q.trim().split(/\s+/);
     if (words.length < 3) continue;
-    if (!hay.includes(norm(q.trim()))) warnings.push(`This quote is not word for word in the story: “${q.trim()}”`);
+    // A quote ending a sentence in the post can close with a period where the story had a comma.
+    const core = q.trim().replace(/[.,!?;:]+$/, '');
+    if (!hay.includes(norm(core))) warnings.push(`This quote is not word for word in the story: “${q.trim()}”`);
   }
 
   const used = chargedLength(platform, text);
