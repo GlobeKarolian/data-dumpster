@@ -5,7 +5,28 @@ export type ReportLandscapeDestinationInput = {
   landscapeWasExplicit: boolean;
   alternateReportId: string | null;
   searchParams: URLSearchParams;
+  platformAdmin?: boolean;
 };
+
+/**
+ * Ordinary report indexes stay aligned with the landscape selected in the
+ * shell. The named platform administrator gets one organization-wide catalog,
+ * so no report is hidden behind a landscape switch.
+ */
+export function reportIndexLandscapeScope(
+  selectedLandscapeId: string | null,
+  platformAdmin: boolean,
+): string | null {
+  return platformAdmin ? null : selectedLandscapeId;
+}
+
+/** A list link must carry the report's own landscape into the editor. */
+export function reportListLandscape(
+  reportLandscapeId: string | null,
+  selectedLandscapeId: string | null,
+): string | null {
+  return reportLandscapeId ?? selectedLandscapeId;
+}
 
 /**
  * Keep the global landscape label and a saved weekly report in agreement.
@@ -23,7 +44,9 @@ export function reportLandscapeDestination({
   landscapeWasExplicit,
   alternateReportId,
   searchParams,
+  platformAdmin = false,
 }: ReportLandscapeDestinationInput): string | null {
+  if (platformAdmin) return null;
   if (!reportLandscapeId || !selectedLandscapeId) return null;
 
   if (reportLandscapeId === selectedLandscapeId) return null;

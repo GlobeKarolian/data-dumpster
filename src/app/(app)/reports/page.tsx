@@ -10,6 +10,10 @@ import { NewReportButton } from '@/components/reports/new-report-button';
 import { DeleteReportButton } from '@/components/reports/delete-report-button';
 import { ScheduleManager } from '@/components/reports/schedule-manager';
 import { roleAtLeast } from '@/lib/roles';
+import {
+  reportIndexLandscapeScope,
+  reportListLandscape,
+} from '@/lib/reports/landscape-navigation';
 import { MANUAL_SECTIONS } from '@/lib/reports/types';
 import { resolveContext } from '../_lib/context';
 import { query, type SearchParamsInput } from '../_lib/data';
@@ -25,6 +29,7 @@ type ReportRow = {
   data_note: string | null;
   updated_at: string;
   computed_at: string | null;
+  landscape_id: string | null;
   landscape_name: string | null;
   manual_tables: number | string;
   narrative_sections: number | string;
@@ -36,12 +41,14 @@ export default async function ReportsPage({
   searchParams: Promise<SearchParamsInput>;
 }) {
   const ctx = await resolveContext(await searchParams);
-  if (!ctx.landscape) return <NoLandscape reason={ctx.error} />;
-  const landscapeId = ctx.landscape.id;
+  if (!ctx.landscape && !ctx.isPlatformAdmin) return <NoLandscape reason={ctx.error} />;
+  const landscapeId = ctx.landscape?.id ?? null;
+  const landscapeScope = reportIndexLandscapeScope(landscapeId, ctx.isPlatformAdmin);
 
   const reports = await query<ReportRow>(({ sql }) => sql`
     SELECT r.id, r.title, r.period_start, r.period_end, r.status, r.data_note, r.updated_at,
            r.computed ->> 'generatedAt' AS computed_at,
+           r.landscape_id,
            l.name AS landscape_name,
            CASE WHEN jsonb_typeof(r.manual -> 'tables') = 'object'
                 THEN (SELECT count(*)::int FROM jsonb_object_keys(r.manual -> 'tables'))
@@ -52,9 +59,9 @@ export default async function ReportsPage({
       FROM weekly_reports r
       LEFT JOIN landscapes l ON l.id = r.landscape_id
      WHERE r.org_id = ${ctx.orgId}::uuid
-       AND r.landscape_id = ${landscapeId}::uuid
+       AND (${landscapeScope}::uuid IS NULL OR r.landscape_id = ${landscapeScope}::uuid)
      ORDER BY r.period_end DESC, r.created_at DESC
-     LIMIT 60
+     LIMIT ${ctx.isPlatformAdmin ? null : 60}
   `);
 
   return (
@@ -72,17 +79,24 @@ export default async function ReportsPage({
             paid promotion and Apple News live in systems this app does not read, so they get paste
             boxes and are labelled by hand. Every section carries its own narrative.
           </p>
+          {ctx.isPlatformAdmin ? (
+            <p className="mt-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Showing every weekly report in your organization across all landscapes.
+            </p>
+          ) : null}
         </div>
-        {roleAtLeast(ctx.role, 'editor') ? (
+        {roleAtLeast(ctx.role, 'editor') && ctx.landscape ? (
           <NewReportButton landscapeId={ctx.landscape.id} />
         ) : null}
       </div>
 
-      <ScheduleManager
-        landscapeId={ctx.landscape.id}
-        canEdit={ctx.role === 'admin' || ctx.role === 'owner'}
-        automationEnabled={process.env.AUTOMATION_DISPATCHER_ENABLED === 'true'}
-      />
+      {ctx.landscape ? (
+        <ScheduleManager
+          landscapeId={ctx.landscape.id}
+          canEdit={ctx.role === 'admin' || ctx.role === 'owner'}
+          automationEnabled={process.env.AUTOMATION_DISPATCHER_ENABLED === 'true'}
+        />
+      ) : null}
 
       {reports.error ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
@@ -109,13 +123,17 @@ export default async function ReportsPage({
             {reports.data.map((r) => {
               const pasted = Number(r.manual_tables) || 0;
               const written = Number(r.narrative_sections) || 0;
+              const reportLandscapeId = reportListLandscape(r.landscape_id, landscapeId);
+              const reportHref = '/reports/' + r.id + (reportLandscapeId
+                ? '?landscape=' + reportLandscapeId
+                : '');
               return (
                 <li
                   key={r.id}
                   className="flex items-start transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
                 >
                   <Link
-                    href={'/reports/' + r.id + '?landscape=' + landscapeId}
+                    href={reportHref}
                     className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">

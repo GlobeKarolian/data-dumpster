@@ -16,6 +16,7 @@ export interface AppContext {
   orgId: string;
   userId: string;
   role: Role;
+  isPlatformAdmin: boolean;
   landscapes: LandscapeRecord[];
   landscape: LandscapeRecord | null;
   companies: CompanyRef[];
@@ -133,6 +134,7 @@ export async function resolveContext(input: SearchParamsInput): Promise<AppConte
     orgId: session.orgId,
     userId: session.userId,
     role: session.role,
+    isPlatformAdmin: session.isPlatformAdmin,
     landscapes,
     landscape,
     companies,

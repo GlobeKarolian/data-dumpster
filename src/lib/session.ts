@@ -20,6 +20,7 @@ import type { Session } from 'next-auth';
 import { auth, type Role } from '@/auth';
 import { db } from '@/db';
 import { landscapes, userLandscapeAccess } from '@/db/schema';
+import { effectiveRole, isPlatformAdmin } from '@/lib/platform-admin';
 import { ROLE_ORDER, rankRole } from '@/lib/roles';
 
 export type { Role };
@@ -63,6 +64,7 @@ export interface OrgContext {
   userId: string;
   role: Role;
   email: string | null;
+  isPlatformAdmin: boolean;
 }
 
 /**
@@ -80,7 +82,7 @@ export async function requireSession(): Promise<Session> {
 }
 
 /**
- * Identity narrowed to the three facts that gate data access.
+ * Identity narrowed to the facts that gate data access.
  *
  * A session without an orgId is treated as unauthenticated rather than as a
  * server error: it means the token predates the tenancy claims and the fix is a
@@ -92,7 +94,14 @@ export async function requireOrg(): Promise<OrgContext> {
   if (!orgId || !role) {
     throw new AuthError('unauthenticated', 'Your session is out of date. Sign in again.');
   }
-  return { orgId, userId: id, role, email: email ?? null };
+  const normalizedEmail = email ?? null;
+  return {
+    orgId,
+    userId: id,
+    role: effectiveRole(normalizedEmail, role),
+    email: normalizedEmail,
+    isPlatformAdmin: isPlatformAdmin(normalizedEmail),
+  };
 }
 
 /**

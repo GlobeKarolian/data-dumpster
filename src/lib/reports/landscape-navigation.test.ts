@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
-import { reportLandscapeDestination } from './landscape-navigation';
+import {
+  reportIndexLandscapeScope,
+  reportLandscapeDestination,
+  reportListLandscape,
+} from './landscape-navigation';
 
 const BGM = '11111111-1111-1111-1111-111111111111';
 const NEWS = '22222222-2222-2222-2222-222222222222';
@@ -52,13 +56,40 @@ describe('weekly report landscape navigation', () => {
     }), null);
   });
 
-  it('keeps the report index query and detail links inside the selected landscape', () => {
+  it('does not redirect the platform administrator away from any report', () => {
+    assert.equal(reportLandscapeDestination({
+      reportId: 'report-election',
+      reportLandscapeId: BGM,
+      selectedLandscapeId: NEWS,
+      landscapeWasExplicit: true,
+      alternateReportId: 'report-news',
+      searchParams: new URLSearchParams('landscape=' + NEWS),
+      platformAdmin: true,
+    }), null);
+  });
+
+  it('keeps the ordinary report index inside the selected landscape', () => {
+    assert.equal(reportIndexLandscapeScope(NEWS, false), NEWS);
+  });
+
+  it('gives the platform administrator one all-landscape report index', () => {
+    assert.equal(reportIndexLandscapeScope(NEWS, true), null);
+  });
+
+  it('links an all-landscape result through its own landscape', () => {
+    assert.equal(reportListLandscape(BGM, NEWS), BGM);
+    assert.equal(reportListLandscape(null, NEWS), NEWS);
+    assert.equal(reportListLandscape(null, null), null);
+  });
+
+  it('wires the report index scope and report-owned links into the page query', () => {
     const reportsPage = readFileSync(
       resolve(process.cwd(), 'src/app/(app)/reports/page.tsx'),
       'utf8',
     );
 
-    assert.match(reportsPage, /AND r\.landscape_id = \$\{landscapeId\}::uuid/);
-    assert.match(reportsPage, /'\?landscape=' \+ landscapeId/);
+    assert.match(reportsPage, /reportIndexLandscapeScope\(landscapeId, ctx\.isPlatformAdmin\)/);
+    assert.match(reportsPage, /r\.landscape_id = \$\{landscapeScope\}::uuid/);
+    assert.match(reportsPage, /reportListLandscape\(r\.landscape_id, landscapeId\)/);
   });
 });

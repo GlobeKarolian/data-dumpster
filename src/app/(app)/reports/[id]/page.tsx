@@ -67,7 +67,11 @@ export default async function WeeklyReportPage({
   if (result.error) throw new Error('Weekly report could not load: ' + result.error);
   const report = result.data[0];
   if (!report) notFound();
-  if (report.landscape_id && !ctx.landscapes.some((landscape) => landscape.id === report.landscape_id)) {
+  if (
+    report.landscape_id
+    && !ctx.isPlatformAdmin
+    && !ctx.landscapes.some((landscape) => landscape.id === report.landscape_id)
+  ) {
     notFound();
   }
 
@@ -102,11 +106,14 @@ export default async function WeeklyReportPage({
     landscapeWasExplicit,
     alternateReportId,
     searchParams: ctx.searchParams,
+    platformAdmin: ctx.isPlatformAdmin,
   });
   if (destination) redirect(destination);
 
   const reportLandscapeId = report.landscape_id ?? ctx.landscape?.id ?? null;
-  const reportsHref = reportLandscapeId
+  const reportsHref = ctx.isPlatformAdmin
+    ? '/reports'
+    : reportLandscapeId
     ? '/reports?landscape=' + encodeURIComponent(reportLandscapeId)
     : '/reports';
   const computed = readComputed(report.computed);

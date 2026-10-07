@@ -152,6 +152,15 @@ alerts and dashboards. This is authorization, not navigation: removing an item
 from the landscape switcher alone is never considered enforcement. A denied
 identifier returns not found so it cannot be used to enumerate private sets.
 
+`matt@boston.com` is a named platform administrator. The central session
+boundary makes that identity owner-equivalent within its signed organization,
+so the rule covers Server Components and route handlers consistently. The
+organization claim is never replaced or ignored for tenant-private resources.
+The pre-existing owner-only Operations surface is deployment-wide and remains
+available to this identity. Weekly Reports additionally shows this
+administrator one organization-wide catalog across landscapes; `created_by`
+remains provenance, not an access-control field.
+
 Landscape creation accepts either an existing pooled focus company or a new
 focus company in the same request. When the new company already exists in the
 global pool, its row and history are reused; otherwise the company is created
