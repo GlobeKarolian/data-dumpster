@@ -1,8 +1,6 @@
-import type { Metadata } from 'next';
-import { PublishingSettings } from '@/components/publishing/settings';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = { title: 'Autopilot' };
-
-export default function PublishAutopilotPage() {
-  return <PublishingSettings section="feeds" />;
+/** RSS auto-post is switched off for now (Oct 2026); the settings live on in code. */
+export default function AutopilotPage() {
+  redirect('/publish');
 }

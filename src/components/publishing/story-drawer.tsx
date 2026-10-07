@@ -161,6 +161,9 @@ function NetworkPost({ d, canEdit, onAct }: {
             <Button size="sm" variant="ghost" className="ml-auto text-red-600" onClick={() => onAct(url, { action: 'cancel' }, `Removed from ${PUBLISH_PLATFORM_LABELS[d.platform]}.`)}>Don&apos;t post here</Button>
           </>
         ) : null}
+        {canEdit && mode === 'view' && (d.status === 'unschedulable' || d.status === 'failed') ? (
+          <Button size="sm" variant="primary" onClick={() => onAct(url, { action: 'retry' }, 'Rescheduled at the next open time.')}>Find next good time</Button>
+        ) : null}
         {d.post_url ? (
           <a href={d.post_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-accent-700 hover:underline dark:text-accent-400">
             View on {PUBLISH_PLATFORM_LABELS[d.platform]} <ExternalLink className="h-3.5 w-3.5" />

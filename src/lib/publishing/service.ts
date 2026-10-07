@@ -62,12 +62,40 @@ export async function slotFor(
   const end = new Date(timing.end);
   if (end <= start) return { ok: false, reason: 'The window ends before it starts.' };
   if (end.getTime() - start.getTime() > 14 * 86400_000) return { ok: false, reason: 'Windows are limited to 14 days.' };
+  const policy = { rules: t.rules ?? [], minGapMinutes: t.min_gap_minutes, maxPerDay: t.max_per_day };
   const taken = [...(await takenTimes(t.id, start, end, excludeDeliveryId)), ...extraTaken];
-  return pickSlot({
-    windowStart: start, windowEnd: end, now: new Date(),
-    policy: { rules: t.rules ?? [], minGapMinutes: t.min_gap_minutes, maxPerDay: t.max_per_day },
-    taken, weights: await weightsFor(orgId, t),
-  });
+  const inWindow = pickSlot({ windowStart: start, windowEnd: end, now: new Date(), policy, taken, weights: await weightsFor(orgId, t) });
+  if (inWindow.ok || timing.priority === 'can') return inWindow;
+  // Must send: a story that lands at 11:40pm, or in a burst, still goes out,
+  // at the account's next open time after the window (within a day and a half).
+  return nextOpenSlot(t, end, extraTaken, excludeDeliveryId);
+}
+
+/** The first time an account may post at or after `from`, respecting its hours and spacing. */
+export async function nextOpenSlot(t: TargetRow, from: Date, extraTaken: Date[] = [], excludeDeliveryId?: string) {
+  const policy = { rules: t.rules ?? [], minGapMinutes: t.min_gap_minutes, maxPerDay: t.max_per_day };
+  const until = new Date(Math.max(from.getTime(), Date.now()) + 36 * 3600_000);
+  const taken = [...(await takenTimes(t.id, from, until, excludeDeliveryId)), ...extraTaken];
+  return pickSlot({ windowStart: from, windowEnd: until, now: new Date(), policy, taken, weights: null, earliest: true });
+}
+
+/** Give a stuck post (no time found, or failed) a new time: the account's next open slot from now. */
+export async function retryDelivery(orgId: string, deliveryId: string): Promise<string> {
+  const rows = await q<{ target_id: string; status: string; post_status: string }>(sql`
+    SELECT d.target_id, d.status, p.status AS post_status FROM publish_deliveries d JOIN publish_posts p ON p.id = d.post_id
+     WHERE d.org_id = ${orgId}::uuid AND d.id = ${deliveryId}::uuid`);
+  const r = rows[0];
+  if (!r) throw new HttpError(404, 'Post not found.', 'not_found');
+  if (r.post_status !== 'approved' || !['unschedulable', 'failed'].includes(r.status)) {
+    throw new HttpError(409, 'Only posts that could not go out can be retried.', 'conflict');
+  }
+  const [t] = await getTargets(orgId, [r.target_id]);
+  const slot = await nextOpenSlot(t, new Date(), [], deliveryId);
+  if (!slot.ok) throw new HttpError(409, slot.reason, 'conflict');
+  await q(sql`UPDATE publish_deliveries SET status = 'queued', scheduled_for = ${slot.pick.at.toISOString()}::timestamptz,
+      slot_reason = ${slot.pick.reason}, last_error = NULL, lease_until = NULL
+    WHERE org_id = ${orgId}::uuid AND id = ${deliveryId}::uuid`);
+  return slot.pick.at.toISOString();
 }
 
 function canExpire(t: Timing): boolean {

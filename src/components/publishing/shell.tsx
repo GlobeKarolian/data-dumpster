@@ -20,7 +20,6 @@ import type { ComposerPrefill } from './quick-composer';
 const TABS = [
   { href: '/publish', label: 'Posts' },
   { href: '/publish/calendar', label: 'Calendar' },
-  { href: '/publish/autopilot', label: 'RSS auto-post' },
   { href: '/publish/accounts', label: 'Settings' },
 ];
 
@@ -30,6 +29,8 @@ interface PublishCtx {
   me: string | null;
   paused: boolean;
   targets: Target[];
+  /** False until accounts have loaded once, so screens don't flash an empty state. */
+  loaded: boolean;
   /** Bumps after any change, so pages refetch. */
   version: number;
   refresh: () => void;
@@ -53,6 +54,7 @@ export function PublishShell({ live, canApprove, me, children }: {
   const pathname = usePathname();
   const router = useRouter();
   const [targets, setTargets] = React.useState<Target[]>([]);
+  const [loaded, setLoaded] = React.useState(false);
   const [paused, setPausedState] = React.useState(false);
   const [version, setVersion] = React.useState(0);
   const [composer, setComposer] = React.useState<{ prefill: ComposerPrefill | null; signal: number }>({ prefill: null, signal: 0 });
@@ -72,6 +74,7 @@ export function PublishShell({ live, canApprove, me, children }: {
     ]).then(([t, p]) => {
       if (cancelled) return;
       setTargets(t.targets);
+      setLoaded(true);
       setPausedState(p.paused);
     }).catch(() => { /* pages show their own errors */ });
     return () => { cancelled = true; };
@@ -103,7 +106,7 @@ export function PublishShell({ live, canApprove, me, children }: {
   };
 
   const value: PublishCtx = {
-    live, canApprove, me, paused, targets, version, refresh, toast, composer,
+    live, canApprove, me, paused, targets, loaded, version, refresh, toast, composer,
     openComposer: (prefill) => {
       setComposer({ prefill: prefill ?? null, signal: Date.now() });
       if (pathname !== '/publish') router.push('/publish');
@@ -164,7 +167,7 @@ export function PublishShell({ live, canApprove, me, children }: {
           {paused ? (
             <div className="flex items-center gap-2 bg-red-600 px-4 py-1.5 text-xs font-medium text-white">
               <OctagonPause className="h-3.5 w-3.5" />
-              Posting is paused. Nothing goes out, including RSS auto-posts. They resume, spaced out, when you press Resume.
+              Posting is paused. Nothing goes out until you press Resume; overdue posts are then spaced out.
               {canApprove ? <button type="button" onClick={togglePause} className="ml-auto underline">Resume</button> : null}
             </div>
           ) : null}

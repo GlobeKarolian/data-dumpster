@@ -48,11 +48,12 @@ const isPending = (d: Delivery) => d.status === 'queued' || d.status === 'sendin
 const isProblem = (d: Delivery) => d.status === 'failed' || d.status === 'unschedulable';
 
 export function PostsBoard() {
-  const { targets, canApprove, version, composer, toast, refresh } = usePublish();
+  const { targets, loaded, canApprove, version, composer, toast, refresh } = usePublish();
   const posts = usePosts(version);
   const [tab, setTab] = React.useState<Tab>('scheduled');
   const [brand, setBrand] = React.useState('');
   const [openId, setOpenId] = React.useState<string | null>(null);
+  const [retrying, setRetrying] = React.useState(false);
 
   const brands = [...new Set(targets.map((t) => t.brand))];
   const list = (posts ?? []).filter((p) => !brand || p.deliveries.some((d) => d.brand === brand));
@@ -60,6 +61,20 @@ export function PostsBoard() {
   const posted = list.filter((p) => p.deliveries.some((d) => d.status === 'sent'));
   const review = list.filter((p) => p.status === 'pending_approval' || p.status === 'draft');
   const problems = list.filter((p) => p.status === 'approved' && p.deliveries.some(isProblem));
+
+  const retryAll = async () => {
+    setRetrying(true);
+    let ok = 0, failed = 0;
+    for (const p of problems) {
+      for (const d of p.deliveries.filter(isProblem)) {
+        try { await api(`/api/publishing/deliveries/${d.id}`, { method: 'PATCH', json: { action: 'retry' } }); ok++; } catch { failed++; }
+      }
+    }
+    setRetrying(false);
+    toast(failed ? `Rescheduled ${ok}; ${failed} still need a person.` : `Rescheduled ${ok} posts at their next open times.`);
+    refresh();
+    setTab('scheduled');
+  };
 
   const rows = tab === 'scheduled' ? scheduled : tab === 'posted' ? posted : tab === 'review' ? review : problems;
   const keyTime = (p: Post): string => {
@@ -84,8 +99,8 @@ export function PostsBoard() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <QuickComposer targets={targets} canApprove={canApprove} prefill={composer.prefill} focusSignal={composer.signal}
-        onPosted={(m) => { toast(m); refresh(); setTab('scheduled'); }} />
+      {!loaded ? <div className="h-[66px] animate-pulse rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" /> : <QuickComposer targets={targets} canApprove={canApprove} prefill={composer.prefill} focusSignal={composer.signal}
+        onPosted={(m) => { toast(m); refresh(); setTab('scheduled'); }} />}
 
       {problems.length && tab !== 'problems' ? (
         <button type="button" onClick={() => setTab('problems')}
@@ -113,6 +128,16 @@ export function PostsBoard() {
           </select>
         ) : null}
       </div>
+
+      {tab === 'problems' && problems.length && canApprove ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-zinc-100 px-4 py-2.5 text-sm dark:bg-zinc-900">
+          <span className="flex-1 text-zinc-600 dark:text-zinc-300">These missed their time. Each can go out at its account&apos;s next open time.</span>
+          <button type="button" disabled={retrying} onClick={retryAll}
+            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
+            {retrying ? 'Finding times…' : 'Find new times for all'}
+          </button>
+        </div>
+      ) : null}
 
       {posts === null ? (
         <p className="py-10 text-center text-sm text-zinc-400">Loading…</p>

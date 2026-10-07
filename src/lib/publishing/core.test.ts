@@ -87,6 +87,19 @@ describe('pickSlot', () => {
     assert.equal(r.ok, false);
   });
 
+  it('catches up at the next open time after a missed window', () => {
+    // Story at 11:40pm Tuesday with 6am-11pm hours: earliest open slot is 6am Wednesday.
+    const late = zonedToUtc(2026, 10, 6, 23 * 60 + 40);
+    const rules: PostingRule[] = [0, 1, 2, 3, 4, 5, 6].map((d) => ({ weekday: d, startMinute: 360, endMinute: 1380 }));
+    const r = pickSlot({
+      windowStart: late, windowEnd: new Date(late.getTime() + 36 * 3600_000), now: late,
+      policy: { rules, minGapMinutes: 30, maxPerDay: null }, taken: [zonedToUtc(2026, 10, 7, 6 * 60)], weights: null, earliest: true,
+    });
+    assert.ok(r.ok);
+    assert.equal(zonedParts(r.pick.at).minute, 6 * 60 + 30, 'first slot 30 minutes after the 6am post');
+    assert.match(r.pick.reason, /next open time/);
+  });
+
   it('respects the daily cap', () => {
     const taken = [zonedToUtc(2026, 10, 6, 13 * 60), zonedToUtc(2026, 10, 6, 14 * 60)];
     const r = pickSlot({

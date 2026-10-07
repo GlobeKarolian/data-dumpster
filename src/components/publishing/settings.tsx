@@ -16,6 +16,7 @@ import { DEFAULT_UTM } from '@/lib/publishing/utm';
 import { api, fmtTime, fmtWhen, minuteLabel, WEEKDAYS, type Rule, type Target } from './api';
 import { usePublish } from './shell';
 import { accountName } from './bits';
+import { ConnectCard } from './connect-card';
 
 interface Channel { id: string; platform: string; handle: string; company: string }
 interface Feed {
@@ -333,6 +334,7 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
   return (
     <div className="space-y-4">
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {section === 'accounts' ? <ConnectCard targets={targets} onChanged={load} /> : null}
       {section === 'accounts' ? (
       <Card>
         <CardHeader>

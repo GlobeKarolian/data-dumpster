@@ -6,7 +6,9 @@ Dumpster provides the measurement layer (competitor landscape, post
 performance, Adobe referrals).
 
 Publishing is its own workspace at `/publish`, outside the analytics shell,
-with four tabs: Posts, Calendar, RSS auto-post and Settings. Pause posting and
+with three tabs: Posts, Calendar and Settings. RSS auto-post is switched off
+(Oct 2026): the tab is hidden and the cron skips feed polling unless
+`PUBLISHING_RSS=true`; the code and tables are kept. Pause posting and
 New post (or press N) are always in the top bar.
 
 The Posts screen is built for a desk under deadline, in plain language:

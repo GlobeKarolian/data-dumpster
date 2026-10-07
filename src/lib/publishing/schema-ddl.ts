@@ -122,4 +122,16 @@ export const PUBLISHING_DDL: string[] = [
   `ALTER TABLE publish_feed_items ADD COLUMN IF NOT EXISTS title text`,
   `ALTER TABLE publish_feed_items ADD COLUMN IF NOT EXISTS link text`,
   `ALTER TABLE publish_feed_items ADD COLUMN IF NOT EXISTS outcome text`,
+
+  // 0042: one Ayrshare profile per brand, created when a brand connects its accounts.
+  `CREATE TABLE IF NOT EXISTS publish_brand_profiles (
+    org_id uuid NOT NULL,
+    brand text NOT NULL,
+    provider text NOT NULL DEFAULT 'ayrshare',
+    profile_key_enc text NOT NULL,
+    ref_id text,
+    last_synced_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (org_id, brand)
+  )`,
 ];
