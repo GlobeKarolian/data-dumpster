@@ -30,6 +30,12 @@ export interface LabPost {
   engagement: number;
   /** Engagement divided by the account's median on this network in the window. */
   lift: number;
+  /** Boston hour it was posted, 0-23. */
+  hour?: number;
+  /** Canonical link the post shared, so posts of the same story can be compared. */
+  story?: string | null;
+  /** The org's topic tags on the post. */
+  tags?: string[];
 }
 
 export interface Feature {
@@ -187,7 +193,8 @@ export function labSchema(): Record<string, unknown> {
   };
 }
 
-export function buildLabMessages(f: FactSheet, top: LabPost[], typical: LabPost[], currentPrompt: string, house: string) {
+/** `measurements` is the fact sheet, plus the model's findings when there are enough posts (renderModel). */
+export function buildLabMessages(f: FactSheet, measurements: string, top: LabPost[], typical: LabPost[], currentPrompt: string, house: string) {
   const name = PUBLISH_PLATFORM_LABELS[f.platform];
   const system = [
     'You are the head of social media for a Boston news organization. You write the instruction an AI follows when it drafts posts for one network.',
@@ -195,12 +202,13 @@ export function buildLabMessages(f: FactSheet, top: LabPost[], typical: LabPost[
     'The newsroom house rules always win. Never encourage a pattern that breaks them (clickbait, engagement bait such as "comment below", invented or exaggerated facts, outrage), even if it correlates with engagement. Say so in a reason when you leave such a pattern out.',
     'Engagement here means reactions, comments and shares, not clicks. Treat it as a signal of what people respond to, not as the goal itself.',
     'A difference of a few points is noise. Only build a rule on a clear difference, and prefer a few strong rules over many weak ones.',
+    'When the measurements include regression results, trust them over the raw top-vs-typical shares, and trust the same-story results most: they hold the news value of the story fixed. Ignore any effect marked "no clear effect".',
     '',
     'House rules the drafting AI already follows:',
     house,
   ].join('\n');
   const user = [
-    `<measurements>\n${renderFactSheet(f)}\n</measurements>`,
+    `<measurements>\n${measurements}\n</measurements>`,
     `<top_posts>\n${top.map((p, i) => `${i + 1}. [${p.company}, ${p.lift.toFixed(1)}x] ${clip(p.text, 420)}`).join('\n')}\n</top_posts>`,
     `<typical_posts>\n${typical.map((p, i) => `${i + 1}. [${p.company}] ${clip(p.text, 300)}`).join('\n')}\n</typical_posts>`,
     `<current_instruction>\n${currentPrompt}\n</current_instruction>`,

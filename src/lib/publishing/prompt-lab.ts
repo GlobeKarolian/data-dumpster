@@ -11,6 +11,7 @@ import {
   buildFactSheet, buildLabMessages, labSchema, pickExamples, readSuggestion, renderFactSheet, splitByLift,
   type FactSheet, type LabPost, type LabSuggestion,
 } from './prompt-lab-core';
+import { fitModel, renderModel, type ModelReport } from './prompt-lab-model';
 import { q } from './store';
 
 /**
@@ -33,6 +34,7 @@ export interface LabResult {
   platform: PublishPlatform;
   skipped?: string;
   facts?: FactSheet;
+  model?: ModelReport;
   suggestion?: LabSuggestion;
   /** Reasons removed because a number in them is not in the measurements. */
   droppedReasons?: number;
@@ -42,13 +44,13 @@ export interface LabResult {
 
 /** Posts with text on one network, each scored against its own account's median, collabs counted once. */
 export async function labPosts(orgId: string, landscapeIds: string[], platform: PublishPlatform, days: number): Promise<LabPost[]> {
-  const rows = await q<{ company: string; type: string; text: string; engagement: number; lift: number }>(sql`
+  const rows = await q<{ company: string; type: string; text: string; engagement: number; lift: number; hour: number; story: string | null; tags: string[] | null }>(sql`
     WITH scope AS (
       SELECT DISTINCT lc.company_id FROM landscape_companies lc JOIN landscapes l ON l.id = lc.landscape_id
        WHERE l.org_id = ${orgId}::uuid AND l.id IN (SELECT jsonb_array_elements_text(${JSON.stringify(landscapeIds)}::jsonb)::uuid)
     ),
     win AS (
-      SELECT p.channel_id, p.company_id, p.external_id, p.type::text AS type, p.text, p.engagement_total
+      SELECT p.id, p.channel_id, p.company_id, p.external_id, p.type::text AS type, p.text, p.engagement_total, p.posted_at
         FROM posts p
        WHERE p.company_id IN (SELECT company_id FROM scope)
          AND p.platform::text = ${platform}
@@ -59,13 +61,24 @@ export async function labPosts(orgId: string, landscapeIds: string[], platform: 
     med AS (
       SELECT channel_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY engagement_total) AS med
         FROM win GROUP BY channel_id HAVING count(*) >= 15
+    ),
+    picked AS (
+      SELECT DISTINCT ON (w.external_id) w.id, c.name AS company, w.type, left(w.text, 1500) AS text,
+             w.engagement_total::float8 AS engagement, (w.engagement_total / m.med)::float8 AS lift,
+             extract(hour FROM w.posted_at AT TIME ZONE 'America/New_York')::int AS hour
+        FROM win w JOIN med m ON m.channel_id = w.channel_id JOIN companies c ON c.id = w.company_id
+       WHERE m.med > 0 AND w.text IS NOT NULL AND length(btrim(w.text)) >= 15
+       ORDER BY w.external_id, w.engagement_total DESC
     )
-    SELECT DISTINCT ON (w.external_id) c.name AS company, w.type, left(w.text, 1500) AS text,
-           w.engagement_total::float8 AS engagement, (w.engagement_total / m.med)::float8 AS lift
-      FROM win w JOIN med m ON m.channel_id = w.channel_id JOIN companies c ON c.id = w.company_id
-     WHERE m.med > 0 AND w.text IS NOT NULL AND length(btrim(w.text)) >= 15
-     ORDER BY w.external_id, w.engagement_total DESC`);
-  return rows.map((r) => ({ company: r.company, type: r.type, text: r.text, engagement: Number(r.engagement), lift: Number(r.lift) }));
+    SELECT x.company, x.type, x.text, x.engagement, x.lift, x.hour,
+           (SELECT coalesce(u.canonical_url, u.url) FROM posted_urls u WHERE u.post_id = x.id ORDER BY u.url LIMIT 1) AS story,
+           (SELECT json_agg(t.name) FROM post_tag_assignments a JOIN post_tags t ON t.id = a.tag_id
+             WHERE a.post_id = x.id AND t.org_id = ${orgId}::uuid) AS tags
+      FROM picked x`);
+  return rows.map((r) => ({
+    company: r.company, type: r.type, text: r.text, engagement: Number(r.engagement), lift: Number(r.lift),
+    hour: Number(r.hour), story: r.story, tags: Array.isArray(r.tags) ? r.tags : [],
+  }));
 }
 
 /** Every k-th post, so typical examples span the middle half instead of bunching at one end. */
@@ -83,12 +96,13 @@ async function labOne(orgId: string, platform: PublishPlatform, input: z.infer<t
   const facts = buildFactSheet(platform, input.days, posts);
   const { top, typical } = splitByLift(posts);
   const settings = await getDraftSettings(orgId);
-  const material = renderFactSheet(facts);
+  const model = fitModel(posts);
+  const material = [renderFactSheet(facts), renderModel(model)].filter(Boolean).join('\n');
 
   let res;
   try {
     res = await complete(orgId, {
-      messages: buildLabMessages(facts, pickExamples(top, 25), spread(pickExamples(typical, 60, 4), 15), settings.prompts.platforms[platform], settings.prompts.house),
+      messages: buildLabMessages(facts, material, pickExamples(top, 25), spread(pickExamples(typical, 60, 4), 15), settings.prompts.platforms[platform], settings.prompts.house),
       jsonSchema: labSchema(),
       model: input.model ?? LAB_MODEL,
       temperature: 0.3,
@@ -96,14 +110,14 @@ async function labOne(orgId: string, platform: PublishPlatform, input: z.infer<t
       signal: AbortSignal.timeout(150_000),
     }, { connection: await draftConnection(orgId), feature: 'publish_prompt_lab', maxAttempts: 2 });
   } catch (err) {
-    return { platform, facts, skipped: `The model could not finish: ${err instanceof ModelError ? err.message : String(err)}` };
+    return { platform, facts, model, skipped: `The model could not finish: ${err instanceof ModelError ? err.message : String(err)}` };
   }
 
   const suggestion = readSuggestion(res.json, platform);
-  if (!suggestion) return { platform, facts, skipped: 'The model replied without a usable instruction. Try again.' };
+  if (!suggestion) return { platform, facts, model, skipped: 'The model replied without a usable instruction. Try again.' };
   const kept = suggestion.reasons.filter((r) => verifyNumbersAgainstMaterial(r.evidence, material).ok);
   return {
-    platform, facts,
+    platform, facts, model,
     suggestion: { ...suggestion, reasons: kept },
     droppedReasons: suggestion.reasons.length - kept.length,
     examples: pickExamples(top, 3, 1).map((p) => ({ company: p.company, lift: Math.round(p.lift * 10) / 10, text: p.text.slice(0, 500) })),

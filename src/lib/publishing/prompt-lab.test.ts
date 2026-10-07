@@ -44,7 +44,7 @@ describe('prompt lab', () => {
 
   it('asks for a network-labeled instruction grounded in the measurements', () => {
     const f = buildFactSheet('bluesky', 90, Array.from({ length: 200 }, (_, i) => post(i)));
-    const [system, user] = buildLabMessages(f, [post(1)], [post(2)], 'Bluesky: old.', 'House rules here.');
+    const [system, user] = buildLabMessages(f, renderFactSheet(f), [post(1)], [post(2)], 'Bluesky: old.', 'House rules here.');
     assert.match(system.content, /house rules always win/i);
     assert.match(system.content, /not clicks/);
     assert.match(user.content, /<measurements>/);
@@ -58,5 +58,70 @@ describe('prompt lab', () => {
     const material = renderFactSheet(f);
     assert.equal(verifyNumbersAgainstMaterial('Top posts asked a question 100% of the time vs 0% of typical posts.', material).ok, true);
     assert.equal(verifyNumbersAgainstMaterial('Questions lift engagement by 47%.', material).ok, false);
+  });
+});
+
+import { fitModel, renderModel, ridge, solveSpd, spearman } from './prompt-lab-model';
+
+/** Deterministic noise so the statistics tests never flake. */
+function rng(seed: number) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
+}
+const gauss = (r: () => number) => Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(2 * Math.PI * r());
+
+describe('prompt lab model', () => {
+  it('solves small systems and ranks', () => {
+    assert.deepEqual(solveSpd([[4, 2], [2, 3]], [2, 1])!.map((x) => Math.round(x * 1000) / 1000), [0.5, 0]);
+    assert.equal(spearman([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]), 1);
+    const r = rng(1);
+    const X = Array.from({ length: 500 }, () => [1, r() < 0.5 ? 1 : 0]);
+    const fit = ridge(X, X.map((row) => 0.5 + 0.3 * row[1] + 0.05 * gauss(r)))!;
+    assert.ok(Math.abs(fit.beta[1] - 0.3) < 0.02);
+  });
+
+  it('holds topic fixed: short breaking posts do not make "short" look like a winner', () => {
+    const r = rng(7);
+    const posts: LabPost[] = Array.from({ length: 3000 }, (_, i) => {
+      const breaking = r() < 0.4;
+      const question = r() < 0.3;
+      const text = (breaking ? 'Crash closes I-93 near Medford' : 'The city council spent a long evening debating the new budget for parks, schools and roads in the next year')
+        + (question ? ' What should the city do?' : ' Officials said more is coming.');
+      const lift = Math.exp((breaking ? Math.log(2) : 0) + (question ? Math.log(1.3) : 0) + 0.4 * gauss(r));
+      return { company: `Outlet ${i % 6}`, type: 'link', text, engagement: 1, lift, hour: 12, tags: breaking ? ['Breaking'] : ['Politics'] };
+    });
+    const m = fitModel(posts);
+    const q = m.controlled!.effects.find((e) => e.key === 'question')!;
+    assert.ok(q.clear && q.effectPct >= 20 && q.effectPct <= 40, `question ${q.effectPct}%`);
+    const short = m.controlled!.effects.find((e) => e.key === 'len_short');
+    assert.ok(!short || !short.clear || Math.abs(short.effectPct) < 15, `short ${short?.effectPct}%`);
+    assert.ok(m.controls.some((c) => c.startsWith('topic')));
+    assert.ok((m.controlled!.holdoutRank ?? 0) > 0.3);
+    assert.match(renderModel(m), /asks a question: \+\d+% \(90% range/);
+  });
+
+  it('compares wording within the same story', () => {
+    const r = rng(11);
+    const posts: LabPost[] = [];
+    for (let s = 0; s < 150; s++) {
+      const news = 0.9 * gauss(r); // stories differ a lot in news value
+      for (let k = 0; k < 3; k++) {
+        const question = k === 0;
+        posts.push({ company: 'Globe', type: 'link', story: `https://x.com/story-${s}`, hour: Math.floor(r() * 24),
+          text: `Story ${s} update with some detail${question ? '. Is this the right call?' : '.'}`,
+          engagement: 1, lift: Math.exp(news + (question ? Math.log(1.5) : 0) + 0.2 * gauss(r)) });
+      }
+    }
+    const m = fitModel(posts);
+    assert.equal(m.sameStory!.stories, 150);
+    const q = m.sameStory!.effects.find((e) => e.key === 'question')!;
+    assert.ok(q.clear && q.effectPct >= 35 && q.effectPct <= 65, `question within story ${q.effectPct}%`);
+  });
+
+  it('says nothing when there are too few posts', () => {
+    const m = fitModel(Array.from({ length: 50 }, (_, i) => post(i)));
+    assert.equal(m.controlled, null);
+    assert.equal(m.sameStory, null);
+    assert.equal(renderModel(m), '');
   });
 });

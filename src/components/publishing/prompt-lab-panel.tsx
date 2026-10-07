@@ -7,6 +7,7 @@ import { PlatformIcon } from '@/components/ui/platform-icon';
 import { cn } from '@/lib/utils';
 import { PUBLISH_PLATFORM_LABELS, type PublishPlatform } from '@/lib/publishing/platforms';
 import type { LabResult } from '@/lib/publishing/prompt-lab';
+import type { ModelFit } from '@/lib/publishing/prompt-lab-model';
 import { api } from './api';
 
 /**
@@ -60,7 +61,7 @@ export function PromptLabPanel({ current, onUse }: {
         <div className="space-y-1">
           <p className="text-sm font-semibold">Learn from posts that worked</p>
           <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Compares the top 10% of posts on each network with typical ones, from the landscapes you pick, and suggests new instructions. Each post is scored against its own account&apos;s typical post, so big accounts don&apos;t drown out small ones. It measures reactions, comments and shares, not clicks, and it never overrides the house rules.
+            Compares the top 10% of posts on each network with typical ones, from the landscapes you pick, and suggests new instructions. Each post is scored against its own account&apos;s typical post, so big accounts don&apos;t drown out small ones. A statistical model then holds topic, format and timing fixed, and compares posts of the same story, to separate what the wording adds from what the news itself did. It measures reactions, comments and shares, not clicks, and it never overrides the house rules.
           </p>
         </div>
       </div>
@@ -151,6 +152,13 @@ function LabCard({ r, inUse, onUse }: { r: LabResult; inUse: boolean; onUse: (p:
         </div>
       ) : null}
 
+      {r.model?.controlled ? (
+        <Effects title={`With ${r.model.controls.join(', ') || 'other factors'} held fixed`} fit={r.model.controlled} />
+      ) : null}
+      {r.model?.sameStory ? (
+        <Effects title={`Same story, different wording (${r.model.sameStory.stories.toLocaleString()} stories posted more than once)`} fit={r.model.sameStory} />
+      ) : null}
+
       {r.examples?.length ? (
         <div className="mt-2">
           <button type="button" className="text-[11px] text-accent-700 hover:underline dark:text-accent-400" onClick={() => setShowExamples(!showExamples)}>
@@ -168,6 +176,30 @@ function LabCard({ r, inUse, onUse }: { r: LabResult; inUse: boolean; onUse: (p:
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** What the regression found: each wording trait's effect on lift, with its 90% range. */
+function Effects({ title, fit }: { title: string; fit: ModelFit }) {
+  const shown = fit.effects.slice(0, 6);
+  const signed = (n: number) => (n > 0 ? `+${n}%` : `${n}%`);
+  return (
+    <div className="mt-2 rounded-md border border-zinc-100 p-2 dark:border-zinc-800">
+      <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
+        {title}
+        <span className="font-normal text-zinc-400">
+          {' '}· {fit.posts.toLocaleString()} posts{fit.holdoutRank !== null ? ` · prediction check ${fit.holdoutRank} (0 is no signal)` : ''}
+        </span>
+      </p>
+      <ul className="mt-1 grid gap-x-6 gap-y-0.5 sm:grid-cols-2">
+        {shown.map((e) => (
+          <li key={e.key} className={cn('pb-num text-[11px]', !e.clear ? 'text-zinc-400'
+            : e.effectPct > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400')}>
+            {e.label}: {signed(e.effectPct)} <span className="text-zinc-400">({signed(e.lowPct)} to {signed(e.highPct)}{e.clear ? '' : ', unclear'})</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
