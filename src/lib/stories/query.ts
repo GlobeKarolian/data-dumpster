@@ -4,6 +4,7 @@
  * Kept separate from cluster.ts so the algorithm stays pure and testable with
  * no database in the way, and so the expensive part (one query) is obvious.
  */
+import { collabLabel } from '@/lib/collab-label';
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { posts, companies, postedUrls, landscapeCompanies } from '@/db/schema';
@@ -40,6 +41,7 @@ export async function getStoryCloud(q: StoryQuery): Promise<StoryCloud> {
       companyId: posts.companyId,
       companyName: companies.name,
       platform: posts.platform,
+      externalId: posts.externalId,
       postedAt: posts.postedAt,
       text: posts.text,
       permalink: posts.permalink,
@@ -74,11 +76,25 @@ export async function getStoryCloud(q: StoryQuery): Promise<StoryCloud> {
     ))
     .groupBy(posts.id, companies.name);
 
-  const items: ClusterablePost[] = rows.map((r) => ({
-    ...r,
-    text: r.text,
-    urls: Array.isArray(r.urls) ? r.urls.filter(Boolean) : [],
-  }));
+  // A collab post (same platform post collected from two tracked accounts)
+  // counts once in a story, named for every account it appeared on.
+  const byPost = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const k = r.platform + '|' + r.externalId;
+    byPost.set(k, [...(byPost.get(k) ?? []), r]);
+  }
+  const items: ClusterablePost[] = [...byPost.values()].map((copies) => {
+    const best = copies.reduce((a, b) => (Number(b.engagementTotal) > Number(a.engagementTotal) ? b : a));
+    const others = [...new Set(copies.map((c) => c.companyName).filter((n) => n !== best.companyName))].sort();
+    const { externalId: _externalId, ...r } = best;
+    void _externalId;
+    return {
+      ...r,
+      companyName: collabLabel(best.companyName, others),
+      text: r.text,
+      urls: Array.isArray(r.urls) ? r.urls.filter(Boolean) : [],
+    };
+  });
 
   const clusters = clusterPosts(items, q.options);
   const clustered = new Set(clusters.flatMap((c) => c.postIds));

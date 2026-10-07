@@ -106,6 +106,8 @@ export type TopPost = {
   thumbnailUrl?: string | null;
   engagementTotal: number;
   isBgmOwned?: boolean;
+  /** Other tracked accounts this collab post also appeared on; shown as one entry. */
+  collaborators?: string[];
 };
 
 export type CohortRow = {

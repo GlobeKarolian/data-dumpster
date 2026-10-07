@@ -26,6 +26,7 @@ import {
   formatSignedCount,
   type ReportDocument,
 } from '@/lib/reports/render';
+import { collabLabel } from '@/lib/collab-label';
 
 const COLORS = {
   ink: '1E2933',
@@ -738,7 +739,7 @@ function addTopPostSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: numbe
           color: COLORS.white,
           align: 'center',
         });
-        addText(slide, post.companyName + '  ·  ' + platformLabel(post.platform), {
+        addText(slide, collabLabel(post.companyName, post.collaborators) + '  ·  ' + platformLabel(post.platform), {
           x: x + 0.82,
           y: y + 0.14,
           w: 3.55,

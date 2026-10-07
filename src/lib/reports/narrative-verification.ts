@@ -29,6 +29,7 @@ import {
   formatSignedCount,
   type ReportDocument,
 } from './render';
+import { collabLabel } from '@/lib/collab-label';
 
 function computedMaterial(doc: ReportDocument): string[] {
   const c = doc.computed;
@@ -77,7 +78,7 @@ function computedMaterial(doc: ReportDocument): string[] {
     lines.push('');
     lines.push('TOP ENGAGED POSTS:');
     for (const post of c.topPosts) {
-      lines.push('  ' + post.rank + '. ' + post.companyName + ' on ' + post.platform + ', '
+      lines.push('  ' + post.rank + '. ' + collabLabel(post.companyName, post.collaborators) + ' on ' + post.platform + ', '
         + formatCount(post.engagementTotal) + ' engagements: '
         + (post.text
           ? post.text.slice(0, 200).replace(/\s+/g, ' ')

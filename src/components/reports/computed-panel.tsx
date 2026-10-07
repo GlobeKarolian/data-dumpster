@@ -23,6 +23,7 @@ import {
 import { formatCount, formatPct, formatRate, formatSignedCount } from '@/lib/reports/render';
 import { resolveBgmPortfolio } from '@/lib/reports/portfolio';
 import { Figure, HeaderWithDefinition, SectionCard } from './ui';
+import { CollabName } from '@/components/posts/collab-name';
 
 const TH = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-zinc-500 '
   + 'dark:text-zinc-400';
@@ -412,6 +413,7 @@ function reportPostAsDto(post: TopPost): PostDto {
   return {
     id: post.id,
     company: { id: '', name: post.companyName, slug: '' },
+    collaborators: post.collaborators?.map((name) => ({ id: '', name })),
     platform: post.platform,
     type: post.type ?? 'text',
     postedAt: post.postedAt,
@@ -545,7 +547,7 @@ export function ReportPostCard({
                 'truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100',
                 post.isBgmOwned && 'text-accent-700 dark:text-accent-400',
               )}>
-                {post.companyName}
+                <CollabName name={post.companyName} collaborators={post.collaborators} />
               </p>
               <p className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
                 <PlatformIcon platform={post.platform} className="h-3 w-3" />

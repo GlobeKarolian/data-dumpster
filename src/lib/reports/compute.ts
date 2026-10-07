@@ -143,7 +143,8 @@ function toTopPost(post: PostDto, index: number, bgmCompanyIds: ReadonlySet<stri
     permalink: post.permalink,
     thumbnailUrl: post.thumbnailUrl,
     engagementTotal: post.engagementTotal,
-    isBgmOwned: bgmCompanyIds.has(post.company.id),
+    isBgmOwned: bgmCompanyIds.has(post.company.id) || (post.collaborators ?? []).some((c) => bgmCompanyIds.has(c.id)),
+    ...(post.collaborators?.length ? { collaborators: post.collaborators.map((c) => c.name) } : {}),
   };
 }
 

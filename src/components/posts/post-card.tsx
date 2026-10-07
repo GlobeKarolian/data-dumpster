@@ -8,6 +8,7 @@ import { Badge, PlatformBadge } from '@/components/ui/badge';
 import { TagLink } from '@/components/tags/tag-link';
 import { Tooltip } from '@/components/ui/tooltip';
 import { formatDateTime, formatMetric, truncate } from '@/components/ui/format';
+import { CollabName } from '@/components/posts/collab-name';
 
 /** Threshold above which a post is called out as an outlier rather than a good day. */
 export const OUTLIER_THRESHOLD = 3;
@@ -107,7 +108,7 @@ export function PostCard({
             </span>
           ) : null}
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">{post.company.name}</p>
+            <p className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100"><CollabName name={post.company.name} collaborators={post.collaborators} /></p>
             <div className="mt-0.5 flex items-center gap-2">
               <PlatformBadge platform={post.platform} />
               <span className="pb-num text-[11px] text-zinc-400">{formatDateTime(post.postedAt)}</span>

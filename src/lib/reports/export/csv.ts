@@ -17,6 +17,7 @@ import { reportManualRows } from '@/lib/reports/manual-rows';
 import { resolveBgmPortfolio } from '@/lib/reports/portfolio';
 import { sortByMetricDescending } from '@/lib/metrics/ranking';
 import { executiveLines, type ReportDocument } from '@/lib/reports/render';
+import { collabLabel } from '@/lib/collab-label';
 
 export type CsvValue = string | number | boolean | null | undefined;
 
@@ -238,7 +239,7 @@ export function renderReportCsv(doc: ReportDocument): string {
     const topPostRows = (posts: ComputedBlock['topPosts']) => posts.map((post) => [
       post.rank,
       post.id,
-      post.companyName,
+      collabLabel(post.companyName, post.collaborators),
       post.isBgmOwned ?? false,
       post.platform,
       post.postedAt,

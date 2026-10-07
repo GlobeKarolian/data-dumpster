@@ -26,6 +26,7 @@ import {
 } from './types';
 import { reportManualRows } from './manual-rows';
 import { sortByMetricDescending } from '@/lib/metrics/ranking';
+import { collabLabel } from '@/lib/collab-label';
 
 export type ReportDocument = {
   title: string;
@@ -119,7 +120,7 @@ export function executiveLines(doc: ReportDocument): Line[] {
       out.push({
         label: 'Most engaged posts',
         value: c.topPosts
-          .map((p) => p.companyName + ' on ' + p.platform + ' (' + formatCount(p.engagementTotal) + ')')
+          .map((p) => collabLabel(p.companyName, p.collaborators) + ' on ' + p.platform + ' (' + formatCount(p.engagementTotal) + ')')
           .join('; ') + '.',
       });
     }
@@ -228,7 +229,7 @@ function topPostTable(posts: ComputedBlock['topPosts']): TableModel {
     ],
     rows: posts.map((p) => [
       { text: String(p.rank), numeric: true },
-      { text: p.companyName },
+      { text: collabLabel(p.companyName, p.collaborators) + (p.collaborators?.length ? ' (collab)' : '') },
       { text: p.platform },
       { text: (p.text ?? '').slice(0, 160) || (p.permalink ?? 'Untitled post') },
       { text: formatCount(p.engagementTotal), numeric: true },
