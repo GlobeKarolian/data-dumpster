@@ -26,6 +26,17 @@ describe('ayrshare', () => {
     const busy = mapAyrshareResponse(503, {});
     assert.equal(!busy.ok && busy.retryable, true);
   });
+  it('unwraps the posts array Ayrshare returns for a brand profile', () => {
+    const ok = mapAyrshareResponse(200, { status: 'success', posts: [{ status: 'success', id: 'ay2', postIds: [{ status: 'success', id: 'th1', postUrl: 'https://threads.net/@b/post/1', platform: 'threads' }] }] });
+    assert.deepEqual(ok.ok && [ok.providerPostId, ok.postUrl], ['th1', 'https://threads.net/@b/post/1']);
+    const bad = mapAyrshareResponse(400, { status: 'error', posts: [{ status: 'error', postIds: [], errors: [{ code: 156, message: 'Instagram is not linked.' }] }] });
+    assert.equal(!bad.ok && bad.error, 'Instagram is not linked.');
+  });
+  it('never retries a reused idempotency key', () => {
+    const dup = mapAyrshareResponse(400, { status: 'error', errors: [{ message: 'Duplicate idempotencyKey found.' }] });
+    assert.equal(!dup.ok && dup.retryable, false);
+    assert.match(!dup.ok ? dup.error : '', /may be live/);
+  });
 });
 
 describe('bluesky facets', () => {

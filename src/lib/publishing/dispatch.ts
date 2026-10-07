@@ -13,7 +13,7 @@ import type { LinkMode, PublishPlatform, PublishProvider } from './platforms';
  * five-minute lease, so two overlapping ticks can never send the same post.
  *
  * A lease that expired while "sending" means the outcome is unknown. For an
- * idempotent provider (Ayrshare, keyed by delivery id) it is safe to send again.
+ * idempotent provider (Ayrshare, keyed by delivery id and resend count) it is safe to send again.
  * For Bluesky it is not, so the delivery fails with "check the account" rather
  * than risking a duplicate on a newsroom account.
  */
@@ -35,6 +35,7 @@ interface Claimed {
   collaborators: string[] | null;
   secret_enc: string | null;
   attempts: number;
+  send_key_gen: number;
   was_stale: boolean;
 }
 
@@ -58,7 +59,7 @@ export async function dispatchDue(): Promise<{ claimed: number; sent: number; fa
      WHERE d.id = due.id AND t.id = d.target_id AND p.id = d.post_id
     RETURNING d.id, d.org_id, d.target_id, d.post_id, t.platform, t.provider, d.final_text, d.link_url, d.link_mode,
               p.link_title, p.media_urls, (p.options->'instagramCollaborators') AS collaborators, t.secret_enc,
-              d.attempts, due.was_stale`);
+              d.attempts, d.send_key_gen, due.was_stale`);
 
   let sent = 0, failed = 0, retried = 0;
   const previews = new Map<string, LinkPreview | null>();
@@ -83,7 +84,7 @@ export async function dispatchDue(): Promise<{ claimed: number; sent: number; fa
     const result = await publisher.send({
       platform: c.platform, text: c.final_text, link: c.link_url, linkMode: c.link_mode, preview,
       mediaUrls: c.media_urls ?? [], instagramCollaborators: c.collaborators ?? [],
-      idempotencyKey: c.id, secret,
+      idempotencyKey: sendKey(c.id, c.send_key_gen), secret,
     });
     if (result.ok) {
       await finish(c, publisher.name, true, null, result.detail ?? null, result.providerPostId, result.postUrl);
@@ -101,6 +102,15 @@ export async function dispatchDue(): Promise<{ claimed: number; sent: number; fa
     }
   }
   return { claimed: claimed.length, sent, failed, retried };
+}
+
+/**
+ * Ayrshare remembers an idempotency key forever, even for a post that failed. The automatic
+ * retries reuse one key (that is the protection against double posting); a person resending a
+ * failed post bumps send_key_gen so the new try gets a fresh key.
+ */
+export function sendKey(deliveryId: string, gen: number): string {
+  return gen > 0 ? `${deliveryId}-${gen}` : deliveryId;
 }
 
 async function finish(

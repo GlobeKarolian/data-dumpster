@@ -17,6 +17,7 @@ import { api, fmtTime, fmtWhen, minuteLabel, WEEKDAYS, type Rule, type Target } 
 import { usePublish } from './shell';
 import { accountName } from './bits';
 import { ConnectCard } from './connect-card';
+import { DraftingCard } from './drafting-card';
 
 interface Channel { id: string; platform: string; handle: string; company: string }
 interface Feed {
@@ -427,6 +428,7 @@ export function PublishingSettings({ section }: { section: 'accounts' | 'feeds' 
         </CardBody>
       </Card>
       )}
+      {section === 'accounts' ? <DraftingCard /> : null}
     </div>
   );
 }

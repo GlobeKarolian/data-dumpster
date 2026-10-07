@@ -71,15 +71,45 @@ The Posts screen is built for a desk under deadline, in plain language:
   from Ayrshare's docs. Confirm it against a real response with the first test
   key (AGENTS.md: read the real response before trusting a mapper). Raw
   responses are kept in `publish_attempts.detail`.
+  Checked against the docs on 7 Oct 2026: with a Profile-Key (every brand
+  post) the reply is wrapped in `posts: [...]`, and Ayrshare rejects a reused
+  `idempotencyKey` forever, even for a post that failed. Automatic retries
+  reuse the key (no double posts); a person resending a failed post bumps
+  `publish_deliveries.send_key_gen` so the new try gets a fresh key. A reused
+  key is reported as "may already be live, check the account".
+  The Launch plan ($299 a month, 10 profiles) is the smallest plan with the
+  profiles and linking-page API that Connect uses.
 - **Bluesky direct** with an app password per account.
 - **Test only** (mock) for anything else.
+
+## Drafting with AI
+
+Paste a story link in the composer and press **Draft posts with AI**. The
+server reads the story (`article-extract.ts`: JSON-LD `articleBody`, then Arc's
+`Fusion.globalContent` for bostonglobe.com, which carries the full text of
+subscriber stories, then the page's paragraphs for boston.com and other
+WordPress sites), and asks the model for one post per chosen account in a
+single call. The drafts land in the per-account text boxes; nothing is
+scheduled until an editor presses Schedule.
+
+- Model: the org's OpenRouter connection from Settings > AI Model if there is
+  one, else its default connection, else `OPENROUTER_API_KEY`. The model id is
+  set in Publish > Settings > Drafting with AI (default
+  `anthropic/claude-sonnet-5.5`). Spend is metered in `ai_usage` as
+  `publish_draft`.
+- Prompts: a house style plus one instruction per network, editable by admins
+  in the same card. A blank field means "use the default", so improving a
+  default reaches every org that never changed it.
+- Checks (`drafting-core.ts`, in the spirit of AGENTS.md rule 3): every number
+  and every quotation in a draft is looked up in the story text, and the
+  account's character budget (with the tagged link counted the way the
+  sender adds it) is enforced. Anything that fails is flagged under the draft.
 
 ## Going live, in order
 
 1. Apply `drizzle/0039_publishing.sql` (the tables also self-create on first use).
-2. Set `AYRSHARE_API_KEY` and connect one secondary brand (STAT or Boston.com)
-   in Ayrshare. Add that brand's accounts in `/publish/settings` with its
-   Profile-Key.
+2. Set `AYRSHARE_API_KEY` and press Connect for one secondary brand (STAT or
+   Boston.com) in Publish > Settings. Its accounts appear on return.
 3. Link each account to its tracked channel so slots learn from history.
 4. Run in test mode for a few days with the social team and compare the
    picked slots against what they would have chosen.

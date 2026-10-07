@@ -79,6 +79,14 @@ export async function nextOpenSlot(t: TargetRow, from: Date, extraTaken: Date[] 
   return pickSlot({ windowStart: from, windowEnd: until, now: new Date(), policy, taken, weights: null, earliest: true });
 }
 
+/**
+ * When a person puts a failed delivery back in the queue: a fresh attempt budget, and a new
+ * Ayrshare idempotency key (the old one is spent even though the post failed). Evaluated against
+ * the row's status before the update.
+ */
+const resend = (alias = '') => sql.raw(`attempts = CASE WHEN ${alias}status = 'failed' THEN 0 ELSE ${alias}attempts END,
+      send_key_gen = ${alias}send_key_gen + CASE WHEN ${alias}status = 'failed' THEN 1 ELSE 0 END`);
+
 /** Give a stuck post (no time found, or failed) a new time: the account's next open slot from now. */
 export async function retryDelivery(orgId: string, deliveryId: string): Promise<string> {
   const rows = await q<{ target_id: string; status: string; post_status: string }>(sql`
@@ -93,7 +101,7 @@ export async function retryDelivery(orgId: string, deliveryId: string): Promise<
   const slot = await nextOpenSlot(t, new Date(), [], deliveryId);
   if (!slot.ok) throw new HttpError(409, slot.reason, 'conflict');
   await q(sql`UPDATE publish_deliveries SET status = 'queued', scheduled_for = ${slot.pick.at.toISOString()}::timestamptz,
-      slot_reason = ${slot.pick.reason}, last_error = NULL, lease_until = NULL
+      slot_reason = ${slot.pick.reason}, last_error = NULL, lease_until = NULL, ${resend()}
     WHERE org_id = ${orgId}::uuid AND id = ${deliveryId}::uuid`);
   return slot.pick.at.toISOString();
 }
@@ -252,7 +260,7 @@ export async function rescheduleDelivery(orgId: string, deliveryId: string, at: 
   const when = at === 'now' ? new Date() : at;
   if (at !== 'now' && when.getTime() < Date.now() - 60_000) throw new HttpError(400, 'That time has already passed.');
   const rows = await q<{ id: string }>(sql`UPDATE publish_deliveries d SET status = 'queued', scheduled_for = ${when.toISOString()}::timestamptz,
-      slot_reason = ${at === 'now' ? 'Sent now by editor' : 'Moved by editor'}, last_error = NULL
+      slot_reason = ${at === 'now' ? 'Sent now by editor' : 'Moved by editor'}, last_error = NULL, ${resend('d.')}
     FROM publish_posts p
     WHERE d.org_id = ${orgId}::uuid AND d.id = ${deliveryId}::uuid AND p.id = d.post_id AND p.status = 'approved'
       AND d.status IN ('queued', 'unschedulable', 'failed')
