@@ -101,6 +101,9 @@ describe('checkDraft', () => {
   it('flags a number the story does not have', () => {
     assert.deepEqual(checkDraft('HubSpot cuts 700 jobs.', story, 280, 'twitter'), ['“700” is not in the story. Check the number.']);
   });
+  it('accepts a quote that ends with different punctuation than the story', () => {
+    assert.deepEqual(checkDraft('Rangan: “This is not driven by AI-related efficiencies.”', story, 280, 'twitter'), []);
+  });
   it('flags a quote that is not word for word', () => {
     const w = checkDraft('“This has nothing to do with AI at all,” she said.', story, 280, 'twitter');
     assert.equal(w.length, 1);

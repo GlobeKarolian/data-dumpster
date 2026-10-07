@@ -88,7 +88,7 @@ export function ConnectCard({ targets, onChanged }: { targets: Target[]; onChang
       <CardBody className="space-y-3">
         {status && !status.configured ? (
           <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-            Connecting needs an Ayrshare Business account. Add its API key in Vercel as <code>AYRSHARE_API_KEY</code>, redeploy, and the Connect buttons will work.
+            Connecting needs an Ayrshare Launch or Business plan (Premium has only one profile). Add its API key in Vercel as <code>AYRSHARE_API_KEY</code>, redeploy, and the Connect buttons will work.
           </p>
         ) : null}
         {status?.configured && !status.xConfigured ? (
