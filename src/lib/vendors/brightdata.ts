@@ -155,6 +155,9 @@ class OperationDeadlineExceeded extends Error {
   }
 }
 
+/** Below this much remaining budget a progress poll cannot usefully complete. */
+const MIN_POLL_WINDOW_MS = 250;
+
 function remainingMs(deadline: number): number {
   return Math.max(0, deadline - Date.now());
 }
@@ -280,10 +283,13 @@ async function awaitSnapshot(
   let delay = 2000;
 
   try {
-    while (Date.now() < deadline) {
+    while (remainingMs(deadline) >= MIN_POLL_WINDOW_MS) {
       await sleep(Math.min(delay, remainingMs(deadline)), opts.signal);
       delay = Math.min(delay * 1.5, 10000);
-      if (remainingMs(deadline) <= 0) break;
+      // Node timers and Date.now() can disagree by a millisecond, so a sleep
+      // clipped to the deadline can wake with 1ms "left". A poll started then
+      // cannot finish; hand back the receipt instead of spending a request.
+      if (remainingMs(deadline) < MIN_POLL_WINDOW_MS) break;
 
       const progress = await request(
         BASE + '/progress/' + encodeURIComponent(snapshotId),
