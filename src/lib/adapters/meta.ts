@@ -1404,7 +1404,10 @@ export const instagramAdapter: ChannelAdapter = {
       // Bright Data stage: the paid stage finished and its receipt is
       // cleared, so nothing paid is abandoned or bought twice. Seen on
       // @boston, @globesportsreport and @loveletters_globe, Oct-Nov 2026.
-      if (deepRequired && pendingStage === undefined && ensembleToken) {
+      // Resumed runs count too: Bright Data's profile stage routinely outlasts
+      // one 60-second run, so nearly every completed read is a resume. A
+      // resumed post-stage run has no profile stubs and so never trips this.
+      if (deepRequired && raw && ensembleToken) {
         const stubCodes = stubShortcodesInWindow(raw, ctx.since, ctx.until);
         const missing = stubsMissingFromFeed(stubCodes, posts.posts);
         if (missing.length > 0) {
