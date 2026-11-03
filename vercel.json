@@ -40,6 +40,10 @@
     {
       "path": "/api/cron/publish",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/bugs",
+      "schedule": "12,42 * * * *"
     }
   ]
 }

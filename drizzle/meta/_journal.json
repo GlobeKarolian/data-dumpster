@@ -302,6 +302,13 @@
       "when": 1791382800000,
       "tag": "0043_publishing_send_keys_and_drafting",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791400000000,
+      "tag": "0044_bug_reports",
+      "breakpoints": true
     }
   ]
 }

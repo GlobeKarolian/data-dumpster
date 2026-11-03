@@ -61,6 +61,9 @@ test('production opens exactly two collection windows and recovery cannot enqueu
     { path: '/api/cron/instagram-plays', schedule: '40 1,13 * * *' },
     // Publishing sends due posts and polls RSS feeds; it never collects.
     { path: '/api/cron/publish', schedule: '* * * * *' },
+    // Finishes triage on bug reports that stalled. It reads posts already
+    // stored and calls the org's own model; it never buys vendor records.
+    { path: '/api/cron/bugs', schedule: '12,42 * * * *' },
   ]);
   assert.equal(config.crons.filter((entry) => entry.path.includes('mode=scheduled')).length, 1);
   assert.equal(config.crons.some((entry) => entry.path.includes('/api/cron/coverage')), false);
