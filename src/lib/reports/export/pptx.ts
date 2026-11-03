@@ -693,10 +693,14 @@ function addTopPostSlides(pptx: PptxGenJS, doc: ReportDocument, startPage: numbe
   ];
 
   groups.forEach((group) => {
+    // Balanced slides: ten posts read as two slides of five (ranks 1-5 and
+    // 6-10) rather than a full slide of eight and a stub of two.
+    const slideCount = Math.ceil(group.posts.length / PAGE_SIZE);
+    const perSlide = slideCount > 0 ? Math.ceil(group.posts.length / slideCount) : PAGE_SIZE;
     const chunks = group.posts.length > 0
       ? Array.from(
-        { length: Math.ceil(group.posts.length / PAGE_SIZE) },
-        (_, index) => group.posts.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE),
+        { length: slideCount },
+        (_, index) => group.posts.slice(index * perSlide, (index + 1) * perSlide),
       )
       : [[]];
 

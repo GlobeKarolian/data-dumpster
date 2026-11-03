@@ -149,6 +149,13 @@ function toTopPost(post: PostDto, index: number, bgmCompanyIds: ReadonlySet<stri
 }
 
 /**
+ * How many posts each Top Engaged Posts list carries (market and BGM). Ten,
+ * not five, since Nov 2026: cross-posted videos (the same clip on Instagram
+ * and Facebook) took several of five slots and pushed out other stories.
+ */
+export const TOP_POSTS_LIMIT = 10;
+
+/**
  * Build the computed block for one landscape and one Monday-to-Sunday window.
  *
  * The brand table is deliberately restricted to the platforms the printed
@@ -184,7 +191,7 @@ export async function computeWeeklyReport(
     getLeaderboard({ ...brandScope, metric: 'audienceNetChange' }),
     // Video plays only; see lib/reports/video-views.ts for why X and Threads are out.
     getVideoViewRows(landscapeId, start, end),
-    getPosts({ ...base, sort: 'engagementTotal', direction: 'desc', page: 1, pageSize: 5 }),
+    getPosts({ ...base, sort: 'engagementTotal', direction: 'desc', page: 1, pageSize: TOP_POSTS_LIMIT }),
     getLandscapeCompanyIdsBySlug(orgId, 'bgm'),
   ]);
   const bgmCompanyIdSet = new Set(bgmCompanyIds);
@@ -195,9 +202,9 @@ export async function computeWeeklyReport(
       sort: 'engagementTotal',
       direction: 'desc',
       page: 1,
-      pageSize: 5,
+      pageSize: TOP_POSTS_LIMIT,
     })
-    : { items: [], total: 0, page: 1, pageSize: 5 };
+    : { items: [], total: 0, page: 1, pageSize: TOP_POSTS_LIMIT };
 
   const engagementBoard = facts.leaderboards.engagementTotal ?? [];
   const postsBoard = facts.leaderboards.posts ?? [];
