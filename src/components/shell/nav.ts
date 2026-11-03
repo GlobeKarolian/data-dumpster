@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Bell, Building2, CircleDollarSign, Cpu, LayoutDashboard, LayoutGrid,
   MessageSquare, MonitorUp, Radio, SlidersHorizontal, Sparkles, Tag, Link2, Trophy, FileText, FileSpreadsheet, Waypoints, Users,
-  Vote, UsersRound, ShieldAlert, Send,
+  Vote, UsersRound, ShieldAlert, Send, Bug,
 } from 'lucide-react';
 import { PLATFORM_LABELS, type Platform } from '@/lib/types';
 
@@ -92,6 +92,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: '/settings/companies', label: 'Companies', icon: Building2 },
       { href: '/settings/costs', label: 'Costs', icon: CircleDollarSign },
       { href: '/settings/operations', label: 'Operations', icon: SlidersHorizontal },
+      { href: '/settings/bugs', label: 'Bug Reports', icon: Bug },
     ],
   },
 ];
@@ -120,5 +121,6 @@ export const ROUTE_TITLES: Record<string, string> = {
   '/settings/companies': 'Companies and Social Profiles',
   '/settings/costs': 'Costs',
   '/settings/operations': 'Operations',
+  '/settings/bugs': 'Bug Reports',
   '/today': 'Today',
 };

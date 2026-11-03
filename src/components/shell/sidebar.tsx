@@ -11,6 +11,7 @@ import { usePersistentFlag } from '@/components/common/use-persistent-flag';
 import { NAV_SECTIONS } from './nav';
 import { LandscapeSwitcher, type LandscapeOption } from './landscape-switcher';
 import { PlatformIcon } from '@/components/ui/platform-icon';
+import { ReportBugButton } from '@/components/bugs/report-bug-button';
 
 const STORAGE_KEY = 'pressbox.sidebar.collapsed';
 
@@ -157,7 +158,8 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-zinc-200 p-2 dark:border-zinc-800">
+      <div className="shrink-0 space-y-0.5 border-t border-zinc-200 p-2 dark:border-zinc-800">
+        <ReportBugButton compact={compact} landscapeId={activeLandscapeId} />
         <button
           type="button"
           onClick={mobileOpen ? onMobileClose : toggle}
