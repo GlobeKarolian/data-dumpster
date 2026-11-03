@@ -23,6 +23,7 @@ import {
 import { TokenFencedLeaseHeartbeat } from './lease-heartbeat';
 import { automaticRefreshWindowStart } from './automatic-refresh';
 import { readControl } from '@/lib/controls';
+import { isVendorAccountError, VENDOR_ACCOUNT_RETRY_MINUTES } from './vendor-account';
 
 const DEFAULT_HISTORY_DAYS = 90;
 
@@ -1044,7 +1045,14 @@ async function finishClaim(
   // itself rather than retrying on the hour forever. item.attempts was
   // incremented at claim time, so it already counts this attempt.
   const consecutiveAttempts = Number(item.attempts) || 0;
-  const escalated = escalateRetryableOutcome(stateOutcome, consecutiveAttempts);
+  // A vendor ACCOUNT outage (billing, deactivation) is never this profile's
+  // fault and never purchased anything, so it does not count toward operator
+  // escalation; it retries slowly until the account is back.
+  const vendorAccountDown = stateOutcome === 'retryable_operational_failure'
+    && isVendorAccountError(lastError);
+  const escalated = vendorAccountDown
+    ? stateOutcome
+    : escalateRetryableOutcome(stateOutcome, consecutiveAttempts);
   if (escalated !== stateOutcome) {
     stateOutcome = escalated;
     disposition = queueDisposition(escalated);
@@ -1055,7 +1063,9 @@ async function finishClaim(
   const nextAttemptAt = disposition.schedule === 'immediate'
     ? new Date()
     : disposition.schedule === 'backoff'
-      ? retryAt(consecutiveAttempts || 1)
+      ? (vendorAccountDown
+        ? new Date(Date.now() + VENDOR_ACCOUNT_RETRY_MINUTES * 60_000)
+        : retryAt(consecutiveAttempts || 1))
       : null;
   const previousAttemptedUntil = item.attempted_until
     ? asDate(item.attempted_until)
