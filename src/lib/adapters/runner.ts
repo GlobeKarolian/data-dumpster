@@ -30,6 +30,7 @@
  *    reported in the summary.
  */
 import { SNAPSHOT_COLUMNS, snapshotValuesFor } from './snapshot-values';
+import { isVendorAccountError } from './vendor-account';
 import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
@@ -1712,10 +1713,14 @@ export async function runChannelIngest(
         errorMessage(err),
       );
     }
+    const message = errorMessage(err);
     return fail(
-      errorMessage(err),
+      message,
       'failed',
-      err instanceof AdapterError ? err.opts.retryable !== false : true,
+      // A vendor refusing our account (billing, deactivation) says nothing
+      // about this profile; keep it retryable so a top-up heals it.
+      isVendorAccountError(message)
+        || (err instanceof AdapterError ? err.opts.retryable !== false : true),
     );
   }
 
