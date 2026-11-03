@@ -829,6 +829,23 @@ export const facebookAdapter: ChannelAdapter = {
 
 /* ------------------------------------------------------------- Instagram */
 
+/**
+ * Union of a Bright Data post list and an EnsembleData fallback for the same
+ * window. Both use Instagram's numeric media id; shortcodes catch any row
+ * where they differ. Bright Data's row wins when both have a post, and
+ * fallback rows are marked so provenance survives in raw.
+ */
+export function mergeFallbackPosts(primary: NormalizedPost[], fallback: NormalizedPost[]): NormalizedPost[] {
+  const code = (p: NormalizedPost) =>
+    (p.permalink ?? '').match(/instagram\.com\/(?:[^/]+\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1] ?? null;
+  const ids = new Set(primary.map((p) => p.externalId));
+  const codes = new Set(primary.map(code).filter((c): c is string => c !== null));
+  const extra = fallback
+    .filter((p) => !ids.has(p.externalId) && !codes.has(code(p) ?? '\u0000'))
+    .map((p) => ({ ...p, raw: { ...(p.raw ?? {}), _fallbackSource: 'ensembledata' } }));
+  return [...primary, ...extra];
+}
+
 const IG: Platform = 'instagram';
 
 const INSTAGRAM_PROFILE_FIELDS =
@@ -1251,8 +1268,9 @@ export const instagramAdapter: ChannelAdapter = {
       );
     }
     if (vendorKey && (pendingStage !== undefined || !ctx.credentials.accessToken)) {
-      const { fetchProfile, postsFromProfile, fetchPostsByProfile } =
-        await import('./instagram-brightdata');
+      const {
+        fetchProfile, postsFromProfile, fetchPostsByProfile, stubShortcodesInWindow, stubsMissingFromFeed,
+      } = await import('./instagram-brightdata');
 
       let profile: AdapterProfile | undefined = pendingStage === 'instagram-posts'
         ? profileFromBrightDataReceipt(ctx.cursor)
@@ -1376,6 +1394,55 @@ export const instagramAdapter: ChannelAdapter = {
             'Instagram deep history for @' + ctx.handle + ' failed, using the twelve posts from the '
             + 'profile call instead: ' + (err instanceof Error ? err.message : String(err)),
           );
+        }
+      }
+
+      // Self-contradiction check. When the profile stubs (Bright Data's own
+      // evidence) list posts inside the window that the date-ranged dataset
+      // did not return, that dataset is wrong for this account, not quiet.
+      // This is the one case where an EnsembleData read follows a completed
+      // Bright Data stage: the paid stage finished and its receipt is
+      // cleared, so nothing paid is abandoned or bought twice. Seen on
+      // @boston, @globesportsreport and @loveletters_globe, Oct-Nov 2026.
+      if (deepRequired && pendingStage === undefined && ensembleToken) {
+        const stubCodes = stubShortcodesInWindow(raw, ctx.since, ctx.until);
+        const missing = stubsMissingFromFeed(stubCodes, posts.posts);
+        if (missing.length > 0) {
+          try {
+            const ed = await import('./instagram-ensemble');
+            const edProfile = await ed.fetchProfile(ctx.handle, ensembleToken, ctx.onApiCall, ctx.signal);
+            const fallback = await ed.fetchAllPosts(edProfile.userId, ctx.handle, ensembleToken, {
+              since: ctx.since,
+              until: ctx.until,
+              limit: ctx.limit,
+              onApiCall: ctx.onApiCall,
+              signal: ctx.signal,
+            });
+            posts = {
+              ...posts,
+              posts: mergeFallbackPosts(posts.posts, fallback.posts),
+              exhaustive: fallback.exhaustive,
+              incompleteReason: fallback.exhaustive ? undefined : fallback.incompleteReason,
+            };
+            warnings.push(
+              'Instagram for @' + ctx.handle + ': Bright Data\'s date-ranged feed omitted ' + missing.length
+                + ' of ' + stubCodes.length + ' posts its own profile read shows in this window, so the window was '
+                + 'read through EnsembleData instead (' + fallback.posts.length + ' posts).',
+              ...fallback.warnings,
+            );
+          } catch (err) {
+            if (ctx.signal?.aborted) throw err;
+            warnings.push(
+              'Instagram for @' + ctx.handle + ': Bright Data omitted ' + missing.length + ' posts its profile read '
+                + 'shows, and the EnsembleData fallback failed: ' + (err instanceof Error ? err.message : String(err)),
+            );
+            posts = {
+              ...posts,
+              exhaustive: false,
+              incompleteReason: 'Bright Data omitted posts its own profile read shows in this window, and the '
+                + 'EnsembleData fallback failed.',
+            };
+          }
         }
       }
 

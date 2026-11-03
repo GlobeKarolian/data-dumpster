@@ -22,6 +22,7 @@ import type { AdapterProfile, NormalizedAudience, NormalizedPost } from './types
 import { DATASETS, scrapeSync, rowError, isErrorRow } from '@/lib/vendors/brightdata';
 import { extractHashtags, extractMentions, extractUrls, toDayString } from './util/normalize';
 import type { Platform, PostType } from '@/lib/types';
+import { reelShortcode } from './instagram-reel-plays';
 
 const PLATFORM: Platform = 'instagram';
 
@@ -433,4 +434,43 @@ export async function fetchPostsByProfile(
     exhaustive: false,
     incompleteReason,
   };
+}
+
+/**
+ * Shortcodes of the profile payload's post stubs that fall inside the window.
+ *
+ * Since Aug 2026 the stubs carry no engagement, so they are never written as
+ * observations. They are still the vendor's own evidence that these posts
+ * exist, which makes them the check on the date-ranged dataset: in Oct-Nov
+ * 2026 that dataset answered "There are no public posts in the profile for
+ * the specified period" for @boston while the same job's profile stubs listed
+ * a dozen posts in that period.
+ */
+export function stubShortcodesInWindow(
+  raw: Record<string, unknown> | undefined,
+  since: Date,
+  until: Date,
+): string[] {
+  const list = raw && Array.isArray(raw.posts) ? raw.posts : [];
+  const out: string[] = [];
+  for (const item of list) {
+    if (!isRecord(item)) continue;
+    const postedAt = toDate(pick(item, ['datetime', 'date_posted', 'timestamp']));
+    // Date-only stubs parse to midnight UTC; a post on the window's first day
+    // can read as before `since` and is skipped, which errs toward no alarm.
+    if (!postedAt || postedAt < since || postedAt > until) continue;
+    const code = reelShortcode(str(item.url) ?? null) ?? str(pick(item, ['shortcode', 'code'])) ?? null;
+    if (code && !out.includes(code)) out.push(code);
+  }
+  return out;
+}
+
+/** Stub shortcodes the date-ranged feed did not return. */
+export function stubsMissingFromFeed(stubCodes: string[], posts: NormalizedPost[]): string[] {
+  const returned = new Set<string>();
+  for (const p of posts) {
+    const code = reelShortcode(p.permalink);
+    if (code) returned.add(code);
+  }
+  return stubCodes.filter((c) => !returned.has(c));
 }
