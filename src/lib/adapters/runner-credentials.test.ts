@@ -34,8 +34,11 @@ describe('pooled collection source containment', () => {
     assert.deepEqual(publicSourceCredentials('facebook', configuredEnvironment), {
       brightDataApiKey: 'bright-vendor-key',
     });
+    // EnsembleData rides along for the adapter's contradiction fallback only;
+    // Bright Data remains the planned source (asserted in runner-source-state).
     assert.deepEqual(publicSourceCredentials('instagram', configuredEnvironment), {
       brightDataApiKey: 'bright-vendor-key',
+      ensembleDataToken: 'ensemble-vendor-token',
     });
     assert.deepEqual(publicSourceCredentials('twitter', configuredEnvironment), {
       bearerToken: 'x-app-bearer',

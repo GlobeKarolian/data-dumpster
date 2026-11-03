@@ -39,6 +39,11 @@ export function publicSourceCredentials(
       break;
     case 'instagram':
       pickBrightDataOrEnsemble();
+      // Bright Data still leads (the source planner picks it whenever its key
+      // is present). EnsembleData rides along only for the contradiction
+      // fallback in the Instagram adapter: profile stubs prove posts the
+      // date-ranged dataset omitted.
+      pick(out, 'ensembleDataToken', ensembleToken);
       break;
     case 'twitter':
       // The app-only Bearer token is a deployment credential reading the same
