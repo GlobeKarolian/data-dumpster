@@ -380,14 +380,14 @@ export function TopPostsSection({
       <div className="space-y-4">
         <TopPostGroup
           title="Top Engaged Posts — Market"
-          description="The five most engaged posts from every brand in this landscape. Select a post to inspect its full card."
+          description="The ten most engaged posts from every brand in this landscape. Select a post to inspect its full card."
           posts={computed.topPosts}
           reportShareToken={reportShareToken}
           onSelect={setSelectedPost}
         />
         <TopPostGroup
           title="Top Engaged Posts — BGM"
-          description="The five most engaged posts from BGM-owned brands in the same window. Select a post to inspect its full card."
+          description="The ten most engaged posts from BGM-owned brands in the same window. Select a post to inspect its full card."
           posts={bgmPosts}
           reportShareToken={reportShareToken}
           onSelect={setSelectedPost}
